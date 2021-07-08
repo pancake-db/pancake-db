@@ -56,12 +56,12 @@ pub struct StagedState {
 }
 
 impl Staged {
-  pub async fn add_row(&self, table_name: &str, row: Row) {
+  pub async fn add_rows(&self, table_name: &str, rows: &[Row]) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     state.rows.entry(table_name.to_owned())
       .or_insert(Vec::new())
-      .push(row);
+      .extend_from_slice(rows);
   }
 
   pub async fn pop_rows(&self, table_name: &str) -> Option<Vec<Row>> {
@@ -69,12 +69,6 @@ impl Staged {
     let state = &mut *mux_guard;
     return state.rows.remove(table_name);
   }
-
-  // pub async fn add_table(&self, table_name: &str) {
-  //   let mut mux_guard = self.mutex.lock().await;
-  //   let state = &mut *mux_guard;
-  //   state.tables.push(table_name.to_owned());
-  // }
 
   pub async fn get_tables(&self) -> Vec<String> {
     let mut mux_guard = self.mutex.lock().await;
@@ -171,5 +165,7 @@ impl Server {
 
   pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     Self::create_table_filter()
+      .or(Self::write_to_partition_filter())
+      .or(Self::read_segment_column_filter())
   }
 }

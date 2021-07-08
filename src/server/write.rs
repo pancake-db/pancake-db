@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 
+use pancake_db_idl::dml::{Row, WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::schema::Schema;
+use warp::{Filter, Rejection, Reply};
+
+use crate::{compression, utils};
 use crate::dirs;
-use pancake_db_idl::dml::Row;
-use crate::{utils, compression};
+use crate::storage::compaction::CompactionKey;
+use crate::storage::flush::FlushMetadata;
 
 use super::Server;
-use crate::storage::flush::FlushMetadata;
-use crate::storage::compaction::CompactionKey;
-use pancake_db_idl::schema::Schema;
 
 impl Server {
-  pub async fn write_row(&self, table_name: &String, row: Row) -> Result<(), &'static str> {
+  pub async fn write_rows(&self, table_name: &String, rows: &[Row]) -> Result<(), &'static str> {
     // validate data matches schema
     let schema: Schema = self.schema_cache
       .get_option(table_name)
@@ -20,30 +22,33 @@ impl Server {
     for col in &schema.columns {
       col_map.insert(&col.name, col);
     }
-    for field in &row.fields {
-      let mut maybe_err: Option<&'static str> = None;
-      match col_map.get(&field.name) {
-        Some(col) => {
-          if !utils::dtype_matches_elem(&col.dtype.unwrap(), &field) {
-            maybe_err = Some("wrong dtype");
-          }
-        },
-        _ => {
-          maybe_err = Some("unknown column");
-        },
-      };
+    for row in rows {
+      for field in &row.fields {
+        let mut maybe_err: Option<&'static str> = None;
+        match col_map.get(&field.name) {
+          Some(col) => {
+            if !utils::dtype_matches_elem(&col.dtype.unwrap(), &field) {
+              maybe_err = Some("wrong dtype");
+            }
+          },
+          _ => {
+            maybe_err = Some("unknown column");
+          },
+        };
 
-      if maybe_err.is_some() {
-        return Err(maybe_err.unwrap());
+        if maybe_err.is_some() {
+          return Err(maybe_err.unwrap());
+        }
       }
     }
 
-    self.staged.add_row(table_name, row).await;
+    self.staged.add_rows(table_name, rows).await;
     // here we should really wait for flush
     return Ok(());
   }
 
   pub async fn flush(&self, table_name: &str) -> Result<(), &'static str> {
+    println!("FLUSH");
     let maybe_rows = self.staged.pop_rows(table_name).await;
     if maybe_rows.is_none() {
       return Ok(());
@@ -86,7 +91,7 @@ impl Server {
       for col in &schema.columns {
         let mut compressor = compression::get_compressor(
           &col.dtype.unwrap(),
-          compaction.col_compression_params.get(&col.name),
+          compaction.col_compressor_names.get(&col.name),
         );
 
         let bytes: Vec<u8> = field_maps
@@ -102,5 +107,25 @@ impl Server {
     }
 
     return self.flush_metadata_cache.increment_n(&String::from(table_name), rows.len()).await;
+  }
+
+  pub fn write_to_partition_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::post()
+      .and(warp::path("rest"))
+      .and(warp::path("write_to_partition"))
+      .and(warp::filters::ext::get::<Server>())
+      .and(warp::filters::body::json())
+      .and_then(Self::write_to_partition)
+  }
+
+  async fn write_to_partition(server: Server, req: WriteToPartitionRequest) -> Result<impl Reply, Rejection> {
+    println!("write to partition request received");
+    match server.write_rows(&req.table_name, &req.rows).await {
+      Ok(_) => Ok(warp::reply::json(&WriteToPartitionResponse::new())),
+      Err(e) => {
+        println!("error {}", e);
+        Err(warp::reject())
+      },
+    }
   }
 }

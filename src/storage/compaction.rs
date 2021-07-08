@@ -13,14 +13,14 @@ pub struct CompactionKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
   pub compacted_n: usize,
-  pub col_compression_params: HashMap<String, CompressionParams>
+  pub col_compressor_names: HashMap<String, CompressionParams>
 }
 
 impl Default for Compaction {
   fn default() -> Compaction {
     return Compaction {
       compacted_n: 0,
-      col_compression_params: HashMap::new(),
+      col_compressor_names: HashMap::new(),
     }
   }
 }

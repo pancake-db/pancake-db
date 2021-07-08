@@ -6,7 +6,6 @@ use crate::utils;
 
 use super::Server;
 use std::collections::HashMap;
-use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::{ColumnMeta, Schema};
 use crate::storage::compaction::{Compaction, CompactionKey, CompressionParams};
 use crate::compression;
@@ -46,7 +45,7 @@ impl Server {
     }).await;
 
     for col in &schema.columns {
-      let compression_params = old_compaction.col_compression_params.get(&col.name);
+      let compression_params = old_compaction.col_compressor_names.get(&col.name);
       let data = self.read_col(table_name, col, metadata, compression_params, metadata.n).await;
       col_compression_params.insert(
         col.name.clone(),
@@ -56,7 +55,7 @@ impl Server {
 
     return Ok(Compaction {
       compacted_n: metadata.n,
-      col_compression_params,
+      col_compressor_names: col_compression_params,
     });
   }
 
@@ -99,7 +98,7 @@ impl Server {
     new_version: u64,
   ) {
     for col in &schema.columns {
-      let compression_params = compaction.col_compression_params
+      let compression_params = compaction.col_compressor_names
         .get(&col.name);
       self.execute_col_compaction(
         table_name,

@@ -1,14 +1,10 @@
-use serde_json;
-
-use crate::server::Server;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use pancake_db_idl::schema::Schema;
-use crate::utils;
+use warp::{Filter, Rejection, Reply};
 
 use crate::dirs;
-use serde::Serialize;
-use warp::{Filter, Rejection, Reply};
-use warp::reply::Json;
+use crate::server::Server;
+use crate::utils;
 
 impl Server {
   pub async fn create_table(&self, name: &String, schema: &Schema) -> Result<(), &'static str> {
@@ -24,7 +20,8 @@ impl Server {
   }
 
   pub fn create_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
+    warp::post()
+      .and(warp::path("rest"))
       .and(warp::path("create_table"))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::json())

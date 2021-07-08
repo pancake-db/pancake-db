@@ -1,15 +1,17 @@
-use pancake_db_idl::schema::ColumnMeta;
-use pancake_db_idl::dml::{Field, FieldValue, Row};
+use pancake_db_idl::dml::{Field, FieldValue, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Row};
 use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::schema::ColumnMeta;
+use protobuf::MessageField;
 use tokio::fs;
+use warp::{Filter, Rejection, Reply};
 
 use crate::compression;
 use crate::dirs;
 use crate::storage::compaction::{Compaction, CompactionKey, CompressionParams};
 use crate::storage::flush::FlushMetadata;
+use crate::utils;
 
 use super::Server;
-use protobuf::MessageField;
 
 fn field_from_elem(name: &str, elem: &Value) -> Field {
   let mut field_value = FieldValue {
@@ -95,7 +97,7 @@ impl Server {
         table_name,
         col,
         &flush_meta,
-        compaction.col_compression_params.get(&col.name),
+        compaction.col_compressor_names.get(&col.name),
         n,
       ).await;
       println!("VALUE LEN {} vs ROWS LEN {}", values.len(), rows.len());
@@ -105,5 +107,73 @@ impl Server {
     }
 
     return rows;
+  }
+
+  pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+      .and(warp::path("rest"))
+      .and(warp::path("read_segment_column"))
+      .and(warp::filters::ext::get::<Server>())
+      .and(warp::filters::body::json())
+      .and_then(Self::read_segment_column)
+  }
+
+  async fn read_segment_column(server: Server, req: ReadSegmentColumnRequest) -> Result<impl Reply, Rejection> {
+    let col_name = req.column_name;
+    let schema_future = server.schema_cache
+      .get_option(&req.table_name);
+    let flush_meta_future = server.flush_metadata_cache
+      .get(&req.table_name);
+
+    let schema = schema_future
+      .await
+      .expect("table does not exist");
+    let flush_meta = flush_meta_future
+      .await;
+
+    let mut valid_col = false;
+    for col_meta_item in &schema.columns {
+      if col_meta_item.name == col_name {
+        valid_col = true;
+      }
+    }
+
+    if valid_col {
+      let compaction = server.compaction_cache
+        .get(CompactionKey {
+          table_name: req.table_name.clone(),
+          version: flush_meta.read_version
+        })
+        .await;
+
+      // TODO: error handling
+      // TODO: pagination
+      let compressed_filename = dirs::compact_col_file(
+        &server.dir,
+        &req.table_name,
+        flush_meta.read_version,
+        &col_name,
+      );
+      let uncompressed_filename = dirs::flush_col_file(
+        &server.dir,
+        &req.table_name,
+        flush_meta.read_version,
+        &col_name,
+      );
+
+      let compressor_name = compaction.col_compressor_names
+        .get(&col_name)
+        .map(|c| c.clone() as String)
+        .unwrap_or("".to_string());
+
+      Ok(warp::reply::json(&ReadSegmentColumnResponse {
+        compressor_name,
+        compressed_data: utils::read_if_exists(compressed_filename).await.unwrap_or(Vec::new()),
+        uncompressed_data: utils::read_if_exists(uncompressed_filename).await.unwrap_or(Vec::new()),
+        ..Default::default()
+      }))
+    } else {
+      Err(warp::reject())
+    }
   }
 }

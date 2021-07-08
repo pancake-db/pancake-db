@@ -1,15 +1,20 @@
 use std::io::ErrorKind;
+use std::path::Path;
 
+use pancake_db_idl::dml::Field;
+use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dtype::DataType;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use crate::types::DataElem;
+pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
+  match fs::read(fname).await {
+    Ok(bytes) => Some(bytes),
+    Err(_) => None,
+  }
+}
 
-use pancake_db_idl::dtype::DataType;
-use pancake_db_idl::dml::Field;
-use pancake_db_idl::dml::field_value::Value;
-
-pub async fn create_if_new(dir: &String) -> Result<(), &'static str> {
+pub async fn create_if_new(dir: &str) -> Result<(), &'static str> {
   match fs::create_dir(dir).await {
     Ok(_) => {
       return Ok(());
@@ -46,7 +51,7 @@ pub async fn overwrite_file(path: &str, contents: &[u8]) -> Result<(), &'static 
 //   }
 // }
 
-pub async fn append_to_file(path: &String, contents: &[u8]) -> Result<(), &'static str> {
+pub async fn append_to_file(path: &str, contents: &[u8]) -> Result<(), &'static str> {
   let mut file = fs::OpenOptions::new()
     .append(true)
     .create(true)
@@ -58,10 +63,14 @@ pub async fn append_to_file(path: &String, contents: &[u8]) -> Result<(), &'stat
 }
 
 pub fn dtype_matches_elem(dtype: &DataType, field: &Field) -> bool {
-  let value = &field.value.0.as_ref().unwrap().value;
-  match (dtype, value) {
-    (DataType::STRING, Some(Value::string_val(_))) => true,
-    (DataType::INT64, Some(Value::int64_val(_))) => true,
+  let f = Field::int64("".to_string(), 33);
+  let v = f.value.get_ref();
+  println!("{:?} -> {}", v, serde_json::to_string(v).expect("fail"));
+  let value = field.value.get_ref();
+  println!("checking {:?} vs {:?}", dtype, value);
+  match dtype {
+    DataType::STRING if value.has_string_val() => true,
+    DataType::INT64 if value.has_int64_val() => true,
     _ => false
   }
 }

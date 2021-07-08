@@ -1,16 +1,13 @@
-use server::Server;
-use hyper::Server as HyperServer;
+use std::net::{SocketAddr, TcpListener};
 
-use protobuf::ProtobufEnumOrUnknown;
-use tokio::time;
-use warp::Filter;
+use hyper::Server as HyperServer;
+use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
-use std::net::{TcpListener, SocketAddr};
-use tower::make::Shared;
+
+use server::Server;
 
 mod utils;
-mod types;
 mod server;
 mod dirs;
 mod storage;
@@ -30,13 +27,15 @@ async fn main() {
     .service(warp_service);
   let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 1337)))
     .expect("port busy");
-  HyperServer::from_tcp(listener)
-    .unwrap()
-    .serve(Shared::new(tower_service))
-    .await
-    .expect("idk what the issue is");
+  let outcomes = futures::future::join3(
+    HyperServer::from_tcp(listener)
+      .unwrap()
+      .serve(Shared::new(tower_service)),
+    // server.stop(),
+    backgrounds.0,
+    backgrounds.1,
+  )
+    .await;
 
-  server.stop().await;
-  backgrounds.0.await;
-  backgrounds.1.await;
+  outcomes.0.expect("server crashed");
 }

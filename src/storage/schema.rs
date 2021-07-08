@@ -1,5 +1,4 @@
-use serde::{Deserialize, Serialize};
-use pancake_db_idl::schema::{Schema, ColumnMeta};
+use pancake_db_idl::schema::Schema;
 
 use super::traits::{CacheData, Metadata};
 
