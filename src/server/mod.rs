@@ -12,6 +12,7 @@ use crate::storage::flush::FlushMetadataCache;
 use crate::storage::schema::SchemaCache;
 use crate::storage::segments::SegmentsMetadataCache;
 use crate::types::{PartitionKey, SegmentKey};
+use std::path::PathBuf;
 
 mod create_table;
 mod write;
@@ -94,7 +95,7 @@ impl Staged {
 
 #[derive(Clone)]
 pub struct Server {
-  pub dir: String,
+  pub dir: PathBuf,
   staged: Staged,
   activity: Activity,
   schema_cache: SchemaCache,
@@ -164,13 +165,13 @@ impl Server {
     self.activity.stop().await;
   }
 
-  pub fn new(dir: String) -> Server {
+  pub fn new(dir: &PathBuf) -> Server {
     let schema_cache = SchemaCache::new(&dir);
     let segments_metadata_cache = SegmentsMetadataCache::new(&dir);
     let flush_metadata_cache = FlushMetadataCache::new(&dir);
     let compaction_cache = CompactionCache::new(&dir);
     let res = Server {
-      dir,
+      dir: dir.clone(),
       schema_cache,
       segments_metadata_cache,
       flush_metadata_cache,

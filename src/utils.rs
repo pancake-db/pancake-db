@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 
@@ -7,7 +6,6 @@ use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
-use pancake_db_idl::schema::Schema;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -18,7 +16,7 @@ pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   }
 }
 
-pub async fn create_if_new(dir: &str) -> Result<(), &'static str> {
+pub async fn create_if_new(dir: impl AsRef<Path>) -> Result<(), &'static str> {
   match fs::create_dir(dir).await {
     Ok(_) => {
       return Ok(());
@@ -30,7 +28,7 @@ pub async fn create_if_new(dir: &str) -> Result<(), &'static str> {
   }
 }
 
-pub async fn overwrite_file(path: &str, contents: &[u8]) -> Result<(), &'static str> {
+pub async fn overwrite_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(), &'static str> {
   let mut file = fs::File::create(path).await.expect("unable to create file for overwrite");
   file.write_all(contents).await.unwrap();
   return Ok(());
@@ -55,7 +53,7 @@ pub async fn overwrite_file(path: &str, contents: &[u8]) -> Result<(), &'static 
 //   }
 // }
 
-pub async fn append_to_file(path: &str, contents: &[u8]) -> Result<(), &'static str> {
+pub async fn append_to_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(), &'static str> {
   let mut file = fs::OpenOptions::new()
     .append(true)
     .create(true)

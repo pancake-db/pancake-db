@@ -4,6 +4,7 @@ use crate::dirs;
 use crate::types::SegmentKey;
 
 use super::traits::{CacheData, Metadata};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FlushMetadata {
@@ -22,7 +23,7 @@ impl Metadata<SegmentKey> for FlushMetadata {
 }
 
 impl FlushMetadata {
-  async fn load_or_default(dir: &str, key: &SegmentKey) -> FlushMetadata {
+  async fn load_or_default(dir: &PathBuf, key: &SegmentKey) -> FlushMetadata {
     FlushMetadata::load(dir, key)
       .await
       .map(|x| *x)

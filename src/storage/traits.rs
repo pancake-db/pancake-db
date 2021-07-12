@@ -9,23 +9,24 @@ use tokio::sync::RwLock;
 use async_trait::async_trait;
 
 use crate::utils;
+use std::path::PathBuf;
 
 #[async_trait]
 pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
   fn relative_path(k: &K) -> String;
 
-  fn path(dir: &str, k: &K) -> String {
-    return format!("{}/{}", dir, Self::relative_path(k));
+  fn path(dir: &PathBuf, k: &K) -> PathBuf {
+    dir.join(Self::relative_path(k))
   }
 
-  async fn load(dir: &str, k: &K) -> Option<Box<Self>> {
+  async fn load(dir: &PathBuf, k: &K) -> Option<Box<Self>> {
     return match fs::read_to_string(Self::path(dir, k)).await {
       Ok(json_str) => Some(serde_json::from_str(&json_str).unwrap()),
       Err(_) => None,
     }
   }
 
-  async fn overwrite(&self, dir: &String, k: &K) -> Result<(), &'static str> {
+  async fn overwrite(&self, dir: &PathBuf, k: &K) -> Result<(), &'static str> {
     let path = Self::path(dir, k);
     let metadata_str = serde_json::to_string(&self).expect("unable to serialize");
     return utils::overwrite_file(&path, metadata_str.as_bytes()).await;
@@ -34,21 +35,11 @@ pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
 
 #[derive(Clone)]
 pub struct CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync {
-  pub dir: String,
+  pub dir: PathBuf,
   pub data: Arc<RwLock<HashMap<K, Option<V>>>>
 }
 
 impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync  {
-  // fn get_option_locked(&self, k: &K, mux_guard: &RwLockWriteGuard<HashMap<K, Option<V>>>) -> Option<V> {
-  //   let maybe_metadata = mux_guard.get(k);
-  //   match maybe_metadata {
-  //     Some(res) => res.clone(),
-  //     None => {
-  //
-  //     }
-  //   }
-  // }
-
   pub async fn get_option(&self, k: &K) -> Option<V> {
     let mux_guard = self.data.read().await;
     let map = &*mux_guard;
@@ -71,9 +62,9 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + S
     };
   }
 
-  pub fn new(dir: &str) -> Self {
+  pub fn new(dir: &PathBuf) -> Self {
     return CacheData {
-      dir: String::from(dir),
+      dir: dir.clone(),
       data: Arc::new(RwLock::new(HashMap::new()))
     };
   }
