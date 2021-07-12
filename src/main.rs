@@ -12,6 +12,7 @@ mod server;
 mod dirs;
 mod storage;
 mod compression;
+mod types;
 
 const DIR: &str = "/Users/martin/Downloads/pancake_db_data";
 

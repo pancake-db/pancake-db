@@ -1,33 +1,39 @@
 use std::collections::HashMap;
 
-use pancake_db_idl::dml::{Row, WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
 use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
 
 use crate::{compression, utils};
 use crate::dirs;
-use crate::storage::compaction::CompactionKey;
-use crate::storage::flush::FlushMetadata;
+use crate::types::{CompactionKey, SegmentKey, NormalizedPartition};
+use crate::types::PartitionKey;
 
 use super::Server;
 
 impl Server {
-  pub async fn write_rows(&self, table_name: &String, rows: &[Row]) -> Result<(), &'static str> {
+  pub async fn write_rows(&self, req: &WriteToPartitionRequest) -> Result<(), &'static str> {
+    let table_name = &req.table_name;
     // validate data matches schema
     let schema: Schema = self.schema_cache
       .get_option(table_name)
       .await
       .expect("no schema");
+
+    // normalize partition (order fields correctly)
+    let partition = NormalizedPartition::full(&schema, &req.partition)?;
+
+    // validate rows
     let mut col_map = HashMap::new();
     for col in &schema.columns {
       col_map.insert(&col.name, col);
     }
-    for row in rows {
+    for row in &req.rows {
       for field in &row.fields {
         let mut maybe_err: Option<&'static str> = None;
         match col_map.get(&field.name) {
           Some(col) => {
-            if !utils::dtype_matches_elem(&col.dtype.unwrap(), &field) {
+            if !utils::dtype_matches_field(&col.dtype.unwrap(), &field) {
               maybe_err = Some("wrong dtype");
             }
           },
@@ -42,32 +48,53 @@ impl Server {
       }
     }
 
-    self.staged.add_rows(table_name, rows).await;
+    let table_partition = PartitionKey {
+      table_name: table_name.clone(),
+      partition,
+    };
+    self.staged.add_rows(table_partition, &req.rows).await;
     // here we should really wait for flush
     return Ok(());
   }
 
-  pub async fn flush(&self, table_name: &str) -> Result<(), &'static str> {
-    println!("FLUSH");
-    let maybe_rows = self.staged.pop_rows(table_name).await;
+  pub async fn flush(&self, partition_key: &PartitionKey) -> Result<(), &'static str> {
+    let table_name = &partition_key.table_name;
+    let maybe_schema = self.schema_cache.get_option(table_name)
+      .await;
+    if maybe_schema.is_none() {
+      return Err("table schema does not exist for flush");
+    }
+    let schema = maybe_schema.unwrap();
+
+    utils::create_if_new(&dirs::partition_dir(&self.dir, partition_key)).await?;
+    let segments_meta = self.segments_metadata_cache.get_or_create(partition_key)
+      .await;
+
+    let segment_id = segments_meta.write_segment_id;
+
+    let maybe_rows = self.staged.pop_rows_for_flush(partition_key, &segment_id)
+      .await;
     if maybe_rows.is_none() {
       return Ok(());
     }
+
     let rows = maybe_rows.unwrap();
 
-    let table_name_string = String::from(table_name);
-    let schema_future = self.schema_cache
-      .get_option(&table_name_string);
-    let metadata_future = self.flush_metadata_cache
-      .get_option(&table_name_string);
+    let segment_key = SegmentKey {
+      table_name: table_name.clone(),
+      partition: partition_key.partition.clone(),
+      segment_id: segment_id.clone(),
+    };
+    let flush_meta = self.flush_metadata_cache
+      .get(&segment_key)
+      .await;
 
-    let metadata = metadata_future
-      .await
-      .unwrap_or(FlushMetadata::default());
     let mut compaction_futures = HashMap::new();
-    for write_version in &metadata.write_versions {
+    for write_version in &flush_meta.write_versions {
       let compaction_key = CompactionKey {
-        table_name: table_name.to_string(),
+        table_name: table_name.clone(),
+        partition: partition_key.partition.clone(),
+        segment_id: segment_id.clone(),
         version: *write_version,
       };
       compaction_futures.insert(
@@ -75,19 +102,15 @@ impl Server {
         Box::pin(self.compaction_cache.get(compaction_key)),
       );
     }
-    let schema = schema_future
-      .await
-      .expect("schema missing for flush");
-
 
     let mut field_maps = Vec::new();
     for row in &rows {
       field_maps.push(row.field_map());
     }
 
-    for version in &metadata.write_versions {
+    for version in &flush_meta.write_versions {
       let compaction = compaction_futures.get_mut(version).expect("unreachable").await;
-      // let compaction: Compaction = compaction_futures.get_mut(version).expect("unreachable").await;
+      let compaction_key = segment_key.compaction_key(*version);
       for col in &schema.columns {
         let mut compressor = compression::get_compressor(
           &col.dtype.unwrap(),
@@ -100,13 +123,13 @@ impl Server {
             .map(|e| e.to_owned())
             .collect();
         utils::append_to_file(
-          &dirs::flush_col_file(&self.dir, table_name, version.clone(), &col.name),
-          bytes.as_slice(),
+          &dirs::flush_col_file(&self.dir, &compaction_key, &col.name),
+          &bytes,
         ).await?;  //TODO optimize
       }
     }
 
-    return self.flush_metadata_cache.increment_n(&String::from(table_name), rows.len()).await;
+    return self.flush_metadata_cache.increment_n(&segment_key, rows.len()).await;
   }
 
   pub fn write_to_partition_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -119,8 +142,7 @@ impl Server {
   }
 
   async fn write_to_partition(server: Server, req: WriteToPartitionRequest) -> Result<impl Reply, Rejection> {
-    println!("write to partition request received");
-    match server.write_rows(&req.table_name, &req.rows).await {
+    match server.write_rows(&req).await {
       Ok(_) => Ok(warp::reply::json(&WriteToPartitionResponse::new())),
       Err(e) => {
         println!("error {}", e);

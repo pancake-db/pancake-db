@@ -13,10 +13,7 @@ impl Server {
     let table_dir = dirs::table_dir(&self.dir, name);
     utils::create_if_new(&table_dir).await?;
 
-    let v0_dir = dirs::version_dir(&self.dir, name, 0);
-    utils::create_if_new(&v0_dir).await?;
-
-    return self.schema_cache.assert(name, schema).await;
+    self.schema_cache.assert(name, schema).await
   }
 
   pub fn create_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

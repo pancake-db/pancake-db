@@ -33,20 +33,41 @@ pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
 }
 
 #[derive(Clone)]
-pub struct CacheData<K, V> where V: Metadata<K> + Send, K: Eq + Hash + Sync {
+pub struct CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync {
   pub dir: String,
-  pub data: Arc<RwLock<HashMap<K, V>>>
+  pub data: Arc<RwLock<HashMap<K, Option<V>>>>
 }
 
-impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Eq + Hash + Sync  {
+impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync  {
+  // fn get_option_locked(&self, k: &K, mux_guard: &RwLockWriteGuard<HashMap<K, Option<V>>>) -> Option<V> {
+  //   let maybe_metadata = mux_guard.get(k);
+  //   match maybe_metadata {
+  //     Some(res) => res.clone(),
+  //     None => {
+  //
+  //     }
+  //   }
+  // }
+
   pub async fn get_option(&self, k: &K) -> Option<V> {
     let mux_guard = self.data.read().await;
     let map = &*mux_guard;
 
-    let maybe_metadata = map.get(k);
+    let maybe_metadata = map.get(k).map(|x| x.clone());
+    drop(mux_guard);
+
     return match maybe_metadata {
-      Some(metadata) => Some(metadata.clone()),
-      None => V::load(&self.dir, k).await.map(|x| *x),
+      Some(metadata) => metadata.clone(),
+      None => {
+        let (res_box, mut mux_guard) = futures::future::join(
+          V::load(&self.dir, k),
+          self.data.write()
+        ).await;
+        let map = &mut *mux_guard;
+        let res = res_box.map(|x| *x);
+        map.insert(k.clone(), res.clone());
+        res
+      },
     };
   }
 

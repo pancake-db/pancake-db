@@ -1,15 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use futures::Future;
+use pancake_db_idl::dml::Row;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
+use warp::{Filter, Rejection, Reply};
 
+use crate::storage::compaction::CompactionCache;
 use crate::storage::flush::FlushMetadataCache;
 use crate::storage::schema::SchemaCache;
-use crate::storage::compaction::CompactionCache;
-use pancake_db_idl::dml::Row;
-use warp::{Filter, Rejection, Reply};
+use crate::storage::segments::SegmentsMetadataCache;
+use crate::types::{PartitionKey, SegmentKey};
 
 mod create_table;
 mod write;
@@ -51,29 +53,42 @@ pub struct Staged {
 
 #[derive(Default)]
 pub struct StagedState {
-  rows: HashMap<String, Vec<Row>>,
-  // tables: Vec<String>
+  rows: HashMap<PartitionKey, Vec<Row>>,
+  compaction_candidates: HashSet<SegmentKey>,
 }
 
 impl Staged {
-  pub async fn add_rows(&self, table_name: &str, rows: &[Row]) {
+  pub async fn add_rows(&self, table_partition: PartitionKey, rows: &[Row]) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    state.rows.entry(table_name.to_owned())
+    state.rows.entry(table_partition)
       .or_insert(Vec::new())
       .extend_from_slice(rows);
   }
 
-  pub async fn pop_rows(&self, table_name: &str) -> Option<Vec<Row>> {
+  pub async fn pop_rows_for_flush(
+    &self,
+    table_partition: &PartitionKey,
+    segment_id: &str
+  ) -> Option<Vec<Row>> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    return state.rows.remove(table_name);
+    state.compaction_candidates.insert(table_partition.segment_key(segment_id.to_string()));
+    state.rows.remove(table_partition)
   }
 
-  pub async fn get_tables(&self) -> Vec<String> {
+  pub async fn get_table_partitions(&self) -> Vec<PartitionKey> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    return state.rows.keys().map(|x| x.clone()).collect();
+    state.rows.keys().map(|x| x.clone()).collect()
+  }
+
+  pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
+    let mut mux_guard = self.mutex.lock().await;
+    let state = &mut *mux_guard;
+    let res = state.compaction_candidates.clone();
+    state.compaction_candidates = HashSet::new();
+    res
   }
 }
 
@@ -83,6 +98,7 @@ pub struct Server {
   staged: Staged,
   activity: Activity,
   schema_cache: SchemaCache,
+  segments_metadata_cache: SegmentsMetadataCache,
   flush_metadata_cache: FlushMetadataCache,
   compaction_cache: CompactionCache,
 }
@@ -100,9 +116,9 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let tables = flush_clone.staged.get_tables().await;
-        for table in &tables {
-          match self.flush(table).await {
+        let table_partitions = flush_clone.staged.get_table_partitions().await;
+        for table_partition in &table_partitions {
+          match self.flush(table_partition).await {
             Ok(()) => (),
             Err(_) => println!("oh no why did flush fail"),
           }
@@ -126,9 +142,9 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let tables = compact_clone.schema_cache.get_all_table_names().await;
-        for table in &tables {
-          match self.compact_if_needed(table).await {
+        let compaction_candidates = compact_clone.staged.get_compaction_candidates().await;
+        for segment_key in &compaction_candidates {
+          match self.compact_if_needed(segment_key).await {
             Ok(()) => (),
             Err(_) => println!("oh no why did compact fail"),
           }
@@ -149,12 +165,14 @@ impl Server {
   }
 
   pub fn new(dir: String) -> Server {
-    let flush_metadata_cache = FlushMetadataCache::new(&dir);
     let schema_cache = SchemaCache::new(&dir);
+    let segments_metadata_cache = SegmentsMetadataCache::new(&dir);
+    let flush_metadata_cache = FlushMetadataCache::new(&dir);
     let compaction_cache = CompactionCache::new(&dir);
     let res = Server {
       dir,
       schema_cache,
+      segments_metadata_cache,
       flush_metadata_cache,
       compaction_cache,
       staged: Staged::default(),
@@ -167,5 +185,6 @@ impl Server {
     Self::create_table_filter()
       .or(Self::write_to_partition_filter())
       .or(Self::read_segment_column_filter())
+      .or(Self::list_segments_filter())
   }
 }

@@ -11,9 +11,11 @@ futures = "0.3.12"
 hyper = "0.14.9"
 pancake-db-idl = {path="../pancake-idl/rust", version="0.0.0"}
 protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
+regex = "1.5.4"
 serde_json = "1.0.59"
 serde = {version="1.0.117", features=["derive"]}
 tokio = {version="1.2.0", features=["full"]}
 tower = {version="0.4.6", features=["make"]}
 tower-http = {version="0.1.1", features=["add-extension"]}
+uuid = {version="0.8.2", features=["v4"]}
 warp = "0.3.1"

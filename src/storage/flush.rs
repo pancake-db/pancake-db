@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use super::traits::{Metadata, CacheData};
+use crate::dirs;
+use crate::types::SegmentKey;
+
+use super::traits::{CacheData, Metadata};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FlushMetadata {
@@ -9,24 +12,27 @@ pub struct FlushMetadata {
   pub read_version: u64,
 }
 
-impl Metadata<String> for FlushMetadata {
-  fn relative_path(table_name: &String) -> String {
-    return format!("{}/flush_metadata.json", table_name);
+impl Metadata<SegmentKey> for FlushMetadata {
+  fn relative_path(key: &SegmentKey) -> String {
+    format!(
+      "{}/flush_metadata.json",
+      dirs::relative_segment_dir(key)
+    )
   }
 }
 
 impl FlushMetadata {
-  async fn load_or_default(dir: &str, table_name: &String) -> FlushMetadata {
-    return FlushMetadata::load(dir, table_name)
+  async fn load_or_default(dir: &str, key: &SegmentKey) -> FlushMetadata {
+    FlushMetadata::load(dir, key)
       .await
       .map(|x| *x)
-      .unwrap_or(FlushMetadata::default());
+      .unwrap_or(FlushMetadata::default())
   }
 }
 
 impl Default for FlushMetadata {
   fn default() -> FlushMetadata {
-    return FlushMetadata {
+    FlushMetadata {
       n: 0,
       read_version: 0,
       write_versions: vec![0],
@@ -34,36 +40,36 @@ impl Default for FlushMetadata {
   }
 }
 
-pub type FlushMetadataCache = CacheData<String, FlushMetadata>;
+pub type FlushMetadataCache = CacheData<SegmentKey, FlushMetadata>;
 
 impl FlushMetadataCache {
-  pub async fn get(&self, table_name: &String) -> FlushMetadata {
-    return self.get_option(table_name)
+  pub async fn get(&self, key: &SegmentKey) -> FlushMetadata {
+    self.get_option(key)
       .await
-      .unwrap_or(FlushMetadata::default());
+      .unwrap_or(FlushMetadata::default())
   }
 
-  pub async fn increment_n(&self, table_name: &String, incr: usize) -> Result<(), &'static str> {
+  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> Result<(), &'static str> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
-    if !map.contains_key(table_name) {
-      map.insert(String::from(table_name), FlushMetadata::load_or_default(&self.dir, table_name).await);
+    if !map.contains_key(key) || map.get(key).unwrap().is_none() {
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
     }
-    let metadata = map.get_mut(table_name).unwrap();
+    let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     metadata.n = metadata.n + incr;
-    return metadata.overwrite(&self.dir, table_name).await
+    metadata.overwrite(&self.dir, key).await
   }
 
-  pub async fn set_read_version(&self, table_name: &String, read_version: u64) -> Result<(), &'static str> {
+  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> Result<(), &'static str> {
     let mut new_versions = Vec::new();
 
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
-    if !map.contains_key(table_name) {
-      map.insert(String::from(table_name), FlushMetadata::load_or_default(&self.dir, table_name).await);
+    if !map.contains_key(key) {
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
     }
-    let metadata = map.get_mut(table_name).unwrap();
+    let mut metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     for version in &metadata.write_versions {
       if *version >= read_version {
@@ -73,18 +79,18 @@ impl FlushMetadataCache {
 
     metadata.read_version = read_version;
     metadata.write_versions = new_versions;
-    return metadata.overwrite(&self.dir, table_name).await
+    metadata.overwrite(&self.dir, key).await
   }
 
-  pub async fn add_write_version(&self, table_name: &String, write_version: u64) -> Result<(), &'static str>{
+  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> Result<(), &'static str>{
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
-    if !map.contains_key(table_name) {
-      map.insert(String::from(table_name), FlushMetadata::load_or_default(&self.dir, table_name).await);
+    if !map.contains_key(key) {
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
     }
-    let metadata = map.get_mut(table_name).unwrap();
+    let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     metadata.write_versions.push(write_version);
-    return metadata.overwrite(&self.dir, table_name).await
+    metadata.overwrite(&self.dir, key).await
   }
 }

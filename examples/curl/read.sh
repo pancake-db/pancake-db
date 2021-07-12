@@ -1,1 +1,1 @@
-curl -XGET -H "Content-Type: application/json" http://localhost:1337/rest/read_segment_column -d '{"table_name": "asdf", "partition": [], "column_name": "i", "segment_id": "", "continuation_token": ""}'
+curl -XGET -H "Content-Type: application/json" http://localhost:1337/rest/read_segment_column -d '{"table_name": "asdf", "partition": [], "column_name": "i", "segment_id": "4530e203-886f-45a4-a67a-73022a77b27e", "continuation_token": ""}'

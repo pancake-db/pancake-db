@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use pancake_db_idl::dml::Field;
+use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter};
+use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
+use pancake_db_idl::partition_dtype::PartitionDataType;
+use pancake_db_idl::schema::Schema;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -62,16 +66,18 @@ pub async fn append_to_file(path: &str, contents: &[u8]) -> Result<(), &'static 
   return Ok(());
 }
 
-pub fn dtype_matches_elem(dtype: &DataType, field: &Field) -> bool {
-  let f = Field::int64("".to_string(), 33);
-  let v = f.value.get_ref();
-  println!("{:?} -> {}", v, serde_json::to_string(v).expect("fail"));
-  let value = field.value.get_ref();
-  println!("checking {:?} vs {:?}", dtype, value);
+pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
   match dtype {
-    DataType::STRING if value.has_string_val() => true,
-    DataType::INT64 if value.has_int64_val() => true,
-    _ => false
+    PartitionDataType::STRING => field.has_string_val(),
+    PartitionDataType::INT64 => field.has_int64_val(),
+  }
+}
+
+pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
+  let value = field.value.get_ref();
+  match dtype {
+    DataType::STRING => value.has_string_val(),
+    DataType::INT64 => value.has_int64_val(),
   }
 }
 
@@ -101,4 +107,46 @@ pub fn field_value_to_string(value: &Option<Value>) -> String {
       )
     },
   }
+}
+
+pub fn partition_field_from_string(
+  name: &str,
+  value_str: &str,
+  dtype: PartitionDataType
+) -> Result<PartitionField, &'static str> {
+  let value = match dtype {
+    PartitionDataType::INT64 => {
+      let parsed: Result<i64, _> = value_str.parse();
+      match parsed {
+        Ok(x) => Some(partition_field::Value::int64_val(x)),
+        Err(_) => None
+      }
+    },
+    PartitionDataType::STRING => Some(partition_field::Value::string_val(value_str.to_string()))
+  };
+  if value.is_none() {
+    return Err("failed to parse partition field value");
+  }
+  Ok(PartitionField {
+    name: name.to_string(),
+    value,
+    ..Default::default()
+  })
+}
+
+pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilter]) -> bool {
+  for field in partition {
+    for filter in filters {
+      let satisfies = match &filter.value {
+        Some(partition_filter::Value::equal_to(other)) => {
+          field.name != other.name || field.value == other.value
+        },
+        None => true,
+      };
+      if !satisfies {
+        return false;
+      }
+    }
+  }
+  true
 }

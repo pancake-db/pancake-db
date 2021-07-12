@@ -11,23 +11,18 @@ impl Metadata<String> for Schema {
 pub type SchemaCache = CacheData<String, Schema>;
 
 impl SchemaCache {
-  pub async fn get_all_table_names(&self) -> Vec<String> {
-    let mux_guard = self.data.read().await;
-    let map = &*mux_guard;
-    return map.keys().map(|s| s.to_owned()).collect();
-  }
-
   pub async fn assert(&self, table_name: &str, schema: &Schema) -> Result<(), &'static str> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
-    let table_name_string = String::from(table_name);
+    let table_name_string = table_name.to_string();
     if !map.contains_key(&table_name_string) {
-      Schema::load(&self.dir, &table_name_string).await.map(|existing_schema| {
-        map.insert(String::from(table_name), *existing_schema);
-      });
+      map.insert(
+        table_name.to_string(),
+        Schema::load(&self.dir, &table_name_string).await.map(|s| *s)
+      );
     }
 
-    return match map.get(table_name) {
+    return match map.get(table_name).unwrap() {
       Some(existing_schema) => {
         if existing_schema == schema {
           Ok(())
@@ -36,8 +31,8 @@ impl SchemaCache {
         }
       },
       None => {
-        map.insert(String::from(table_name), schema.clone());
-        schema.overwrite(&self.dir, &String::from(table_name)).await
+        map.insert(table_name.to_string(), Some(schema.clone()));
+        schema.overwrite(&self.dir, &table_name_string).await
       }
     };
   }
