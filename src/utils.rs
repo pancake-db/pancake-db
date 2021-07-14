@@ -34,25 +34,6 @@ pub async fn overwrite_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(
   return Ok(());
 }
 
-// pub async fn assert_file(path: &String, expected: &String) -> Result<(), &'static str> {
-//   match fs::read_to_string(path).await {
-//     Ok(contents) => {
-//       if contents.trim() == *expected {
-//         return Ok(());
-//       }
-//       return Err("file contents not as expected");
-//     },
-//     Err(e) => match e.kind() {
-//       ErrorKind::NotFound => {
-//         let mut file = fs::File::create(path).await.expect("unable to create file");
-//         file.write_all(expected.as_bytes()).await.expect("unable to write");
-//         return Ok(());
-//       },
-//       _ => Err("unknown file read error"),
-//     }
-//   }
-// }
-
 pub async fn append_to_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(), &'static str> {
   let mut file = fs::OpenOptions::new()
     .append(true)

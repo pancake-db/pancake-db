@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, FieldValue};
 use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
 
-use crate::{compression, utils};
+use crate::{encoding, utils};
 use crate::dirs;
 use crate::types::{CompactionKey, SegmentKey, NormalizedPartition};
 use crate::types::PartitionKey;
@@ -109,23 +109,17 @@ impl Server {
     }
 
     for version in &flush_meta.write_versions {
-      let compaction = compaction_futures.get_mut(version).expect("unreachable").await;
       let compaction_key = segment_key.compaction_key(*version);
       for col in &schema.columns {
-        let mut compressor = compression::get_compressor(
-          &col.dtype.unwrap(),
-          compaction.col_compressor_names.get(&col.name),
-        );
-
-        let bytes: Vec<u8> = field_maps
-            .iter()
-            .flat_map(|m| compressor.encode(&m[&col.name].value.0.clone().unwrap().value.unwrap()))
-            .map(|e| e.to_owned())
-            .collect();
+        let field_values = field_maps
+          .iter()
+          .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or(FieldValue::new()))
+          .collect::<Vec<FieldValue>>();
+        let bytes = encoding::encode(&field_values, col.nested_list_depth as u8)?;
         utils::append_to_file(
           &dirs::flush_col_file(&self.dir, &compaction_key, &col.name),
           &bytes,
-        ).await?;  //TODO optimize
+        ).await?;
       }
     }
 
@@ -145,7 +139,6 @@ impl Server {
     match server.write_rows(&req).await {
       Ok(_) => Ok(warp::reply::json(&WriteToPartitionResponse::new())),
       Err(e) => {
-        println!("error {}", e);
         Err(warp::reject())
       },
     }

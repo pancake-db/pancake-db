@@ -1,1 +1,1 @@
-curl -XPOST -H "Content-Type: application/json" http://localhost:1337/rest/create_table -d '{"table_name": "asdf", "schema": {"columns": [{"name": "i", "dtype": "INT64"}, {"name": "s", "dtype": "STRING"}], "partitioning": []}}'
+curl -XPOST -H "Content-Type: application/json" http://localhost:1337/rest/create_table -d '{"table_name": "asdf", "schema": {"columns": [{"name": "i", "dtype": "INT64", "nested_list_depth": 0}, {"name": "s", "dtype": "STRING", "nested_list_depth": 0}], "partitioning": []}}'
