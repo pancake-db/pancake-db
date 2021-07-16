@@ -138,7 +138,7 @@ impl Server {
   async fn write_to_partition(server: Server, req: WriteToPartitionRequest) -> Result<impl Reply, Rejection> {
     match server.write_rows(&req).await {
       Ok(_) => Ok(warp::reply::json(&WriteToPartitionResponse::new())),
-      Err(e) => {
+      Err(_) => {
         Err(warp::reject())
       },
     }

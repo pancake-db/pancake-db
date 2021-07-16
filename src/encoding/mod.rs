@@ -41,7 +41,7 @@ pub fn encode(values: &[FieldValue], depth: u8) -> Result<Vec<u8>, &'static str>
 
 fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> Result<Vec<u8>, &'static str> {
   if traverse_depth == 0 {
-    Ok(escape_bytes(&raw_value_bytes(v)?, escape_depth))
+    Ok(escape_bytes(&atomic_value_bytes(v)?, escape_depth))
   } else {
     match v {
       Value::list_val(l) => {
@@ -68,7 +68,7 @@ fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> Result<Vec<u8
   }
 }
 
-fn raw_value_bytes(v: &Value) -> Result<Vec<u8>, &'static str> {
+pub fn atomic_value_bytes(v: &Value) -> Result<Vec<u8>, &'static str> {
   match v {
     Value::string_val(x) => {
       let tail = x.clone().into_bytes();
@@ -149,10 +149,13 @@ pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>, &'stat
   let mut res = Vec::new();
   let mut reader = ByteReader { bytes, i: 0, nested_list_depth: meta.nested_list_depth as u8 };
   while !reader.complete() {
+    println!("reader not complete");
     let b0 = reader.read_one()?;
     if b0 == NULL_BYTE {
+      println!("null byte");
       res.push(FieldValue::new());
     } else if b0 == COUNT_BYTE {
+      println!("count byte");
       let count_bytes = match reader.read_n(4)?.try_into() {
         Ok(b) => Ok(b),
         Err(_) => Err("invalid count bytes")
@@ -166,15 +169,18 @@ pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>, &'stat
         return Err("In-file count did not match number of decoded entries")
       }
     } else {
+      println!("value");
       reader.back_one();
-      res.push(decode_value(&mut reader, meta, 0)?);
+      let v = decode_value(&mut reader, meta, 0)?;
+      println!("decoded {:?}", v);
+      res.push(v);
     }
   }
   Ok(res)
 }
 
 fn decode_value(reader: &mut ByteReader, meta: &ColumnMeta, current_depth: u8) -> Result<FieldValue, &'static str> {
-  if current_depth < meta.nested_list_depth as u8 {
+  if current_depth == meta.nested_list_depth as u8 {
     match meta.dtype.unwrap() {
       DataType::STRING => {
         let len_bytes = match reader.unescaped_read_n(2)?.try_into() {

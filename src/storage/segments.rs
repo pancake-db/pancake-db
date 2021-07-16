@@ -5,6 +5,7 @@ use crate::dirs;
 use crate::types::PartitionKey;
 use crate::utils;
 use uuid::Uuid;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentsMetadata {
@@ -13,11 +14,9 @@ pub struct SegmentsMetadata {
 }
 
 impl Metadata<PartitionKey> for SegmentsMetadata {
-  fn relative_path(key: &PartitionKey) -> String {
-    format!(
-      "{}/segmenting_metadata.json",
-      dirs::relative_partition_dir(key),
-    )
+  fn relative_path(key: &PartitionKey) -> PathBuf {
+    dirs::relative_partition_dir(key)
+      .join("segmenting_metadata.json")
   }
 }
 

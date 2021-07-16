@@ -1,9 +1,9 @@
+use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::path::Path;
 
 use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter};
 use pancake_db_idl::dml::{Field, PartitionField};
-use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use tokio::fs;
@@ -28,21 +28,29 @@ pub async fn create_if_new(dir: impl AsRef<Path>) -> Result<(), &'static str> {
   }
 }
 
-pub async fn overwrite_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(), &'static str> {
+pub async fn overwrite_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<(), &'static str> {
+  println!("writing to {:?}", path);
   let mut file = fs::File::create(path).await.expect("unable to create file for overwrite");
-  file.write_all(contents).await.unwrap();
-  return Ok(());
+  match file.write_all(contents).await {
+    Err(_) => Err("write failure"),
+    _ => Ok(())
+  }
 }
 
-pub async fn append_to_file(path: impl AsRef<Path>, contents: &[u8]) -> Result<(), &'static str> {
-  let mut file = fs::OpenOptions::new()
+pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<(), &'static str> {
+  println!("trying to append to {:?}", path);
+  let mut file = match fs::OpenOptions::new()
     .append(true)
     .create(true)
     .open(path)
-    .await
-    .unwrap();
-  file.write_all(contents).await.unwrap();
-  return Ok(());
+    .await {
+      Ok(f) => Ok(f),
+      Err(_) => Err("fail to create")
+    }?;
+  match file.write_all(contents).await {
+    Err(_) => Err("fail to append"),
+    _ => Ok(()),
+  }
 }
 
 pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
@@ -57,34 +65,6 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   match dtype {
     DataType::STRING => value.has_string_val(),
     DataType::INT64 => value.has_int64_val(),
-  }
-}
-
-pub fn field_to_string(field: &Field) -> String {
-  format!("{} {}", field.name, field_value_to_string(&field.value.0.as_ref().unwrap().value))
-}
-
-pub fn field_value_to_string(value: &Option<Value>) -> String {
-  match value {
-    None => {
-      "None".to_string()
-    },
-    Some(Value::string_val(x)) => {
-      format!("Str ({})", x)
-    },
-    Some(Value::int64_val(x)) => {
-      format!("Int64 ({})", x)
-    },
-    Some(Value::list_val(x)) => {
-      format!(
-        "List ({})",
-        x.vals
-          .iter()
-          .map(|v| field_value_to_string(&v.value))
-          .collect::<Vec<String>>()
-          .join(", ")
-      )
-    },
   }
 }
 

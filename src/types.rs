@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use pancake_db_idl::schema::Schema;
 use std::collections::HashMap;
 use crate::utils;
+use std::path::PathBuf;
 
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PartitionValue {
@@ -19,12 +20,12 @@ pub struct NormalizedPartitionField {
 }
 
 impl NormalizedPartitionField {
-  pub fn to_string(&self) -> String {
+  pub fn to_path_buf(&self) -> PathBuf {
     let value_str = match &self.value {
       PartitionValue::STRING(x) => x.clone(),
       PartitionValue::INT64(x) => x.to_string(),
     };
-    format!("{}={}", self.name, value_str)
+    PathBuf::from(format!("{}={}", self.name, value_str))
   }
 }
 
@@ -47,6 +48,10 @@ pub struct NormalizedPartition {
 }
 
 impl NormalizedPartition {
+  pub fn to_path_buf(&self) -> PathBuf {
+    self.fields.iter().map(|f| f.to_path_buf()).collect()
+  }
+
   pub fn partial(raw_fields: &[PartitionField]) -> Result<NormalizedPartition, &'static str> {
     let mut fields = Vec::new();
     for raw_field in raw_fields {

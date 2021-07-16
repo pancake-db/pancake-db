@@ -121,7 +121,7 @@ impl Server {
         for table_partition in &table_partitions {
           match self.flush(table_partition).await {
             Ok(()) => (),
-            Err(_) => println!("oh no why did flush fail"),
+            Err(e) => println!("oh no why did flush fail {}", e),
           }
         }
 
@@ -147,7 +147,7 @@ impl Server {
         for segment_key in &compaction_candidates {
           match self.compact_if_needed(segment_key).await {
             Ok(()) => (),
-            Err(_) => println!("oh no why did compact fail"),
+            Err(e) => println!("oh no why did compact fail {}", e),
           }
         }
 

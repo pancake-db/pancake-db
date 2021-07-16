@@ -14,11 +14,9 @@ pub struct FlushMetadata {
 }
 
 impl Metadata<SegmentKey> for FlushMetadata {
-  fn relative_path(key: &SegmentKey) -> String {
-    format!(
-      "{}/flush_metadata.json",
-      dirs::relative_segment_dir(key)
-    )
+  fn relative_path(key: &SegmentKey) -> PathBuf {
+    dirs::relative_segment_dir(key)
+      .join("flush_metadata.json")
   }
 }
 

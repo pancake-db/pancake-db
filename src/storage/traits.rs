@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 #[async_trait]
 pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
-  fn relative_path(k: &K) -> String;
+  fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &PathBuf, k: &K) -> PathBuf {
     dir.join(Self::relative_path(k))

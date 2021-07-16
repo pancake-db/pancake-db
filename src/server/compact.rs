@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use pancake_db_idl::schema::{ColumnMeta, Schema};
-use tokio::fs;
 
 use crate::compression;
+use crate::compression::Compressor;
 use crate::dirs;
 use crate::storage::compaction::{Compaction, CompressionParams};
 use crate::storage::flush::FlushMetadata;
@@ -16,6 +16,7 @@ const MIN_COMPACT_SIZE: usize = 10;
 
 impl Server {
   pub async fn compact_if_needed(&self, segment_key: &SegmentKey) -> Result<(), &'static str> {
+    println!("compact if needed");
     let table_name_string = segment_key.table_name.to_string();
     let metadata = self.flush_metadata_cache.get(&segment_key).await;
     let schema = self.schema_cache
@@ -38,25 +39,19 @@ impl Server {
     return self.compact(segment_key, schema, metadata).await;
   }
 
-  async fn plan_compaction(&self, segment_key: &SegmentKey, schema: &Schema, metadata: &FlushMetadata) -> Result<Compaction, &'static str> {
+  async fn plan_compaction(&self, schema: &Schema, metadata: &FlushMetadata) -> Result<Compaction, &'static str> {
     let mut col_compression_params = HashMap::new();
-    let compaction_key = segment_key.compaction_key(metadata.read_version);
-    let old_compaction: Compaction = self.compaction_cache
-      .get(compaction_key.clone())
-      .await;
 
     for col in &schema.columns {
-      let compression_params = old_compaction.col_compressor_names.get(&col.name);
-      let data = self.read_col(&segment_key, col, metadata, compression_params, metadata.n).await;
       col_compression_params.insert(
         col.name.clone(),
-        compression::compute_compression_params(data, &col.dtype.unwrap())
+        compression::choose_compression_params(col.dtype.unwrap())
       );
     }
 
     return Ok(Compaction {
       compacted_n: metadata.n,
-      col_compressor_names: col_compression_params,
+      col_compression_params,
     });
   }
 
@@ -65,29 +60,22 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    compression_params: Option<&CompressionParams>,
+    old_compression_params: Option<&CompressionParams>,
+    compressor: &Box<dyn Compressor>,
     new_version: u64,
-  ) {
-    let mut compressor = compression::get_compressor(
-      &col.dtype.unwrap(),
-      compression_params,
-    );
-    let elems = self.read_col(
+  ) -> Result<(), &'static str> {
+    let values = self.read_col(
       segment_key,
       col,
       metadata,
-      compression_params,
+      old_compression_params,
       metadata.n,
-    ).await;
-    let bytes: Vec<u8> = elems
-      .iter()
-      .flat_map(|m| compressor.encode(m))
-      .map(|e| e.to_owned())
-      .collect();
+    ).await?;
+    let bytes = compressor.compress(&values, col)?;
     utils::append_to_file(
       &dirs::compact_col_file(&self.dir, &segment_key.compaction_key(new_version), &col.name),
       bytes.as_slice(),
-    ).await.expect("could not write to compaction data");  //TODO optimize, error if file exists
+    ).await
   }
 
   async fn execute_compaction(
@@ -95,39 +83,50 @@ impl Server {
     segment_key: &SegmentKey,
     schema: &Schema,
     metadata: &FlushMetadata,
+    old_compaction: &Compaction,
     compaction: &Compaction,
     new_version: u64,
-  ) {
+  ) -> Result<(), &'static str> {
     for col in &schema.columns {
-      let compression_params = compaction.col_compressor_names
+      let old_compression_params = old_compaction.col_compression_params
         .get(&col.name);
+      let compressor = compression::get_compressor(
+        col.dtype.unwrap(),
+        compaction.col_compression_params.get(&col.name)
+      )?;
       self.execute_col_compaction(
         segment_key,
         col,
         metadata,
-        compression_params,
+        old_compression_params,
+        &compressor,
         new_version,
-      ).await;
+      ).await?;
     }
+    Ok(())
   }
 
   async fn compact(&self, segment_key: &SegmentKey, schema: Schema, metadata: FlushMetadata) -> Result<(), &'static str> {
+    println!("start compact");
     let new_version = metadata.read_version + 1;
 
-    let compaction: Compaction = self.plan_compaction(segment_key, &schema, &metadata)
+    let compaction: Compaction = self.plan_compaction(&schema, &metadata)
       .await
       .expect("could not plan");
 
+    let old_compaction_key = segment_key.compaction_key(metadata.read_version);
+    let old_compaction = self.compaction_cache.get(old_compaction_key).await;
+
     let compaction_key = segment_key.compaction_key(new_version);
-    match fs::create_dir(dirs::version_dir(&self.dir, &compaction_key)).await {
-      Ok(_) => Ok(()),
-      Err(_) => Err("create dir error")
-    }?;
+    println!("trying to create {:?}", dirs::version_dir(&self.dir, &compaction_key));
+    utils::create_if_new(dirs::version_dir(&self.dir, &compaction_key)).await?;
 
     self.compaction_cache.save(compaction_key, compaction.clone()).await?;
+    println!("here");
     self.flush_metadata_cache.add_write_version(&segment_key, new_version).await?;
+    println!("there");
 
-    self.execute_compaction(segment_key, &schema, &metadata, &compaction, new_version).await;
+    self.execute_compaction(segment_key, &schema, &metadata, &old_compaction, &compaction, new_version).await?;
 
     self.flush_metadata_cache.update_read_version(&segment_key, new_version).await?;
     Ok(())

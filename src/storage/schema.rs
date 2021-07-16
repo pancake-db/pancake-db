@@ -1,10 +1,13 @@
 use pancake_db_idl::schema::Schema;
 
+use crate::dirs;
 use super::traits::{CacheData, Metadata};
+use std::path::PathBuf;
 
 impl Metadata<String> for Schema {
-  fn relative_path(table_name: &String) -> String {
-    return format!("{}/schema.json", table_name);
+  fn relative_path(table_name: &String) -> PathBuf {
+    dirs::table_subdir(table_name)
+      .join("schema.json")
   }
 }
 

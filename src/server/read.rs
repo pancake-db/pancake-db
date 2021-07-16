@@ -1,5 +1,4 @@
-use pancake_db_idl::dml::{Field, FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
-use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use protobuf::MessageField;
 use tokio::fs;
@@ -7,30 +6,68 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::compression;
 use crate::dirs;
+use crate::encoding;
 use crate::storage::compaction::CompressionParams;
 use crate::storage::flush::FlushMetadata;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
-
-fn field_from_elem(name: &str, elem: &Value) -> Field {
-  let mut field_value = FieldValue {
-    ..Default::default()
-  };
-  match elem {
-    Value::string_val(x) => field_value.set_string_val(x.to_string()),
-    Value::int64_val(x) => field_value.set_int64_val(*x),
-    Value::list_val(x) => field_value.set_list_val(x.clone()),
-  }
-  Field {
-    name: name.to_string(),
-    value: MessageField::some(field_value),
-    ..Default::default()
-  }
-}
+use tokio::io::ErrorKind;
 
 impl Server {
+  pub async fn read_compact_col(
+    &self,
+    segment_key: &SegmentKey,
+    col: &ColumnMeta,
+    metadata: &FlushMetadata,
+    compression_params: Option<&CompressionParams>,
+    limit: usize,
+  ) -> Result<Vec<FieldValue>, &'static str> {
+    let compaction_key = segment_key.compaction_key(metadata.read_version);
+    let path = dirs::compact_col_file(&self.dir, &compaction_key, &col.name);
+    match fs::read(path).await {
+      Ok(bytes) => {
+        let decompressor = compression::get_decompressor(col.dtype.unwrap(), compression_params)?;
+        let decoded = decompressor.decompress(&bytes, col)?;
+        let limited= if limit < decoded.len() {
+          Vec::from(&decoded[0..limit])
+        } else {
+          decoded
+        };
+        Ok(limited)
+      },
+      Err(e) => match e.kind() {
+        ErrorKind::NotFound => Ok(Vec::new()),
+        _ => Err("could not read compaction file bytes"),
+      },
+    }
+  }
+
+  pub async fn read_flush_col(
+    &self,
+    segment_key: &SegmentKey,
+    col: &ColumnMeta,
+    metadata: &FlushMetadata,
+    limit: usize,
+  ) -> Result<Vec<FieldValue>, &'static str> {
+    let compaction_key = segment_key.compaction_key(metadata.read_version);
+    let path = dirs::flush_col_file(&self.dir, &compaction_key, &col.name);
+    match fs::read(path).await {
+      Ok(bytes) => {
+        let decoded = encoding::decode(&bytes, col)?;
+        let limited;
+        if limit < decoded.len() {
+          limited = Vec::from(&decoded[0..limit]);
+        } else {
+          limited = decoded;
+        }
+        Ok(limited)
+      },
+      Err(_) => Err("could not decode compaction file"),
+    }
+  }
+
   pub async fn read_col(
     &self,
     segment_key: &SegmentKey,
@@ -38,31 +75,46 @@ impl Server {
     metadata: &FlushMetadata,
     compression_params: Option<&CompressionParams>,
     limit: usize,
-  ) -> Vec<Value> {
-    // TODO stream, include index
-    let mut decompressor = compression::get_decompressor(&col.dtype.unwrap(), compression_params);
-    let mut result = Vec::new();
-    for col_file in &dirs::col_files(
-      &self.dir,
-      &segment_key.compaction_key(metadata.read_version),
-      &col.name,
-    ) {
-      match fs::read(col_file).await {
-        Ok(bytes) => {
-          let end = limit - result.len();
-          let decoded = decompressor.decode(&bytes);
-          let limited;
-          if end < decoded.len() {
-            limited = Vec::from(&decoded[0..end]);
-          } else {
-            limited = decoded;
-          }
-          result.extend(limited);
-        },
-        Err(_) => (),
-      }
+  ) -> Result<Vec<FieldValue>, &'static str> {
+    let mut values = self.read_compact_col(
+      segment_key,
+      col,
+      metadata,
+      compression_params,
+      limit
+    ).await?;
+    if values.len() < limit {
+      values.extend(self.read_flush_col(
+        segment_key,
+        col,
+        metadata,
+        limit - values.len()
+      ).await?);
     }
-    return result;
+    Ok(values)
+    // let mut decompressor = compression::get_decompressor(&col.dtype.unwrap(), compression_params);
+    // let mut result = Vec::new();
+    // for col_file in &dirs::col_files(
+    //   &self.dir,
+    //   &segment_key.compaction_key(metadata.read_version),
+    //   &col.name,
+    // ) {
+    //   match fs::read(col_file).await {
+    //     Ok(bytes) => {
+    //       let end = limit - result.len();
+    //       let decoded = decompressor.decode(&bytes);
+    //       let limited;
+    //       if end < decoded.len() {
+    //         limited = Vec::from(&decoded[0..end]);
+    //       } else {
+    //         limited = decoded;
+    //       }
+    //       result.extend(limited);
+    //     },
+    //     Err(_) => (),
+    //   }
+    // }
+    // return result;
   }
 
   async fn list_subpartitions(
@@ -222,7 +274,7 @@ impl Server {
       &col_name,
     );
 
-    let compressor_name = compaction.col_compressor_names
+    let compressor_name = compaction.col_compression_params
       .get(&col_name)
       .map(|c| c.clone() as String)
       .unwrap_or("".to_string());

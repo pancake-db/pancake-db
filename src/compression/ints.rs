@@ -1,88 +1,67 @@
-use std::convert::TryInto;
-
 use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::schema::ColumnMeta;
+use q_compress::{BitReader, I64Decompressor};
 
 use crate::storage::compaction::CompressionParams;
 
 use super::{Compressor, Decompressor};
+use super::Q_COMPRESS;
 
-pub struct Int64Compressor {
-  quantiles: Vec<i64>,
-  percentile_left_buffer: f64,
-  percentile_right_buffer: f64,
-  trailing_bits: Vec<bool>,
+const Q_MAX_DEPTH: u32 = 7;
+
+pub struct I64QCompressor {}
+
+fn get_num_values(values: &[Value]) -> Result<Vec<i64>, &'static str> {
+  let mut num_values = Vec::with_capacity(values.len());
+  for v in values {
+    num_values.push(match v {
+      Value::int64_val(x) => Ok(*x),
+      _ => Err("unexpected dtype")
+    }?);
+  }
+  Ok(num_values)
 }
 
-impl Compressor for Int64Compressor {
-  fn from_parameters(parameters: Option<&CompressionParams>) -> Int64Compressor {
-    return Int64Compressor{
-      quantiles: vec![i64::MIN, i64::MAX],
-      percentile_left_buffer: 0.0,
-      percentile_right_buffer: 0.0,
-      trailing_bits: Vec::new(),
-    };
+impl Compressor for I64QCompressor {
+  fn get_parameters(&self) -> CompressionParams {
+    Q_COMPRESS.to_string()
   }
 
-  fn encode(&mut self, value: &Value) -> Vec<u8> {
-    return match value {
-      Value::int64_val(x) => x.to_le_bytes().to_vec(),
-      _ => panic!("unexpected data type"),
-    };
-    // let bits = Vec::new();
-    // let n_buckets = self.quantiles.len();
-    // let mut fmin = -self.percentile_left_buffer;
-    // let mut fmax = self.quantiles.len() as f64 + self.percentile_right_buffer;
-    // // terminate either when exact integer is identified (returning)
-    // // or when quantile bucket is identified
-    // let bucket;
-    // loop {
-    //   let lower_bucket = fmin.floor() as usize;
-    //   let upper_bucket = fmax.ceil() as usize;
-    //   if lower_bucket == upper_bucket - 1 {
-    //     bucket = lower_bucket;
-    //     break;
-    //   }
-    //   if lower_bucket >= 0 && upper_bucket <= n_buckets - 1 && self.quantiles[lower_bucket] == self.quantiles[upper_bucket] {
-    //     return bits;
-    //   }
-    //   let mid_bucket = ((fmin + fmax) / 2.0);
-    //   let mid_x;
-    //   if mid_bucket < 0 {
-    //     mid_x = i64::MIN + ;
-    //   }
-    //   if mid_x < x {
-    //
-    //   }
-    //   bits.push()
-    // }
-    // return x.to_le_bytes().to_vec();
-  }
-
-  fn terminate(&mut self) -> Option<u8> {
-    return None;
+  fn compress_atoms(&self, values: &[Value]) -> Result<Vec<u8>, &'static str> {
+    let num_values = get_num_values(values)?;
+    let maybe_compressor = q_compress::I64Compressor::train(
+      num_values,
+      Q_MAX_DEPTH
+    );
+    let compressor = match maybe_compressor {
+      Ok(res) => Ok(res),
+      Err(_) => Err("compressor training big sad")
+    }?;
+    let num_values = get_num_values(values)?;
+    match compressor.compress(&num_values) {
+      Ok(bytes) => Ok(bytes),
+      Err(_) => Err("compressor big sad")
+    }
   }
 }
 
-pub struct Int64Decompressor{}
+pub struct I64QDecompressor {}
 
-impl Decompressor for Int64Decompressor {
-  fn from_parameters(parameters: Option<&CompressionParams>) -> Int64Decompressor {
-    return Int64Decompressor{};
+impl Decompressor for I64QDecompressor {
+  fn from_parameters(_: Option<&CompressionParams>) -> I64QDecompressor {
+    return I64QDecompressor {};
   }
 
-  fn decode(&mut self, bytes: &Vec<u8>) -> Vec<Value> {
-    if bytes.len() % 8 != 0 {
-      println!("WARNING EXTRA INT BYTES")
-    }
-    let n = bytes.len() / 8;
-    let mut result = Vec::new();
-    for i in 0..n {
-      let start = i * 8;
-      let end = start + 8;
-      let slice = &bytes[start..end];
-      let val = i64::from_le_bytes(slice.try_into().unwrap());
-      result.push(Value::int64_val(val));
-    }
-    return result;
+  fn decompress_atoms(&self, bytes: &[u8], _meta: &ColumnMeta) -> Result<Vec<Value>, &'static str> {
+    let mut bit_reader = BitReader::from(bytes.to_vec());
+    let decompressor = match I64Decompressor::from_reader(&mut bit_reader) {
+      Ok(d) => Ok(d),
+      Err(_) => Err("data does not seem to be in qco format")
+    }?;
+    let res = decompressor.decompress(&mut bit_reader)
+      .iter()
+      .map(|n| Value::int64_val(*n))
+      .collect();
+    Ok(res)
   }
 }
