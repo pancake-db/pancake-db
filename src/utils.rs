@@ -10,7 +10,6 @@ use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use std::array::TryFromSliceError;
 
 pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   match fs::read(fname).await {
@@ -106,6 +105,6 @@ pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilte
 pub fn try_byte_array<const N: usize>(v: &[u8]) -> Result<[u8; N]> {
   match v.try_into() {
     Ok(res) => Ok(res),
-    Err(e) => Err(anyhow!("byte array has wrong size")),
+    Err(_) => Err(anyhow!("byte array has wrong size")),
   }
 }

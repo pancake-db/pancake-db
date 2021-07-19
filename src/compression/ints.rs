@@ -39,7 +39,7 @@ pub struct I64QDecompressor {}
 
 impl Decompressor for I64QDecompressor {
   fn from_parameters(_: Option<&CompressionParams>) -> I64QDecompressor {
-    return I64QDecompressor {};
+    I64QDecompressor {}
   }
 
   fn decompress_atoms(&self, bytes: &[u8], _meta: &ColumnMeta) -> Result<Vec<Value>> {

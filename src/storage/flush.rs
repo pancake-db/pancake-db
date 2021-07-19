@@ -5,7 +5,7 @@ use crate::dirs;
 use crate::types::SegmentKey;
 
 use super::traits::{CacheData, Metadata};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FlushMetadata {
@@ -22,11 +22,11 @@ impl Metadata<SegmentKey> for FlushMetadata {
 }
 
 impl FlushMetadata {
-  async fn load_or_default(dir: &PathBuf, key: &SegmentKey) -> FlushMetadata {
+  async fn load_or_default(dir: &Path, key: &SegmentKey) -> FlushMetadata {
     FlushMetadata::load(dir, key)
       .await
       .map(|x| *x)
-      .unwrap_or(FlushMetadata::default())
+      .unwrap_or_default()
   }
 }
 
@@ -46,7 +46,7 @@ impl FlushMetadataCache {
   pub async fn get(&self, key: &SegmentKey) -> FlushMetadata {
     self.get_option(key)
       .await
-      .unwrap_or(FlushMetadata::default())
+      .unwrap_or_default()
   }
 
   pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> Result<()> {
@@ -57,7 +57,7 @@ impl FlushMetadataCache {
     }
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
-    metadata.n = metadata.n + incr;
+    metadata.n += incr;
     metadata.overwrite(&self.dir, key).await
   }
 
@@ -73,7 +73,7 @@ impl FlushMetadataCache {
 
     for version in &metadata.write_versions {
       if *version >= read_version {
-        new_versions.push(version.clone());
+        new_versions.push(*version);
       }
     }
 

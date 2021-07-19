@@ -1,19 +1,20 @@
-use crate::types::{PartitionKey, SegmentKey, CompactionKey, NormalizedPartition};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 
 pub fn table_subdir(table_name: &str) -> PathBuf {
   PathBuf::from(table_name)
 }
 
-pub fn table_dir(dir: &PathBuf, table_name: &str) -> PathBuf {
+pub fn table_dir(dir: &Path, table_name: &str) -> PathBuf {
   dir.join(table_subdir(table_name))
 }
 
-pub fn flush_col_file(dir: &PathBuf, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
+pub fn flush_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
   version_dir(dir, compaction_key).join(format!("f_{}", col_name))
 }
 
-pub fn compact_col_file(dir: &PathBuf, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
+pub fn compact_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
   version_dir(dir, compaction_key).join(format!("c_{}", col_name))
 }
 
@@ -24,7 +25,7 @@ pub fn partition_subdir(partition: &NormalizedPartition) -> PathBuf {
     .collect()
 }
 
-pub fn partition_dir(dir: &PathBuf, table_partition: &PartitionKey) -> PathBuf {
+pub fn partition_dir(dir: &Path, table_partition: &PartitionKey) -> PathBuf {
   table_dir(dir, &table_partition.table_name).join(
     partition_subdir(&table_partition.partition)
   )
@@ -40,7 +41,7 @@ pub fn relative_segment_dir(segment_key: &SegmentKey) -> PathBuf {
     .join(format!("s_{}", &segment_key.segment_id))
 }
 
-pub fn segment_dir(dir: &PathBuf, segment_key: &SegmentKey) -> PathBuf {
+pub fn segment_dir(dir: &Path, segment_key: &SegmentKey) -> PathBuf {
   dir.join(relative_segment_dir(segment_key))
 }
 
@@ -49,6 +50,6 @@ pub fn relative_version_dir(compaction_key: &CompactionKey) -> PathBuf {
     .join(format!("v{}", compaction_key.version))
 }
 
-pub fn version_dir(dir: &PathBuf, compaction_key: &CompactionKey) -> PathBuf {
+pub fn version_dir(dir: &Path, compaction_key: &CompactionKey) -> PathBuf {
   dir.join(relative_version_dir(compaction_key))
 }

@@ -10,24 +10,24 @@ use tokio::sync::RwLock;
 use async_trait::async_trait;
 
 use crate::utils;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 #[async_trait]
 pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
   fn relative_path(k: &K) -> PathBuf;
 
-  fn path(dir: &PathBuf, k: &K) -> PathBuf {
+  fn path(dir: &Path, k: &K) -> PathBuf {
     dir.join(Self::relative_path(k))
   }
 
-  async fn load(dir: &PathBuf, k: &K) -> Option<Box<Self>> {
+  async fn load(dir: &Path, k: &K) -> Option<Box<Self>> {
     return match fs::read_to_string(Self::path(dir, k)).await {
       Ok(json_str) => Some(serde_json::from_str(&json_str).unwrap()),
       Err(_) => None,
     }
   }
 
-  async fn overwrite(&self, dir: &PathBuf, k: &K) -> Result<()> {
+  async fn overwrite(&self, dir: &Path, k: &K) -> Result<()> {
     let path = Self::path(dir, k);
     let metadata_str = serde_json::to_string(&self).expect("unable to serialize");
     return utils::overwrite_file(&path, metadata_str.as_bytes()).await;
@@ -45,11 +45,11 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + S
     let mux_guard = self.data.read().await;
     let map = &*mux_guard;
 
-    let maybe_metadata = map.get(k).map(|x| x.clone());
+    let maybe_metadata = map.get(k).cloned();
     drop(mux_guard);
 
     return match maybe_metadata {
-      Some(metadata) => metadata.clone(),
+      Some(metadata) => metadata,
       None => {
         let (res_box, mut mux_guard) = futures::future::join(
           V::load(&self.dir, k),
@@ -63,10 +63,10 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + S
     };
   }
 
-  pub fn new(dir: &PathBuf) -> Self {
-    return CacheData {
-      dir: dir.clone(),
+  pub fn new(dir: &Path) -> Self {
+    CacheData {
+      dir: dir.to_path_buf(),
       data: Arc::new(RwLock::new(HashMap::new()))
-    };
+    }
   }
 }

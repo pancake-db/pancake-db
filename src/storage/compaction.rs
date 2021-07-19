@@ -19,7 +19,7 @@ pub struct Compaction {
 
 impl Default for Compaction {
   fn default() -> Compaction {
-    return Compaction {
+    Compaction {
       compacted_n: 0,
       col_compression_params: HashMap::new(),
     }
@@ -36,9 +36,9 @@ pub type CompactionCache = CacheData<CompactionKey, Compaction>;
 
 impl CompactionCache {
   pub async fn get(&self, key: CompactionKey) -> Compaction {
-    return self.get_option(&key)
+    self.get_option(&key)
       .await
-      .unwrap_or(Compaction::default());
+      .unwrap_or_default()
   }
 
   pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> Result<()> {

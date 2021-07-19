@@ -17,7 +17,6 @@ mod compression;
 mod types;
 mod opt;
 mod encoding;
-mod errors;
 
 #[tokio::main]
 async fn main() {

@@ -49,10 +49,10 @@ impl Server {
       );
     }
 
-    return Ok(Compaction {
+    Ok(Compaction {
       compacted_n: metadata.n,
       col_compression_params,
-    });
+    })
   }
 
   async fn execute_col_compaction(
@@ -61,7 +61,7 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     old_compression_params: Option<&CompressionParams>,
-    compressor: &Box<dyn Compressor>,
+    compressor: &dyn Compressor,
     new_version: u64,
   ) -> Result<()> {
     let values = self.read_col(
@@ -99,7 +99,7 @@ impl Server {
         col,
         metadata,
         old_compression_params,
-        &compressor,
+        &*compressor,
         new_version,
       ).await?;
     }

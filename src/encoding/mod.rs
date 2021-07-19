@@ -36,8 +36,8 @@ pub fn encode(values: &[FieldValue], depth: u8) -> Result<Vec<u8>> {
         res.push(NULL_BYTE);
       }
     };
-    if err.is_some() {
-      return Err(err.unwrap());
+    if let Some(e) = err {
+      return Err(e);
     }
   }
   Ok(res)
@@ -60,11 +60,12 @@ fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> Result<Vec<u8
           }
         }
 
-        if err.is_some() {
-          Err(err.unwrap())
-        } else {
-          res.push(TOP_NEST_LEVEL_BYTE - escape_depth + traverse_depth);
-          Ok(res)
+        match err {
+          Some(e) => Err(e),
+          None => {
+            res.push(TOP_NEST_LEVEL_BYTE - escape_depth + traverse_depth);
+            Ok(res)
+          }
         }
       },
       _ => Err(anyhow!("expected a list to traverse but found atomic type"))

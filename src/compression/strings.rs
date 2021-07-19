@@ -24,7 +24,7 @@ pub struct ZstdDecompressor {}
 
 impl Decompressor for ZstdDecompressor {
   fn from_parameters(_: Option<&CompressionParams>) -> ZstdDecompressor {
-    return ZstdDecompressor {};
+    ZstdDecompressor {}
   }
 
   fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<Value>> {

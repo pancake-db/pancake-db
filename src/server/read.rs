@@ -119,13 +119,13 @@ impl Server {
       let parts = fname
         .to_str()
         .expect("how can os string not be str")
-        .split("=")
+        .split('=')
         .collect::<Vec<&str>>();
 
       if parts.len() != 2 {
         continue;
       }
-      if parts[0].to_string() != meta.name {
+      if *parts[0] != meta.name {
         continue;
       }
       let parsed = utils::partition_field_from_string(
@@ -156,7 +156,10 @@ impl Server {
     for meta in &schema.partitioning {
       let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();
       for partition in &partitions {
-        for leaf in server.list_subpartitions(&req.table_name, partition, meta).await.or(Err(warp::reject()))? {
+        let subpartitions = server.list_subpartitions(&req.table_name, partition, meta)
+          .await
+          .map_err(|_| warp::reject())?;
+        for leaf in subpartitions {
           let mut new_partition = partition.clone();
           new_partition.push(leaf);
           if utils::satisfies_filters(&new_partition, &req.partition_filter) {
@@ -169,14 +172,16 @@ impl Server {
 
     let mut segments = Vec::new();
     for partition in &partitions {
+      let normalized_partition = NormalizedPartition::partial(partition)
+        .map_err(|_| warp::reject())?;
       let partition_key = PartitionKey {
         table_name: req.table_name.clone(),
-        partition: NormalizedPartition::partial(partition).or(Err(warp::reject()))?
+        partition: normalized_partition,
       };
       let segments_meta = server.segments_metadata_cache
         .get_option(&partition_key)
         .await
-        .ok_or(warp::reject())?;
+        .ok_or_else(warp::reject)?;
       for segment_id in &segments_meta.segment_ids {
         segments.push(Segment {
           partition: partition.clone(),
@@ -255,12 +260,15 @@ impl Server {
     let compressor_name = compaction.col_compression_params
       .get(&col_name)
       .map(|c| c.clone() as String)
-      .unwrap_or("".to_string());
+      .unwrap_or_default();
+
+    let compressed_data = utils::read_if_exists(compressed_filename).await.unwrap_or_default();
+    let uncompressed_data = utils::read_if_exists(uncompressed_filename).await.unwrap_or_default();
 
     Ok(warp::reply::json(&ReadSegmentColumnResponse {
       compressor_name,
-      compressed_data: utils::read_if_exists(compressed_filename).await.unwrap_or(Vec::new()),
-      uncompressed_data: utils::read_if_exists(uncompressed_filename).await.unwrap_or(Vec::new()),
+      compressed_data,
+      uncompressed_data,
       ..Default::default()
     }))
   }

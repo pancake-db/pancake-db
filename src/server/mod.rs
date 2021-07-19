@@ -12,7 +12,7 @@ use crate::storage::flush::FlushMetadataCache;
 use crate::storage::schema::SchemaCache;
 use crate::storage::segments::SegmentsMetadataCache;
 use crate::types::{PartitionKey, SegmentKey};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 mod create_table;
 mod write;
@@ -43,7 +43,7 @@ impl Activity {
   pub async fn is_active(&self) -> bool {
     let mux_guard = self.lock.read().await;
     let state = &*mux_guard;
-    return !state.inactive;
+    !state.inactive
   }
 }
 
@@ -63,7 +63,7 @@ impl Staged {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     state.rows.entry(table_partition)
-      .or_insert(Vec::new())
+      .or_insert_with(Vec::new)
       .extend_from_slice(rows);
   }
 
@@ -81,7 +81,7 @@ impl Staged {
   pub async fn get_table_partitions(&self) -> Vec<PartitionKey> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    state.rows.keys().map(|x| x.clone()).collect()
+    state.rows.keys().cloned().collect()
   }
 
   pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
@@ -158,28 +158,27 @@ impl Server {
       }
     };
 
-    return (flush_forever_future, compact_forever_future);
+    (flush_forever_future, compact_forever_future)
   }
 
   pub async fn stop(&self) {
     self.activity.stop().await;
   }
 
-  pub fn new(dir: &PathBuf) -> Server {
+  pub fn new(dir: &Path) -> Server {
     let schema_cache = SchemaCache::new(&dir);
     let segments_metadata_cache = SegmentsMetadataCache::new(&dir);
     let flush_metadata_cache = FlushMetadataCache::new(&dir);
     let compaction_cache = CompactionCache::new(&dir);
-    let res = Server {
-      dir: dir.clone(),
+    Server {
+      dir: dir.to_path_buf(),
       schema_cache,
       segments_metadata_cache,
       flush_metadata_cache,
       compaction_cache,
       staged: Staged::default(),
       activity: Activity::default(),
-    };
-    return res;
+    }
   }
 
   pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

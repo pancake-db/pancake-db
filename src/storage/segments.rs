@@ -50,7 +50,7 @@ impl SegmentsMetadataCache {
     };
 
     match option {
-      Some(res) => res.clone(),
+      Some(res) => res,
       None => {
         let segment_id = Uuid::new_v4().to_string();
         let meta = SegmentsMetadata::new(&segment_id);

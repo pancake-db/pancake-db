@@ -55,7 +55,7 @@ impl Server {
     };
     self.staged.add_rows(table_partition, &req.rows).await;
     // here we should really wait for flush
-    return Ok(());
+    Ok(())
   }
 
   pub async fn flush(&self, partition_key: &PartitionKey) -> Result<()> {
@@ -114,7 +114,7 @@ impl Server {
       for col in &schema.columns {
         let field_values = field_maps
           .iter()
-          .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or(FieldValue::new()))
+          .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or_default())
           .collect::<Vec<FieldValue>>();
         let bytes = encoding::encode(&field_values, col.nested_list_depth as u8)?;
         utils::append_to_file(
