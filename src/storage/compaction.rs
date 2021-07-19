@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
@@ -40,7 +41,7 @@ impl CompactionCache {
       .unwrap_or(Compaction::default());
   }
 
-  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> Result<(), &'static str> {
+  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> Result<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     compaction.overwrite(&self.dir, &key).await?;

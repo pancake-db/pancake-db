@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use pancake_db_idl::schema::Schema;
 
 use crate::dirs;
@@ -14,7 +15,7 @@ impl Metadata<String> for Schema {
 pub type SchemaCache = CacheData<String, Schema>;
 
 impl SchemaCache {
-  pub async fn assert(&self, table_name: &str, schema: &Schema) -> Result<(), &'static str> {
+  pub async fn assert(&self, table_name: &str, schema: &Schema) -> Result<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let table_name_string = table_name.to_string();
@@ -30,7 +31,7 @@ impl SchemaCache {
         if existing_schema == schema {
           Ok(())
         } else {
-          Err("existing schema does not match")
+          Err(anyhow!("existing schema does not match"))
         }
       },
       None => {

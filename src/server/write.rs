@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, FieldValue};
 use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
@@ -12,13 +13,13 @@ use crate::types::PartitionKey;
 use super::Server;
 
 impl Server {
-  pub async fn write_rows(&self, req: &WriteToPartitionRequest) -> Result<(), &'static str> {
+  pub async fn write_rows(&self, req: &WriteToPartitionRequest) -> Result<()> {
     let table_name = &req.table_name;
     // validate data matches schema
-    let schema: Schema = self.schema_cache
-      .get_option(table_name)
-      .await
-      .expect("no schema");
+    let schema = match self.schema_cache.get_option(table_name).await {
+      Some(schema) => Ok(schema),
+      None => Err(anyhow!("schema does not exist for {}", table_name))
+    }?;
 
     // normalize partition (order fields correctly)
     let partition = NormalizedPartition::full(&schema, &req.partition)?;
@@ -30,15 +31,15 @@ impl Server {
     }
     for row in &req.rows {
       for field in &row.fields {
-        let mut maybe_err: Option<&'static str> = None;
+        let mut maybe_err: Option<anyhow::Error> = None;
         match col_map.get(&field.name) {
           Some(col) => {
             if !utils::dtype_matches_field(&col.dtype.unwrap(), &field) {
-              maybe_err = Some("wrong dtype");
+              maybe_err = Some(anyhow!("wrong dtype"));
             }
           },
           _ => {
-            maybe_err = Some("unknown column");
+            maybe_err = Some(anyhow!("unknown column"));
           },
         };
 
@@ -57,12 +58,12 @@ impl Server {
     return Ok(());
   }
 
-  pub async fn flush(&self, partition_key: &PartitionKey) -> Result<(), &'static str> {
+  pub async fn flush(&self, partition_key: &PartitionKey) -> Result<()> {
     let table_name = &partition_key.table_name;
     let maybe_schema = self.schema_cache.get_option(table_name)
       .await;
     if maybe_schema.is_none() {
-      return Err("table schema does not exist for flush");
+      return Err(anyhow!("table schema does not exist for flush"));
     }
     let schema = maybe_schema.unwrap();
 

@@ -1,11 +1,13 @@
-use pancake_db_idl::dml::PartitionField;
-use pancake_db_idl::dml::partition_field::Value;
-
-use serde::{Deserialize, Serialize};
-use pancake_db_idl::schema::Schema;
 use std::collections::HashMap;
-use crate::utils;
 use std::path::PathBuf;
+
+use anyhow::{anyhow, Result};
+use pancake_db_idl::dml::partition_field::Value;
+use pancake_db_idl::dml::PartitionField;
+use pancake_db_idl::schema::Schema;
+use serde::{Deserialize, Serialize};
+
+use crate::utils;
 
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PartitionValue {
@@ -52,11 +54,11 @@ impl NormalizedPartition {
     self.fields.iter().map(|f| f.to_path_buf()).collect()
   }
 
-  pub fn partial(raw_fields: &[PartitionField]) -> Result<NormalizedPartition, &'static str> {
+  pub fn partial(raw_fields: &[PartitionField]) -> Result<NormalizedPartition> {
     let mut fields = Vec::new();
     for raw_field in raw_fields {
       if raw_field.value.is_none() {
-        return Err("partition field has no value");
+        return Err(anyhow!("partition field has no value"));
       }
       fields.push(NormalizedPartitionField::from(raw_field));
     }
@@ -66,9 +68,9 @@ impl NormalizedPartition {
   pub fn full(
     schema: &Schema,
     raw_fields: &[PartitionField]
-  ) -> Result<NormalizedPartition, &'static str> {
+  ) -> Result<NormalizedPartition> {
     if schema.partitioning.len() != raw_fields.len() {
-      return Err("number of partition fields does not match schema");
+      return Err(anyhow!("number of partition fields does not match schema"));
     }
 
     let mut raw_field_map = HashMap::new();
@@ -79,14 +81,14 @@ impl NormalizedPartition {
     for meta in &schema.partitioning {
       let maybe_raw_field = raw_field_map.get(&meta.name);
       if maybe_raw_field.is_none() {
-        return Err("partition field is missing");
+        return Err(anyhow!("partition field is missing"));
       }
       let raw_field = *maybe_raw_field.unwrap();
       if !utils::partition_dtype_matches_field(
         &meta.dtype.unwrap(),
         &raw_field
       ) {
-        return Err("partition field dtype does not match schema");
+        return Err(anyhow!("partition field dtype does not match schema"));
       }
       fields.push(NormalizedPartitionField::from(raw_field));
     }

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
@@ -48,7 +49,7 @@ impl FlushMetadataCache {
       .unwrap_or(FlushMetadata::default())
   }
 
-  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> Result<(), &'static str> {
+  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> Result<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) || map.get(key).unwrap().is_none() {
@@ -60,7 +61,7 @@ impl FlushMetadataCache {
     metadata.overwrite(&self.dir, key).await
   }
 
-  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> Result<(), &'static str> {
+  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> Result<()> {
     let mut new_versions = Vec::new();
 
     let mut mux_guard = self.data.write().await;
@@ -81,7 +82,7 @@ impl FlushMetadataCache {
     metadata.overwrite(&self.dir, key).await
   }
 
-  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> Result<(), &'static str>{
+  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> Result<()>{
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) {

@@ -1,11 +1,14 @@
-use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-use super::traits::{Metadata, CacheData};
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 use crate::dirs;
 use crate::types::PartitionKey;
 use crate::utils;
-use uuid::Uuid;
-use std::path::PathBuf;
+
+use super::traits::{CacheData, Metadata};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentsMetadata {
@@ -66,37 +69,4 @@ impl SegmentsMetadataCache {
       }
     }
   }
-
-  // async fn start_first_segment(&self, key: &PartitionKey) -> Result<String, &'static str> {
-  //   let mut mux_guard = self.data.write().await;
-  //   let map = &mut *mux_guard;
-  //
-  //   if !map.contains_key(key) {
-  //     let segment_id = Uuid::new_v4().to_string();
-  //     utils::create_if_new(&dirs::segment_dir(&self.dir, key, &segment_id)).await?;
-  //     utils::create_if_new(&dirs::version_dir(&self.dir, key, &segment_id, 0)).await?;
-  //
-  //     let metadata = SegmentsMetadata::new(&segment_id);
-  //     map.insert(key.clone(), Some(metadata.clone()));
-  //     metadata.overwrite(&self.dir, key).await?;
-  //     Ok(segment_id)
-  //   } else {
-  //     let metadata = map.get(key).unwrap();
-  //     Ok(metadata.write_segment_id.clone())
-  //   }
-  // }
-  //
-  // async fn start_new_segment(&self, key: &PartitionKey) -> Result<String, &'static str> {
-  //   let mut mux_guard = self.data.write().await;
-  //   let map = &mut *mux_guard;
-  //
-  //   let segment_id = Uuid::new_v4().to_string();
-  //   utils::create_if_new(&dirs::segment_dir(&self.dir, key, &segment_id)).await?;
-  //   utils::create_if_new(&dirs::version_dir(&self.dir, key, &segment_id, 0)).await?;
-  //
-  //   let metadata = map.get_mut(key).expect("segments metadata not available");
-  //   metadata.write_segment_id = segment_id.clone();
-  //   metadata.segment_ids.push(segment_id.clone());
-  //   Ok(metadata.write_segment_id.clone())
-  // }
 }

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
@@ -7,7 +8,7 @@ use crate::server::Server;
 use crate::utils;
 
 impl Server {
-  pub async fn create_table(&self, name: &String, schema: &Schema) -> Result<(), &'static str> {
+  pub async fn create_table(&self, name: &String, schema: &Schema) -> Result<()> {
     utils::create_if_new(&self.dir).await?;
 
     let table_dir = dirs::table_dir(&self.dir, name);

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use protobuf::MessageField;
@@ -23,7 +24,7 @@ impl Server {
     metadata: &FlushMetadata,
     compression_params: Option<&CompressionParams>,
     limit: usize,
-  ) -> Result<Vec<FieldValue>, &'static str> {
+  ) -> Result<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::compact_col_file(&self.dir, &compaction_key, &col.name);
     match fs::read(path).await {
@@ -39,7 +40,7 @@ impl Server {
       },
       Err(e) => match e.kind() {
         ErrorKind::NotFound => Ok(Vec::new()),
-        _ => Err("could not read compaction file bytes"),
+        _ => Err(anyhow!("could not read compaction file bytes")),
       },
     }
   }
@@ -50,7 +51,7 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     limit: usize,
-  ) -> Result<Vec<FieldValue>, &'static str> {
+  ) -> Result<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::flush_col_file(&self.dir, &compaction_key, &col.name);
     match fs::read(path).await {
@@ -64,7 +65,7 @@ impl Server {
         }
         Ok(limited)
       },
-      Err(_) => Err("could not decode compaction file"),
+      Err(_) => Err(anyhow!("could not decode compaction file")),
     }
   }
 
@@ -75,7 +76,7 @@ impl Server {
     metadata: &FlushMetadata,
     compression_params: Option<&CompressionParams>,
     limit: usize,
-  ) -> Result<Vec<FieldValue>, &'static str> {
+  ) -> Result<Vec<FieldValue>> {
     let mut values = self.read_compact_col(
       segment_key,
       col,
@@ -92,29 +93,6 @@ impl Server {
       ).await?);
     }
     Ok(values)
-    // let mut decompressor = compression::get_decompressor(&col.dtype.unwrap(), compression_params);
-    // let mut result = Vec::new();
-    // for col_file in &dirs::col_files(
-    //   &self.dir,
-    //   &segment_key.compaction_key(metadata.read_version),
-    //   &col.name,
-    // ) {
-    //   match fs::read(col_file).await {
-    //     Ok(bytes) => {
-    //       let end = limit - result.len();
-    //       let decoded = decompressor.decode(&bytes);
-    //       let limited;
-    //       if end < decoded.len() {
-    //         limited = Vec::from(&decoded[0..end]);
-    //       } else {
-    //         limited = decoded;
-    //       }
-    //       result.extend(limited);
-    //     },
-    //     Err(_) => (),
-    //   }
-    // }
-    // return result;
   }
 
   async fn list_subpartitions(
@@ -122,7 +100,7 @@ impl Server {
     table_name: &str,
     parent: &[PartitionField],
     meta: &PartitionMeta,
-  ) -> Result<Vec<PartitionField>, &'static str> {
+  ) -> Result<Vec<PartitionField>> {
     let dir = dirs::partition_dir(
       &self.dir,
       &PartitionKey {
@@ -131,7 +109,7 @@ impl Server {
       }
     );
     let mut res = Vec::new();
-    let mut read_dir = fs::read_dir(&dir).await.expect("could not read dir");
+    let mut read_dir = fs::read_dir(&dir).await?;
     while let Ok(Some(entry)) = read_dir.next_entry().await {
       if !entry.file_type().await.unwrap().is_dir() {
         continue;

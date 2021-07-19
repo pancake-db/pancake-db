@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::hash::Hash;
 
+use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::fs;
@@ -26,7 +27,7 @@ pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
     }
   }
 
-  async fn overwrite(&self, dir: &PathBuf, k: &K) -> Result<(), &'static str> {
+  async fn overwrite(&self, dir: &PathBuf, k: &K) -> Result<()> {
     let path = Self::path(dir, k);
     let metadata_str = serde_json::to_string(&self).expect("unable to serialize");
     return utils::overwrite_file(&path, metadata_str.as_bytes()).await;

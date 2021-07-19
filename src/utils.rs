@@ -1,13 +1,16 @@
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter};
 use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use std::array::TryFromSliceError;
 
 pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   match fs::read(fname).await {
@@ -16,41 +19,31 @@ pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   }
 }
 
-pub async fn create_if_new(dir: impl AsRef<Path>) -> Result<(), &'static str> {
+pub async fn create_if_new(dir: impl AsRef<Path>) -> Result<()> {
   match fs::create_dir(dir).await {
-    Ok(_) => {
-      return Ok(());
-    },
+    Ok(_) => Ok(()),
     Err(e) => match e.kind() {
       ErrorKind::AlreadyExists => Ok(()),
-      _ => Err("unknown creation error"),
+      _ => Err(e.into()),
     },
   }
 }
 
-pub async fn overwrite_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<(), &'static str> {
-  println!("writing to {:?}", path);
+pub async fn overwrite_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<()> {
   let mut file = fs::File::create(path).await.expect("unable to create file for overwrite");
   match file.write_all(contents).await {
-    Err(_) => Err("write failure"),
+    Err(_) => Err(anyhow!("write failure")),
     _ => Ok(())
   }
 }
 
-pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<(), &'static str> {
-  println!("trying to append to {:?}", path);
-  let mut file = match fs::OpenOptions::new()
+pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> Result<()> {
+  let mut file = fs::OpenOptions::new()
     .append(true)
     .create(true)
     .open(path)
-    .await {
-      Ok(f) => Ok(f),
-      Err(_) => Err("fail to create")
-    }?;
-  match file.write_all(contents).await {
-    Err(_) => Err("fail to append"),
-    _ => Ok(()),
-  }
+    .await?;
+  Ok(file.write_all(contents).await?)
 }
 
 pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
@@ -72,7 +65,7 @@ pub fn partition_field_from_string(
   name: &str,
   value_str: &str,
   dtype: PartitionDataType
-) -> Result<PartitionField, &'static str> {
+) -> Result<PartitionField> {
   let value = match dtype {
     PartitionDataType::INT64 => {
       let parsed: Result<i64, _> = value_str.parse();
@@ -84,7 +77,7 @@ pub fn partition_field_from_string(
     PartitionDataType::STRING => Some(partition_field::Value::string_val(value_str.to_string()))
   };
   if value.is_none() {
-    return Err("failed to parse partition field value");
+    return Err(anyhow!("failed to parse partition field value"));
   }
   Ok(PartitionField {
     name: name.to_string(),
@@ -108,4 +101,11 @@ pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilte
     }
   }
   true
+}
+
+pub fn try_byte_array<const N: usize>(v: &[u8]) -> Result<[u8; N]> {
+  match v.try_into() {
+    Ok(res) => Ok(res),
+    Err(e) => Err(anyhow!("byte array has wrong size")),
+  }
 }
