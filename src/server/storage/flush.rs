@@ -1,11 +1,17 @@
-use anyhow::{anyhow, Result};
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
+use crate::server::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
 
 use super::traits::{CacheData, Metadata};
-use std::path::{PathBuf, Path};
+use crate::errors::PancakeResult;
+
+impl MetadataKey for SegmentKey {
+  const ENTITY_NAME: &'static str = "segment";
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FlushMetadata {
@@ -44,12 +50,12 @@ pub type FlushMetadataCache = CacheData<SegmentKey, FlushMetadata>;
 
 impl FlushMetadataCache {
   pub async fn get(&self, key: &SegmentKey) -> FlushMetadata {
-    self.get_option(key)
+    self.get_result(key)
       .await
       .unwrap_or_default()
   }
 
-  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> Result<()> {
+  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> PancakeResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) || map.get(key).unwrap().is_none() {
@@ -58,10 +64,11 @@ impl FlushMetadataCache {
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     metadata.n += incr;
-    metadata.overwrite(&self.dir, key).await
+    metadata.overwrite(&self.dir, key).await?;
+    Ok(())
   }
 
-  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> Result<()> {
+  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> PancakeResult<()> {
     let mut new_versions = Vec::new();
 
     let mut mux_guard = self.data.write().await;
@@ -79,10 +86,11 @@ impl FlushMetadataCache {
 
     metadata.read_version = read_version;
     metadata.write_versions = new_versions;
-    metadata.overwrite(&self.dir, key).await
+    metadata.overwrite(&self.dir, key).await?;
+    Ok(())
   }
 
-  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> Result<()>{
+  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> PancakeResult<()>{
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) {
@@ -91,6 +99,7 @@ impl FlushMetadataCache {
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     metadata.write_versions.push(write_version);
-    metadata.overwrite(&self.dir, key).await
+    metadata.overwrite(&self.dir, key).await?;
+    Ok(())
   }
 }

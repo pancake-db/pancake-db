@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::Future;
@@ -7,17 +8,18 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
-use crate::storage::compaction::CompactionCache;
-use crate::storage::flush::FlushMetadataCache;
-use crate::storage::schema::SchemaCache;
-use crate::storage::segments::SegmentsMetadataCache;
+use storage::compaction::CompactionCache;
+use storage::flush::FlushMetadataCache;
+use storage::schema::SchemaCache;
+use storage::segments::SegmentsMetadataCache;
+
 use crate::types::{PartitionKey, SegmentKey};
-use std::path::{PathBuf, Path};
 
 mod create_table;
 mod write;
 mod read;
 mod compact;
+pub mod storage;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
@@ -182,9 +184,13 @@ impl Server {
   }
 
   pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    Self::create_table_filter()
-      .or(Self::write_to_partition_filter())
-      .or(Self::read_segment_column_filter())
-      .or(Self::list_segments_filter())
+    warp::path("rest")
+      .and(
+        Self::create_table_filter()
+          .or(Self::write_to_partition_filter())
+          .or(Self::read_segment_column_filter())
+          .or(Self::list_segments_filter())
+      )
+      // .recover(errors::warp_recover)
   }
 }

@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use protobuf::MessageField;
@@ -8,13 +7,15 @@ use warp::{Filter, Rejection, Reply};
 use crate::compression;
 use crate::dirs;
 use crate::encoding;
-use crate::storage::compaction::CompressionParams;
-use crate::storage::flush::FlushMetadata;
+use crate::server::storage::compaction::CompressionParams;
+use crate::server::storage::flush::FlushMetadata;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
 use tokio::io::ErrorKind;
+use crate::errors::{PancakeResult, PancakeError, pancake_result_into_warp};
+use std::convert::Infallible;
 
 impl Server {
   pub async fn read_compact_col(
@@ -24,24 +25,21 @@ impl Server {
     metadata: &FlushMetadata,
     compression_params: Option<&CompressionParams>,
     limit: usize,
-  ) -> Result<Vec<FieldValue>> {
+  ) -> PancakeResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::compact_col_file(&self.dir, &compaction_key, &col.name);
-    match fs::read(path).await {
-      Ok(bytes) => {
-        let decompressor = compression::get_decompressor(col.dtype.unwrap(), compression_params)?;
-        let decoded = decompressor.decompress(&bytes, col)?;
-        let limited= if limit < decoded.len() {
-          Vec::from(&decoded[0..limit])
-        } else {
-          decoded
-        };
-        Ok(limited)
-      },
-      Err(e) => match e.kind() {
-        ErrorKind::NotFound => Ok(Vec::new()),
-        _ => Err(anyhow!("could not read compaction file bytes")),
-      },
+    let bytes = utils::read_or_empty(&path).await?;
+    if bytes.is_empty() {
+      Ok(Vec::new())
+    } else {
+      let decompressor = compression::get_decompressor(col.dtype.unwrap(), compression_params)?;
+      let decoded = decompressor.decompress(&bytes, col)?;
+      let limited= if limit < decoded.len() {
+        Vec::from(&decoded[0..limit])
+      } else {
+        decoded
+      };
+      Ok(limited)
     }
   }
 
@@ -51,21 +49,21 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     limit: usize,
-  ) -> Result<Vec<FieldValue>> {
+  ) -> PancakeResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::flush_col_file(&self.dir, &compaction_key, &col.name);
-    match fs::read(path).await {
-      Ok(bytes) => {
-        let decoded = encoding::decode(&bytes, col)?;
-        let limited;
-        if limit < decoded.len() {
-          limited = Vec::from(&decoded[0..limit]);
-        } else {
-          limited = decoded;
-        }
-        Ok(limited)
-      },
-      Err(_) => Err(anyhow!("could not decode compaction file")),
+    let bytes = utils::read_or_empty(&path).await?;
+    if bytes.is_empty() {
+      Ok(Vec::new())
+    } else {
+      let decoded = encoding::decode(&bytes, col)?;
+      let limited;
+      if limit < decoded.len() {
+        limited = Vec::from(&decoded[0..limit]);
+      } else {
+        limited = decoded;
+      }
+      Ok(limited)
     }
   }
 
@@ -76,7 +74,7 @@ impl Server {
     metadata: &FlushMetadata,
     compression_params: Option<&CompressionParams>,
     limit: usize,
-  ) -> Result<Vec<FieldValue>> {
+  ) -> PancakeResult<Vec<FieldValue>> {
     let mut values = self.read_compact_col(
       segment_key,
       col,
@@ -100,7 +98,7 @@ impl Server {
     table_name: &str,
     parent: &[PartitionField],
     meta: &PartitionMeta,
-  ) -> Result<Vec<PartitionField>> {
+  ) -> PancakeResult<Vec<PartitionField>> {
     let dir = dirs::partition_dir(
       &self.dir,
       &PartitionKey {
@@ -138,27 +136,18 @@ impl Server {
     Ok(res)
   }
 
-  pub fn list_segments_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-      .and(warp::path("rest"))
-      .and(warp::path("list_segments"))
-      .and(warp::filters::ext::get::<Server>())
-      .and(warp::filters::body::json())
-      .and_then(Self::list_segments)
-  }
+  async fn list_segments(&self, req: ListSegmentsRequest) -> PancakeResult<ListSegmentsResponse> {
+    let schema = self.schema_cache
+      .get_result(&req.table_name)
+      .await?;
 
-  pub async fn list_segments(server: Server, req: ListSegmentsRequest) -> Result<impl Reply, Rejection> {
-    let schema = server.schema_cache
-      .get_option(&req.table_name)
-      .await
-      .expect("table does not exist");
     let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
     for meta in &schema.partitioning {
       let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();
       for partition in &partitions {
-        let subpartitions = server.list_subpartitions(&req.table_name, partition, meta)
-          .await
-          .map_err(|_| warp::reject())?;
+        let subpartitions = self.list_subpartitions(&req.table_name, partition, meta)
+          .await?;
+
         for leaf in subpartitions {
           let mut new_partition = partition.clone();
           new_partition.push(leaf);
@@ -172,16 +161,14 @@ impl Server {
 
     let mut segments = Vec::new();
     for partition in &partitions {
-      let normalized_partition = NormalizedPartition::partial(partition)
-        .map_err(|_| warp::reject())?;
+      let normalized_partition = NormalizedPartition::partial(partition)?;
       let partition_key = PartitionKey {
         table_name: req.table_name.clone(),
         partition: normalized_partition,
       };
-      let segments_meta = server.segments_metadata_cache
-        .get_option(&partition_key)
-        .await
-        .ok_or_else(warp::reject)?;
+      let segments_meta = self.segments_metadata_cache
+        .get_result(&partition_key)
+        .await?;
       for segment_id in &segments_meta.segment_ids {
         segments.push(Segment {
           partition: partition.clone(),
@@ -191,37 +178,46 @@ impl Server {
       }
     }
 
-    Ok(warp::reply::json(&ListSegmentsResponse {
+    Ok(ListSegmentsResponse {
       schema: MessageField::some(schema),
       segments,
       continuation_token: "".to_string(),
       ..Default::default()
-    }))
+    })
+  }
+
+  pub fn list_segments_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+      .and(warp::path("list_segments"))
+      .and(warp::filters::ext::get::<Server>())
+      .and(warp::filters::body::json())
+      .and_then(Self::warp_list_segments)
+  }
+
+  async fn warp_list_segments(server: Server, req: ListSegmentsRequest) -> Result<impl Reply, Infallible> {
+    pancake_result_into_warp(server.list_segments(req).await)
   }
 
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
-      .and(warp::path("rest"))
       .and(warp::path("read_segment_column"))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::json())
-      .and_then(Self::read_segment_column)
+      .and_then(Self::warp_read_segment_column)
   }
 
-  async fn read_segment_column(server: Server, req: ReadSegmentColumnRequest) -> Result<impl Reply, Rejection> {
+  async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> PancakeResult<ReadSegmentColumnResponse> {
     let col_name = req.column_name;
-    let schema = server.schema_cache
-      .get_option(&req.table_name)
-      .await
-      .expect("table does not exist");
-    let partition = NormalizedPartition::full(&schema, &req.partition)
-      .expect("partition read fail");
+    let schema = self.schema_cache
+      .get_result(&req.table_name)
+      .await?;
+    let partition = NormalizedPartition::full(&schema, &req.partition)?;
     let segment_key = SegmentKey {
       table_name: req.table_name.clone(),
       partition,
       segment_id: req.segment_id.clone(),
     };
-    let flush_meta_future = server.flush_metadata_cache
+    let flush_meta_future = self.flush_metadata_cache
       .get(&segment_key);
 
     let flush_meta = flush_meta_future
@@ -235,11 +231,11 @@ impl Server {
     }
 
     if !valid_col {
-      return Err(warp::reject());
+      return Err(PancakeError::does_not_exist("column", &col_name));
     }
 
     let compaction_key = segment_key.compaction_key(flush_meta.read_version);
-    let compaction = server.compaction_cache
+    let compaction = self.compaction_cache
       .get(compaction_key)
       .await;
 
@@ -247,12 +243,12 @@ impl Server {
     // TODO: pagination
     let compaction_key = segment_key.compaction_key(flush_meta.read_version);
     let compressed_filename = dirs::compact_col_file(
-      &server.dir,
+      &self.dir,
       &compaction_key,
       &col_name,
     );
     let uncompressed_filename = dirs::flush_col_file(
-      &server.dir,
+      &self.dir,
       &compaction_key,
       &col_name,
     );
@@ -265,11 +261,15 @@ impl Server {
     let compressed_data = utils::read_if_exists(compressed_filename).await.unwrap_or_default();
     let uncompressed_data = utils::read_if_exists(uncompressed_filename).await.unwrap_or_default();
 
-    Ok(warp::reply::json(&ReadSegmentColumnResponse {
+    Ok(ReadSegmentColumnResponse {
       compressor_name,
       compressed_data,
       uncompressed_data,
       ..Default::default()
-    }))
+    })
+  }
+
+  async fn warp_read_segment_column(server: Server, req: ReadSegmentColumnRequest) -> Result<impl Reply, Infallible> {
+    pancake_result_into_warp(server.read_segment_column(req).await)
   }
 }

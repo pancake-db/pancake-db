@@ -1,21 +1,21 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::partition_field::Value;
 use pancake_db_idl::dml::PartitionField;
 use pancake_db_idl::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::utils;
+use crate::errors::{PancakeResult, PancakeError};
 
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PartitionValue {
   STRING(String),
   INT64(i64),
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartitionField {
   pub name: String,
   pub value: PartitionValue,
@@ -44,7 +44,7 @@ impl From<&PartitionField> for NormalizedPartitionField {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartition {
   pub fields: Vec<NormalizedPartitionField>
 }
@@ -54,11 +54,11 @@ impl NormalizedPartition {
     self.fields.iter().map(|f| f.to_path_buf()).collect()
   }
 
-  pub fn partial(raw_fields: &[PartitionField]) -> Result<NormalizedPartition> {
+  pub fn partial(raw_fields: &[PartitionField]) -> PancakeResult<NormalizedPartition> {
     let mut fields = Vec::new();
     for raw_field in raw_fields {
       if raw_field.value.is_none() {
-        return Err(anyhow!("partition field has no value"));
+        return Err(PancakeError::invalid("partition field has no value"));
       }
       fields.push(NormalizedPartitionField::from(raw_field));
     }
@@ -68,9 +68,9 @@ impl NormalizedPartition {
   pub fn full(
     schema: &Schema,
     raw_fields: &[PartitionField]
-  ) -> Result<NormalizedPartition> {
+  ) -> PancakeResult<NormalizedPartition> {
     if schema.partitioning.len() != raw_fields.len() {
-      return Err(anyhow!("number of partition fields does not match schema"));
+      return Err(PancakeError::invalid("number of partition fields does not match schema"));
     }
 
     let mut raw_field_map = HashMap::new();
@@ -81,14 +81,14 @@ impl NormalizedPartition {
     for meta in &schema.partitioning {
       let maybe_raw_field = raw_field_map.get(&meta.name);
       if maybe_raw_field.is_none() {
-        return Err(anyhow!("partition field is missing"));
+        return Err(PancakeError::invalid("partition field is missing"));
       }
       let raw_field = *maybe_raw_field.unwrap();
       if !utils::partition_dtype_matches_field(
         &meta.dtype.unwrap(),
         &raw_field
       ) {
-        return Err(anyhow!("partition field dtype does not match schema"));
+        return Err(PancakeError::invalid("partition field dtype does not match schema"));
       }
       fields.push(NormalizedPartitionField::from(raw_field));
     }
@@ -99,7 +99,7 @@ impl NormalizedPartition {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct PartitionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -115,7 +115,7 @@ impl PartitionKey {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct SegmentKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -140,7 +140,7 @@ impl SegmentKey {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CompactionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,

@@ -1,16 +1,18 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::fmt::Debug;
 use std::hash::Hash;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use tokio::fs;
-use tokio::sync::RwLock;
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use tokio::fs;
+use tokio::io;
+use tokio::sync::RwLock;
 
+use crate::errors::{PancakeError, PancakeErrorKind, PancakeResult};
 use crate::utils;
-use std::path::{PathBuf, Path};
 
 #[async_trait]
 pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
@@ -27,20 +29,24 @@ pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
     }
   }
 
-  async fn overwrite(&self, dir: &Path, k: &K) -> Result<()> {
+  async fn overwrite(&self, dir: &Path, k: &K) -> io::Result<()> {
     let path = Self::path(dir, k);
     let metadata_str = serde_json::to_string(&self).expect("unable to serialize");
     return utils::overwrite_file(&path, metadata_str.as_bytes()).await;
   }
 }
 
+pub trait MetadataKey: Clone + Debug + Eq + Hash + Sync {
+  const ENTITY_NAME: &'static str;
+}
+
 #[derive(Clone)]
-pub struct CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync {
+pub struct CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey {
   pub dir: PathBuf,
   pub data: Arc<RwLock<HashMap<K, Option<V>>>>
 }
 
-impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + Sync  {
+impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
   pub async fn get_option(&self, k: &K) -> Option<V> {
     let mux_guard = self.data.read().await;
     let map = &*mux_guard;
@@ -48,7 +54,7 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + S
     let maybe_metadata = map.get(k).cloned();
     drop(mux_guard);
 
-    return match maybe_metadata {
+    match maybe_metadata {
       Some(metadata) => metadata,
       None => {
         let (res_box, mut mux_guard) = futures::future::join(
@@ -60,7 +66,14 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: Clone + Eq + Hash + S
         map.insert(k.clone(), res.clone());
         res
       },
-    };
+    }
+  }
+
+  pub async fn get_result(&self, k: &K) -> PancakeResult<V> {
+    match self.get_option(k).await {
+      Some(metadata) => Ok(metadata),
+      None => Err(PancakeError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
+    }
   }
 
   pub fn new(dir: &Path) -> Self {

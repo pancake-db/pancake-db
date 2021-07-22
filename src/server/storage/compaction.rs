@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
 use crate::types::CompactionKey;
 
 use super::traits::{CacheData, Metadata};
+use crate::server::storage::traits::MetadataKey;
+use crate::errors::PancakeResult;
 
 pub type CompressionParams = String;
+
+impl MetadataKey for CompactionKey {
+  const ENTITY_NAME: &'static str = "compaction";
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
@@ -36,12 +41,12 @@ pub type CompactionCache = CacheData<CompactionKey, Compaction>;
 
 impl CompactionCache {
   pub async fn get(&self, key: CompactionKey) -> Compaction {
-    self.get_option(&key)
+    self.get_result(&key)
       .await
       .unwrap_or_default()
   }
 
-  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> Result<()> {
+  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> PancakeResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     compaction.overwrite(&self.dir, &key).await?;

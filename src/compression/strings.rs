@@ -1,18 +1,18 @@
-use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::schema::ColumnMeta;
 
 use crate::encoding;
-use crate::storage::compaction::CompressionParams;
+use crate::server::storage::compaction::CompressionParams;
 
 use super::{Compressor, Decompressor, ZSTD};
+use crate::errors::PancakeResult;
 
 const ZSTD_LEVEL: i32 = 5;
 
 pub struct ZstdCompressor {}
 
 impl Compressor for ZstdCompressor {
-  fn compress_atoms(&self, values: &[Value]) -> Result<Vec<u8>> {
+  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
     let raw_bytes = values.iter()
       .flat_map(|v| encoding::atomic_value_bytes(v).unwrap())
       .collect::<Vec<u8>>();
@@ -27,7 +27,7 @@ impl Decompressor for ZstdDecompressor {
     ZstdDecompressor {}
   }
 
-  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<Value>> {
+  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
     let decompressed_bytes = zstd::decode_all(bytes)?;
     Ok(encoding::decode(&decompressed_bytes, meta)?
       .iter()
@@ -44,7 +44,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_serde() -> Result<()> {
+  fn test_serde() -> PancakeResult<()> {
     let strings = vec!["orange", "banana", "grapefruit", "ÿ\\'\""];
     let values = strings.iter()
       .map(|s| Value::string_val(s.to_string()))

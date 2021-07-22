@@ -1,14 +1,18 @@
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::dirs;
+use crate::server::storage::traits::MetadataKey;
 use crate::types::PartitionKey;
 use crate::utils;
 
 use super::traits::{CacheData, Metadata};
+
+impl MetadataKey for PartitionKey {
+  const ENTITY_NAME: &'static str = "partition segments file";
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentsMetadata {

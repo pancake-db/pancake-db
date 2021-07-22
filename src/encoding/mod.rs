@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 
-use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::{FieldValue, RepeatedFieldValue};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::ColumnMeta;
 
 use crate::utils;
+use crate::errors::{PancakeResult, PancakeError};
 
 const ESCAPE_BYTE: u8 = 255;
 const COUNT_BYTE: u8 = 254;
@@ -15,11 +15,11 @@ const TOP_NEST_LEVEL_BYTE: u8 = 252;
 
 //TODO bit packing for booleans?
 //TODO use counts instead of null bytes for long runs of nulls?
-pub fn encode(values: &[FieldValue], depth: u8) -> Result<Vec<u8>> {
+pub fn encode(values: &[FieldValue], depth: u8) -> PancakeResult<Vec<u8>> {
   let mut res = Vec::new();
 
   for maybe_value in values {
-    let mut err: Option<anyhow::Error> = None;
+    let mut maybe_err: PancakeResult<()> = Ok(());
     match &maybe_value.value {
       Some(value) => {
         let bytes = value_bytes(value, depth, depth);
@@ -28,7 +28,7 @@ pub fn encode(values: &[FieldValue], depth: u8) -> Result<Vec<u8>> {
             res.extend(actual_bytes);
           },
           Err(e) => {
-            err = Some(anyhow!(e));
+            maybe_err = Err(e);
           },
         }
       },
@@ -36,31 +36,29 @@ pub fn encode(values: &[FieldValue], depth: u8) -> Result<Vec<u8>> {
         res.push(NULL_BYTE);
       }
     };
-    if let Some(e) = err {
-      return Err(e);
-    }
+    maybe_err?;
   }
   Ok(res)
 }
 
-fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> Result<Vec<u8>> {
+fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> PancakeResult<Vec<u8>> {
   if traverse_depth == 0 {
     Ok(escape_bytes(&atomic_value_bytes(v)?, escape_depth))
   } else {
     match v {
       Value::list_val(l) => {
         let mut res = Vec::new();
-        let mut err: Option<anyhow::Error> = None;
+        let mut maybe_err: Option<PancakeError> = None;
         for val in &l.vals {
           match value_bytes(val.value.as_ref().unwrap(), traverse_depth - 1, escape_depth) {
             Ok(bytes) => res.extend(bytes),
             Err(e) => {
-              err = Some(e);
+              maybe_err = Some(e);
             }
           }
         }
 
-        match err {
+        match maybe_err {
           Some(e) => Err(e),
           None => {
             res.push(TOP_NEST_LEVEL_BYTE - escape_depth + traverse_depth);
@@ -68,12 +66,12 @@ fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> Result<Vec<u8
           }
         }
       },
-      _ => Err(anyhow!("expected a list to traverse but found atomic type"))
+      _ => Err(PancakeError::invalid("expected a list to traverse but found atomic type"))
     }
   }
 }
 
-pub fn atomic_value_bytes(v: &Value) -> Result<Vec<u8>> {
+pub fn atomic_value_bytes(v: &Value) -> PancakeResult<Vec<u8>> {
   match v {
     Value::string_val(x) => {
       let tail = x.clone().into_bytes();
@@ -82,7 +80,7 @@ pub fn atomic_value_bytes(v: &Value) -> Result<Vec<u8>> {
       Ok(res)
     },
     Value::int64_val(x) => Ok(x.to_be_bytes().to_vec()),
-    Value::list_val(_) => Err(anyhow!("expected to traverse down to atomic elements but found list"))
+    Value::list_val(_) => Err(PancakeError::invalid("expected to traverse down to atomic elements but found list"))
   }
 }
 
@@ -112,27 +110,27 @@ impl<'a> ByteReader<'a> {
     self.i -= 1;
   }
 
-  pub fn read_one(&mut self) -> Result<u8> {
+  pub fn read_one(&mut self) -> PancakeResult<u8> {
     if self.i >= self.bytes.len() {
-      return Err(anyhow!("read_one out of bytes"));
+      return Err(PancakeError::internal("read_one out of bytes"));
     }
     let res = self.bytes[self.i];
     self.i += 1;
     Ok(res)
   }
 
-  pub fn unescaped_read_one(&mut self) -> Result<u8> {
+  pub fn unescaped_read_one(&mut self) -> PancakeResult<u8> {
     let b = self.read_one()?;
     if b == ESCAPE_BYTE {
       self.read_one()
     } else if b > TOP_NEST_LEVEL_BYTE - self.nested_list_depth {
-      Err(anyhow!("unexpected unescaped byte"))
+      Err(PancakeError::internal("unexpected unescaped byte"))
     } else {
       Ok(b)
     }
   }
 
-  pub fn unescaped_read_n(&mut self, n: usize) -> Result<Vec<u8>> {
+  pub fn unescaped_read_n(&mut self, n: usize) -> PancakeResult<Vec<u8>> {
     let mut res = Vec::with_capacity(n);
     for _ in 0..n {
       res.push(self.unescaped_read_one()?);
@@ -140,9 +138,9 @@ impl<'a> ByteReader<'a> {
     Ok(res)
   }
 
-  pub fn read_n(&mut self, n: usize) -> Result<&'a [u8]> {
+  pub fn read_n(&mut self, n: usize) -> PancakeResult<&'a [u8]> {
     if self.i + n >= self.bytes.len() {
-      return Err(anyhow!("read_n out of bytes"));
+      return Err(PancakeError::internal("read_n out of bytes"));
     }
     let res = &self.bytes[self.i..self.i+n];
     self.i += n;
@@ -150,7 +148,7 @@ impl<'a> ByteReader<'a> {
   }
 }
 
-pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>> {
+pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
   let mut res = Vec::new();
   let mut reader = ByteReader { bytes, i: 0, nested_list_depth: meta.nested_list_depth as u8 };
   while !reader.complete() {
@@ -165,7 +163,7 @@ pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>> {
           res.push(FieldValue::new());
         }
       } else if res.len() != count {
-        return Err(anyhow!("in-file count did not match number of decoded entries"));
+        return Err(PancakeError::internal("in-file count did not match number of decoded entries"));
       }
     } else {
       reader.back_one();
@@ -176,7 +174,7 @@ pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>> {
   Ok(res)
 }
 
-fn decode_value(reader: &mut ByteReader, meta: &ColumnMeta, current_depth: u8) -> Result<FieldValue> {
+fn decode_value(reader: &mut ByteReader, meta: &ColumnMeta, current_depth: u8) -> PancakeResult<FieldValue> {
   if current_depth == meta.nested_list_depth as u8 {
     match meta.dtype.unwrap() {
       DataType::STRING => {

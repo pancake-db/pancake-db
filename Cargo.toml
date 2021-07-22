@@ -5,7 +5,6 @@ authors = ["mwlon <m.w.loncaric@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-anyhow = "1.0"
 async-std = "1.9.0"
 async-trait = "0.1.48"
 futures = "0.3.12"

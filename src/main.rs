@@ -1,22 +1,22 @@
 use std::net::{SocketAddr, TcpListener};
 
 use hyper::Server as HyperServer;
+use structopt::StructOpt;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
-use structopt::StructOpt;
 
-use crate::server::Server;
 use crate::opt::Opt;
+use crate::server::Server;
 
 mod utils;
 mod server;
 mod dirs;
-mod storage;
 mod compression;
 mod types;
 mod opt;
 mod encoding;
+mod errors;
 
 #[tokio::main]
 async fn main() {

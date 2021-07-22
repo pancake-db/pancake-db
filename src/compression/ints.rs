@@ -1,30 +1,30 @@
-use anyhow::{anyhow, Result};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::schema::ColumnMeta;
 use q_compress::{BitReader, I64Decompressor};
 
-use crate::storage::compaction::CompressionParams;
+use crate::server::storage::compaction::CompressionParams;
 
 use super::{Compressor, Decompressor};
 use super::Q_COMPRESS;
+use crate::errors::{PancakeError, PancakeResult};
 
 const Q_MAX_DEPTH: u32 = 7;
 
 pub struct I64QCompressor {}
 
-fn get_num_values(values: &[Value]) -> Result<Vec<i64>> {
+fn get_num_values(values: &[Value]) -> PancakeResult<Vec<i64>> {
   let mut num_values = Vec::with_capacity(values.len());
   for v in values {
     num_values.push(match v {
       Value::int64_val(x) => Ok(*x),
-      _ => Err(anyhow!("expected an int64 but found: {:?}", v))
+      _ => Err(PancakeError::invalid(&format!("expected an int64 but found: {:?}", v)))
     }?);
   }
   Ok(num_values)
 }
 
 impl Compressor for I64QCompressor {
-  fn compress_atoms(&self, values: &[Value]) -> Result<Vec<u8>> {
+  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
     let num_values = get_num_values(values)?;
     let compressor = q_compress::I64Compressor::train(
       num_values,
@@ -42,7 +42,7 @@ impl Decompressor for I64QDecompressor {
     I64QDecompressor {}
   }
 
-  fn decompress_atoms(&self, bytes: &[u8], _meta: &ColumnMeta) -> Result<Vec<Value>> {
+  fn decompress_atoms(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
     let mut bit_reader = BitReader::from(bytes.to_vec());
     let decompressor = I64Decompressor::from_reader(&mut bit_reader)?;
     let res = decompressor.decompress(&mut bit_reader)

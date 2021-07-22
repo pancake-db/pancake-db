@@ -2,12 +2,11 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dml::FieldValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::ColumnMeta;
-use anyhow::Result;
-use anyhow::anyhow;
 
 use crate::compression::ints::I64QCompressor;
 use crate::compression::strings::ZstdCompressor;
-use crate::storage::compaction::CompressionParams;
+use crate::server::storage::compaction::CompressionParams;
+use crate::errors::{PancakeResult, PancakeError};
 
 mod strings;
 mod ints;
@@ -18,11 +17,11 @@ const ZSTD: &str = "zstd";
 pub fn get_decompressor(
   dtype: DataType,
   parameters: Option<&CompressionParams>
-) -> Result<Box<dyn Decompressor>> {
+) -> PancakeResult<Box<dyn Decompressor>> {
   match dtype {
     DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(strings::ZstdDecompressor::from_parameters(parameters))),
     DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(ints::I64QDecompressor::from_parameters(parameters))),
-    _ => Err(anyhow!("unknown decompression param / data type combination: {:?}, {:?}", parameters, dtype)),
+    _ => Err(PancakeError::internal(&format!("unknown decompression param / data type combination: {:?}, {:?}", parameters, dtype))),
   }
 }
 
@@ -36,17 +35,17 @@ pub fn choose_compression_params(dtype: DataType) -> CompressionParams {
 pub fn get_compressor(
   dtype: DataType,
   parameters: Option<&CompressionParams>
-) -> Result<Box<dyn Compressor>> {
+) -> PancakeResult<Box<dyn Compressor>> {
   match dtype {
     DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(strings::ZstdCompressor {})),
     DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(ints::I64QCompressor {})),
-    _ => Err(anyhow!("unknown compression param / data type combination: {:?}, {:?}", parameters, dtype)),
+    _ => Err(PancakeError::invalid(&format!("unknown compression param / data type combination: {:?}, {:?}", parameters, dtype))),
   }
 }
 
 pub trait Compressor {
-  fn compress_atoms(&self, values: &[Value]) -> Result<Vec<u8>>;
-  fn compress(&self, values: &[FieldValue], _meta: &ColumnMeta) -> Result<Vec<u8>> {
+  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>>;
+  fn compress(&self, values: &[FieldValue], _meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
     self.compress_atoms(&values.iter()
       .flat_map(|v| v.value.clone())
       .collect::<Vec<Value>>()
@@ -56,8 +55,8 @@ pub trait Compressor {
 
 pub trait Decompressor {
   fn from_parameters(parameters: Option<&CompressionParams>) -> Self where Self: Sized;
-  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<Value>>;
-  fn decompress(&self, bytes: &[u8], meta: &ColumnMeta) -> Result<Vec<FieldValue>> {
+  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>>;
+  fn decompress(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
     Ok(
       self.decompress_atoms(bytes, meta)?
         .iter()
