@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
+use pancake_db_core::encoding;
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 use pancake_db_idl::dml::{FieldValue, WriteToPartitionRequest, WriteToPartitionResponse};
-use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
 
-use crate::{encoding, utils};
-use crate::dirs;
-use crate::errors::{pancake_result_into_warp, PancakeError, PancakeErrorKind, PancakeResult};
-use crate::types::{CompactionKey, NormalizedPartition, SegmentKey};
-use crate::types::PartitionKey;
+use crate::{dirs, utils};
+use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 
 use super::Server;
 
@@ -129,6 +127,6 @@ impl Server {
   }
 
   async fn warp_write_to_partition(server: Server, req: WriteToPartitionRequest) -> Result<impl Reply, Infallible> {
-    pancake_result_into_warp(server.write_to_partition(&req).await)
+    utils::pancake_result_into_warp(server.write_to_partition(&req).await)
   }
 }

@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use pancake_db_core::errors::PancakeResult;
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
 use crate::types::CompactionKey;
 
-use super::traits::{CacheData, Metadata};
-use crate::server::storage::traits::MetadataKey;
-use crate::errors::PancakeResult;
+use super::traits::{CacheData, Metadata, MetadataKey};
 
 pub type CompressionParams = String;
 

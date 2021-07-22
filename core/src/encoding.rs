@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use pancake_db_idl::dml::{FieldValue, RepeatedFieldValue};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;

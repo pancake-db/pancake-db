@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
-use crate::server::storage::traits::MetadataKey;
+use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
 
 use super::traits::{CacheData, Metadata};
-use crate::errors::PancakeResult;
+use pancake_db_core::errors::PancakeResult;
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";

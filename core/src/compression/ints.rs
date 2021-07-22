@@ -2,11 +2,9 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::schema::ColumnMeta;
 use q_compress::{BitReader, I64Decompressor};
 
-use crate::server::storage::compaction::CompressionParams;
-
-use super::{Compressor, Decompressor};
-use super::Q_COMPRESS;
 use crate::errors::{PancakeError, PancakeResult};
+
+use super::{CompressionParams, Compressor, Decompressor};
 
 const Q_MAX_DEPTH: u32 = 7;
 

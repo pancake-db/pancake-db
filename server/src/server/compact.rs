@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 
+use pancake_db_core::compression;
+use pancake_db_core::compression::Compressor;
+use pancake_db_core::errors::PancakeResult;
 use pancake_db_idl::schema::{ColumnMeta, Schema};
 
-use crate::compression;
-use crate::compression::Compressor;
 use crate::dirs;
-use crate::server::storage::compaction::{Compaction, CompressionParams};
-use crate::server::storage::flush::FlushMetadata;
+use crate::storage::compaction::{Compaction, CompressionParams};
+use crate::storage::flush::FlushMetadata;
 use crate::types::SegmentKey;
 use crate::utils;
 
 use super::Server;
-use crate::errors::PancakeResult;
 
 const MIN_ROWS_FOR_COMPACTION: usize = 10;
 

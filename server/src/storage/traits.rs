@@ -11,7 +11,7 @@ use tokio::fs;
 use tokio::io;
 use tokio::sync::RwLock;
 
-use crate::errors::{PancakeError, PancakeErrorKind, PancakeResult};
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 use crate::utils;
 
 #[async_trait]

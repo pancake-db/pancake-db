@@ -2,10 +2,9 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::schema::ColumnMeta;
 
 use crate::encoding;
-use crate::server::storage::compaction::CompressionParams;
-
-use super::{Compressor, Decompressor, ZSTD};
 use crate::errors::PancakeResult;
+
+use super::{CompressionParams, Compressor, Decompressor};
 
 const ZSTD_LEVEL: i32 = 5;
 

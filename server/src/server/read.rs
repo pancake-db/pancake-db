@@ -1,21 +1,21 @@
+use std::convert::Infallible;
+
+use pancake_db_core::compression;
+use pancake_db_core::encoding;
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use protobuf::MessageField;
 use tokio::fs;
 use warp::{Filter, Rejection, Reply};
 
-use crate::compression;
 use crate::dirs;
-use crate::encoding;
-use crate::server::storage::compaction::CompressionParams;
-use crate::server::storage::flush::FlushMetadata;
+use crate::storage::compaction::CompressionParams;
+use crate::storage::flush::FlushMetadata;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
-use tokio::io::ErrorKind;
-use crate::errors::{PancakeResult, PancakeError, pancake_result_into_warp};
-use std::convert::Infallible;
 
 impl Server {
   pub async fn read_compact_col(
@@ -195,7 +195,7 @@ impl Server {
   }
 
   async fn warp_list_segments(server: Server, req: ListSegmentsRequest) -> Result<impl Reply, Infallible> {
-    pancake_result_into_warp(server.list_segments(req).await)
+    utils::pancake_result_into_warp(server.list_segments(req).await)
   }
 
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -270,6 +270,6 @@ impl Server {
   }
 
   async fn warp_read_segment_column(server: Server, req: ReadSegmentColumnRequest) -> Result<impl Reply, Infallible> {
-    pancake_result_into_warp(server.read_segment_column(req).await)
+    utils::pancake_result_into_warp(server.read_segment_column(req).await)
   }
 }

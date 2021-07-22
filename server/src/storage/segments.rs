@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::dirs;
-use crate::server::storage::traits::MetadataKey;
+use crate::storage::traits::MetadataKey;
 use crate::types::PartitionKey;
 use crate::utils;
 

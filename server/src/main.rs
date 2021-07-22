@@ -12,11 +12,10 @@ use crate::server::Server;
 mod utils;
 mod server;
 mod dirs;
-mod compression;
 mod types;
 mod opt;
-mod encoding;
 mod errors;
+pub mod storage;
 
 #[tokio::main]
 async fn main() {

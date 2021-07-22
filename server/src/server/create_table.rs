@@ -1,12 +1,12 @@
+use std::convert::Infallible;
+
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
-use pancake_db_idl::schema::Schema;
 use warp::{Filter, Rejection, Reply};
 
 use crate::dirs;
 use crate::server::Server;
 use crate::utils;
-use crate::errors::{PancakeResult, PancakeError, pancake_result_into_warp};
-use std::convert::Infallible;
 
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> PancakeResult<CreateTableResponse> {
@@ -33,7 +33,7 @@ impl Server {
   }
 
   async fn create_table_pb(server: Server, req: CreateTableRequest) -> Result<impl Reply, Infallible> {
-    pancake_result_into_warp(server.create_table(req).await)
+    utils::pancake_result_into_warp(server.create_table(req).await)
   }
 }
 

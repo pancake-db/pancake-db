@@ -1,18 +1,19 @@
-use std::array::TryFromSliceError;
-use std::convert::TryInto;
+use std::convert::Infallible;
 use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use pancake_db_core::errors::{PancakeError, PancakeErrorKind, PancakeResult};
 use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter};
 use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
+use serde::Serialize;
 use tokio::fs;
 use tokio::io;
 use tokio::io::AsyncWriteExt;
-
-use crate::errors::{PancakeError, PancakeResult};
+use warp::http::StatusCode;
+use warp::Reply;
 
 pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   match fs::read(fname).await {
@@ -45,18 +46,18 @@ pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> 
   Ok(file.write_all(contents).await?)
 }
 
-pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
-  match dtype {
-    PartitionDataType::STRING => field.has_string_val(),
-    PartitionDataType::INT64 => field.has_int64_val(),
-  }
-}
-
 pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   let value = field.value.get_ref();
   match dtype {
     DataType::STRING => value.has_string_val(),
     DataType::INT64 => value.has_int64_val(),
+  }
+}
+
+pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
+  match dtype {
+    PartitionDataType::STRING => field.has_string_val(),
+    PartitionDataType::INT64 => field.has_int64_val(),
   }
 }
 
@@ -102,10 +103,6 @@ pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilte
   true
 }
 
-pub fn try_byte_array<const N: usize>(v: &[u8]) -> Result<[u8; N], TryFromSliceError> {
-  v.try_into()
-}
-
 pub async fn read_or_empty(path: &Path) -> io::Result<Vec<u8>> {
   match fs::read(path).await {
     Ok(bytes) => Ok(bytes),
@@ -113,5 +110,30 @@ pub async fn read_or_empty(path: &Path) -> io::Result<Vec<u8>> {
       ErrorKind::NotFound => Ok(Vec::new()),
       _ => Err(e),
     },
+  }
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+  pub message: String,
+}
+
+pub fn pancake_result_into_warp<T: Serialize>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
+  match res {
+    Ok(x) => Ok(Box::new(warp::reply::json(&x))),
+    Err(e) => {
+      let reply = warp::reply::json(&ErrorResponse {
+        message: e.to_string(),
+      });
+      let status_code = match e.kind {
+        PancakeErrorKind::DoesNotExist {entity_name: _, value: _} => StatusCode::NOT_FOUND,
+        PancakeErrorKind::Invalid {explanation: _} => StatusCode::BAD_REQUEST,
+        PancakeErrorKind::Internal {explanation: _} => StatusCode::INTERNAL_SERVER_ERROR,
+      };
+      Ok(Box::new(warp::reply::with_status(
+        reply,
+        status_code,
+      )))
+    }
   }
 }

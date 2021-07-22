@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 use pancake_db_idl::dml::partition_field::Value;
 use pancake_db_idl::dml::PartitionField;
 use pancake_db_idl::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::utils;
-use crate::errors::{PancakeResult, PancakeError};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PartitionValue {

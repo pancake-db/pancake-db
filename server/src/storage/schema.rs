@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use pancake_db_idl::schema::Schema;
 
 use crate::dirs;
-use crate::server::storage::traits::MetadataKey;
+use crate::storage::traits::MetadataKey;
 
 use super::traits::{CacheData, Metadata};
-use crate::errors::{PancakeResult, PancakeError};
+use pancake_db_core::errors::{PancakeResult, PancakeError};
 
 type SchemaKey = String;
 

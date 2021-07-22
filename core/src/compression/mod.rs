@@ -5,7 +5,6 @@ use pancake_db_idl::schema::ColumnMeta;
 
 use crate::compression::ints::I64QCompressor;
 use crate::compression::strings::ZstdCompressor;
-use crate::server::storage::compaction::CompressionParams;
 use crate::errors::{PancakeResult, PancakeError};
 
 mod strings;
@@ -13,6 +12,7 @@ mod ints;
 
 const Q_COMPRESS: &str = "q_compress";
 const ZSTD: &str = "zstd";
+pub type CompressionParams = String;
 
 pub fn get_decompressor(
   dtype: DataType,
@@ -37,8 +37,8 @@ pub fn get_compressor(
   parameters: Option<&CompressionParams>
 ) -> PancakeResult<Box<dyn Compressor>> {
   match dtype {
-    DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(strings::ZstdCompressor {})),
-    DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(ints::I64QCompressor {})),
+    DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(ZstdCompressor {})),
+    DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(I64QCompressor {})),
     _ => Err(PancakeError::invalid(&format!("unknown compression param / data type combination: {:?}, {:?}", parameters, dtype))),
   }
 }

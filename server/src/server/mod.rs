@@ -8,18 +8,16 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
-use storage::compaction::CompactionCache;
-use storage::flush::FlushMetadataCache;
-use storage::schema::SchemaCache;
-use storage::segments::SegmentsMetadataCache;
-
+use crate::storage::compaction::CompactionCache;
+use crate::storage::flush::FlushMetadataCache;
+use crate::storage::schema::SchemaCache;
+use crate::storage::segments::SegmentsMetadataCache;
 use crate::types::{PartitionKey, SegmentKey};
 
 mod create_table;
 mod write;
 mod read;
 mod compact;
-pub mod storage;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
