@@ -1,0 +1,13 @@
+[package]
+name = "pancake-db-client"
+version = "0.0.0"
+authors = ["mwlon <m.w.loncaric@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hyper = {version="0.14.9", features=["full"]}
+pancake-db-core = {path="../core", version="0.0.0"}
+pancake-db-idl = {path="../../pancake-idl/rust", version="0.0.0"}
+protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
+serde_json = "1.0"
+tokio = {version="1.2.0", features=["macros"]}

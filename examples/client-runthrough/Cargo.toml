@@ -1,0 +1,17 @@
+[package]
+name = "pancake-db-example"
+version = "0.0.0"
+authors = ["mwlon <m.w.loncaric@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+async-std = "1.9.0"
+async-trait = "0.1.48"
+hyper = "0.14.9"
+pancake-db-client = {path="../../client", version="0.0.0"}
+pancake-db-idl = {path="../../../pancake-idl/rust", version="0.0.0"}
+protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
+serde_json = "1.0.59"
+serde = {version="1.0.117", features=["derive"]}
+structopt = "0.3.22"
+tokio = {version="1.2.0", features=["full"]}
