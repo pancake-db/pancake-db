@@ -9,8 +9,7 @@ use super::Client;
 
 impl Client {
   pub async fn create_table(&self, req: &CreateTableRequest) -> Result<CreateTableResponse> {
-    let h_client = HClient::new();
-    let uri = format!("http://{}:{}/rest/create_table", self.ip, self.port);
+    let uri = self.rest_endpoint("create_table");
     let pb_str = serde_json::to_string(req)?;
 
     let http_req = Request::builder()
@@ -18,7 +17,7 @@ impl Client {
       .uri(&uri)
       .header("Content-Type", "application/json")
       .body(Body::from(pb_str))?;
-    let mut resp = h_client.request(http_req).await?;
+    let mut resp = self.h_client.request(http_req).await?;
     let status = resp.status();
     let mut content = String::new();
     while let Some(chunk) = resp.body_mut().data().await {

@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 
 use pancake_db_core::errors::{PancakeError, PancakeErrorKind, PancakeResult};
-use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter};
+use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter, FieldValue};
 use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
@@ -49,8 +49,21 @@ pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> 
 pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   let value = field.value.get_ref();
   match dtype {
-    DataType::STRING => value.has_string_val(),
-    DataType::INT64 => value.has_int64_val(),
+    DataType::STRING => traverse_field_value(value, &|v: &FieldValue| v.has_string_val()),
+    DataType::INT64 => traverse_field_value(value, &|v: &FieldValue| v.has_int64_val()),
+  }
+}
+
+fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> bool {
+  if value.has_list_val() {
+    for v in &value.get_list_val().vals {
+      if !f(v) {
+        return false;
+      }
+    }
+    true
+  } else {
+    f(value)
   }
 }
 
