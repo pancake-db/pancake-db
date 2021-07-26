@@ -10,9 +10,10 @@ use crate::{dirs, utils};
 use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 
 use super::Server;
+use hyper::body::Bytes;
 
 impl Server {
-  pub async fn write_to_partition(&self, req: &WriteToPartitionRequest) -> PancakeResult<WriteToPartitionResponse> {
+  pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> PancakeResult<WriteToPartitionResponse> {
     let table_name = &req.table_name;
     // validate data matches schema
     let schema = self.schema_cache.get_result(table_name).await?;
@@ -122,11 +123,16 @@ impl Server {
     warp::post()
       .and(warp::path("write_to_partition"))
       .and(warp::filters::ext::get::<Server>())
-      .and(warp::filters::body::json())
+      .and(warp::filters::body::bytes())
       .and_then(Self::warp_write_to_partition)
   }
 
-  async fn warp_write_to_partition(server: Server, req: WriteToPartitionRequest) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.write_to_partition(&req).await)
+  async fn write_to_partition_from_bytes(&self, body: Bytes) -> PancakeResult<WriteToPartitionResponse> {
+    let req = utils::parse_pb::<WriteToPartitionRequest>(body)?;
+    self.write_to_partition(req).await
+  }
+
+  async fn warp_write_to_partition(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    utils::pancake_result_into_warp(server.write_to_partition_from_bytes(body).await)
   }
 }

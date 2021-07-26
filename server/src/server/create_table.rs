@@ -7,6 +7,7 @@ use warp::{Filter, Rejection, Reply};
 use crate::dirs;
 use crate::server::Server;
 use crate::utils;
+use hyper::body::Bytes;
 
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> PancakeResult<CreateTableResponse> {
@@ -28,12 +29,17 @@ impl Server {
     warp::post()
       .and(warp::path("create_table"))
       .and(warp::filters::ext::get::<Server>())
-      .and(warp::filters::body::json())
-      .and_then(Self::create_table_pb)
+      .and(warp::filters::body::bytes())
+      .and_then(Self::create_table_from_body)
   }
 
-  async fn create_table_pb(server: Server, req: CreateTableRequest) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.create_table(req).await)
+  async fn create_table_from_bytes(&self, body: Bytes) -> PancakeResult<CreateTableResponse> {
+    let req = utils::parse_pb::<CreateTableRequest>(body)?;
+    self.create_table(req).await
+  }
+
+  async fn create_table_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    utils::pancake_result_into_warp(server.create_table_from_bytes(body).await)
   }
 }
 

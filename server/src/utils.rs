@@ -12,8 +12,10 @@ use serde::Serialize;
 use tokio::fs;
 use tokio::io;
 use tokio::io::AsyncWriteExt;
-use warp::http::StatusCode;
+use warp::http::{StatusCode, Response};
 use warp::Reply;
+use protobuf::Message;
+use hyper::body::Bytes;
 
 pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
   match fs::read(fname).await {
@@ -131,9 +133,25 @@ struct ErrorResponse {
   pub message: String,
 }
 
-pub fn pancake_result_into_warp<T: Serialize>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
-  match res {
-    Ok(x) => Ok(Box::new(warp::reply::json(&x))),
+pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> PancakeResult<T> {
+  let body_string = String::from_utf8(body.to_vec()).map_err(|_|
+    PancakeError::invalid("body bytes do not parse to string")
+  )?;
+  let req = protobuf::json::parse_from_str::<T>(&body_string).map_err(|_|
+    PancakeError::invalid("body string does not parse to correct request format")
+  )?;
+  Ok(req)
+}
+
+pub fn pancake_result_into_warp<T: Serialize + Message>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
+  let body_res = res.and_then(|pb|
+    protobuf::json::print_to_string(&pb)
+      .map_err(|_| PancakeError::internal("unable to write response as json"))
+  );
+  match body_res {
+    Ok(body) => {
+      Ok(Box::new(Response::new(body)))
+    },
     Err(e) => {
       let reply = warp::reply::json(&ErrorResponse {
         message: e.to_string(),

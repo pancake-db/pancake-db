@@ -1,4 +1,5 @@
 mod create_table;
+mod read;
 mod write_to_partition;
 
 use std::net::IpAddr;

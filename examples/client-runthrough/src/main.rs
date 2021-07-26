@@ -9,8 +9,9 @@ use tokio;
 
 use pancake_db_client::Client;
 use pancake_db_client::errors::Result as ClientResult;
-use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, FieldValue, RepeatedFieldValue};
+use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, FieldValue, RepeatedFieldValue, ListSegmentsRequest, PartitionFilter, ReadSegmentColumnRequest};
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
+use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dml::field_value::Value;
 
 const TABLE_NAME: &str = "t";
@@ -115,6 +116,41 @@ async fn main() -> ClientResult<()> {
   };
   let write_resp = client.write_to_partition(&write_to_partition_req).await?;
   println!("Wrote rows: {:?}", write_resp);
+
+  let list_segments_eq = ListSegmentsRequest {
+    table_name: TABLE_NAME.to_string(),
+    partition_filter: vec![
+      PartitionFilter {
+        value: Some(PartitionFilterValue::equal_to(PartitionField {
+          name: "part".to_string(),
+          value: Some(PartitionValue::string_val("x0".to_string())),
+          ..Default::default()
+        })),
+        ..Default::default()
+      }
+    ],
+    ..Default::default()
+  };
+  let list_resp = client.list_segments(&list_segments_eq).await?;
+  println!("Listed segments: {:?}", list_resp);
+
+  let segment_id = &list_resp.segments[0].segment_id;
+  let read_segment_column_req = ReadSegmentColumnRequest {
+    table_name: TABLE_NAME.to_string(),
+    partition: vec![
+      PartitionField {
+        name: "part".to_string(),
+        value: Some(PartitionValue::string_val("x0".to_string())),
+        ..Default::default()
+      }
+    ],
+    segment_id: segment_id.to_string(),
+    column_name: "l".to_string(),
+    ..Default::default()
+  };
+  let read_resp = client.read_segment_column(&read_segment_column_req).await?;
+  println!("Read: {:?}", read_resp);
+
 
   Ok(())
 }

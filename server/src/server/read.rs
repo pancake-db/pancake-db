@@ -16,6 +16,7 @@ use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
+use hyper::body::Bytes;
 
 impl Server {
   pub async fn read_compact_col(
@@ -186,23 +187,28 @@ impl Server {
     })
   }
 
+  async fn list_segments_from_bytes(&self, body: Bytes) -> PancakeResult<ListSegmentsResponse> {
+    let req = utils::parse_pb::<ListSegmentsRequest>(body)?;
+    self.list_segments(req).await
+  }
+
   pub fn list_segments_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
       .and(warp::path("list_segments"))
       .and(warp::filters::ext::get::<Server>())
-      .and(warp::filters::body::json())
+      .and(warp::filters::body::bytes())
       .and_then(Self::warp_list_segments)
   }
 
-  async fn warp_list_segments(server: Server, req: ListSegmentsRequest) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.list_segments(req).await)
+  async fn warp_list_segments(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    utils::pancake_result_into_warp(server.list_segments_from_bytes(body).await)
   }
 
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
       .and(warp::path("read_segment_column"))
       .and(warp::filters::ext::get::<Server>())
-      .and(warp::filters::body::json())
+      .and(warp::filters::body::bytes())
       .and_then(Self::warp_read_segment_column)
   }
 
@@ -269,7 +275,12 @@ impl Server {
     })
   }
 
-  async fn warp_read_segment_column(server: Server, req: ReadSegmentColumnRequest) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.read_segment_column(req).await)
+  async fn read_segment_column_from_bytes(&self, body: Bytes) -> PancakeResult<ReadSegmentColumnResponse> {
+    let req = utils::parse_pb::<ReadSegmentColumnRequest>(body)?;
+    self.read_segment_column(req).await
+  }
+
+  async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    utils::pancake_result_into_warp(server.read_segment_column_from_bytes(body).await)
   }
 }

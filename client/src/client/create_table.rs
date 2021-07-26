@@ -1,7 +1,6 @@
-use hyper::{Body, Client as HClient, Method, Request, StatusCode};
+use hyper::{Body, Method, Request, StatusCode};
 use hyper::body::HttpBody;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
-use serde_json;
 
 use crate::errors::{Error, Result};
 
@@ -10,7 +9,7 @@ use super::Client;
 impl Client {
   pub async fn create_table(&self, req: &CreateTableRequest) -> Result<CreateTableResponse> {
     let uri = self.rest_endpoint("create_table");
-    let pb_str = serde_json::to_string(req)?;
+    let pb_str = protobuf::json::print_to_string(req)?;
 
     let http_req = Request::builder()
       .method(Method::POST)
