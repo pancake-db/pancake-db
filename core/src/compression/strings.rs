@@ -28,7 +28,12 @@ impl Decompressor for ZstdDecompressor {
 
   fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
     let decompressed_bytes = zstd::decode_all(bytes)?;
-    Ok(encoding::decode(&decompressed_bytes, meta)?
+    let fake_meta = ColumnMeta {
+      dtype: meta.dtype,
+      nested_list_depth: 0,
+      ..Default::default()
+    };
+    Ok(encoding::decode(&decompressed_bytes, &fake_meta)?
       .iter()
       .map(|v| v.value.as_ref().unwrap().clone())
       .collect())

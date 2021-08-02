@@ -145,9 +145,7 @@ dependencies = [
 
 [[package]]
 name = "q_compress"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa445ca0e64b2c963eaf16c9a54f02a46bb8a4386bf3f48480a54a96b26736c4"
+version = "0.2.3"
 
 [[package]]
 name = "quote"

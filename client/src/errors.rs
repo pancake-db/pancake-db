@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 use protobuf::json::{ParseError, PrintError};
 use hyper::http::uri::InvalidUri;
 use std::string::FromUtf8Error;
+use pancake_db_core::errors::PancakeError;
 
 pub trait OtherUpcastable: std::error::Error {}
 impl OtherUpcastable for FromUtf8Error {}
@@ -76,6 +77,15 @@ impl From<ParseError> for Error {
   fn from(e: ParseError) -> Error {
     Error {
       message: format!("{:?}", e),
+      kind: ErrorKind::Other,
+    }
+  }
+}
+
+impl From<PancakeError> for Error {
+  fn from(e: PancakeError) -> Error {
+    Error {
+      message: format!("{}", e),
       kind: ErrorKind::Other,
     }
   }

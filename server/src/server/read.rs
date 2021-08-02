@@ -34,7 +34,7 @@ impl Server {
       Ok(Vec::new())
     } else {
       let decompressor = compression::get_decompressor(col.dtype.unwrap(), compression_params)?;
-      let decoded = decompressor.decompress(&bytes, col)?;
+      let decoded = decompressor.decompress(bytes, col)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])
       } else {

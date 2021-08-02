@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+use pancake_db_core::compression;
 use pancake_db_idl::ddl::CreateTableRequest;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
@@ -13,6 +14,7 @@ use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, F
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dml::field_value::Value;
+use tokio::time::Duration;
 
 const TABLE_NAME: &str = "t";
 
@@ -23,6 +25,12 @@ async fn main() -> ClientResult<()> {
     1337,
   );
 
+  let l_meta = ColumnMeta {
+    name: "l".to_string(),
+    dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
+    nested_list_depth: 1,
+    ..Default::default()
+  };
   let create_table_req = CreateTableRequest {
     table_name: TABLE_NAME.to_string(),
     schema: MessageField::some(Schema {
@@ -44,12 +52,7 @@ async fn main() -> ClientResult<()> {
           dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
           ..Default::default()
         },
-        ColumnMeta {
-          name: "l".to_string(),
-          dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
-          nested_list_depth: 1,
-          ..Default::default()
-        }
+        l_meta.clone()
       ],
       ..Default::default()
     }),
@@ -87,7 +90,7 @@ async fn main() -> ClientResult<()> {
                   ..Default::default()
                 },
                 FieldValue {
-                  value: Some(Value::string_val("l0 item".to_string())),
+                  value: Some(Value::string_val("l1 item".to_string())),
                   ..Default::default()
                 },
               ],
@@ -114,6 +117,10 @@ async fn main() -> ClientResult<()> {
     rows,
     ..Default::default()
   };
+  for _ in 0..1000 as u32 {
+    client.write_to_partition(&write_to_partition_req).await?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+  }
   let write_resp = client.write_to_partition(&write_to_partition_req).await?;
   println!("Wrote rows: {:?}", write_resp);
 
@@ -151,6 +158,15 @@ async fn main() -> ClientResult<()> {
   let read_resp = client.read_segment_column(&read_segment_column_req).await?;
   println!("Read: {:?}", read_resp);
 
+  let decompressor = compression::get_decompressor(
+    DataType::STRING,
+    Some(&read_resp.compressor_name)
+  )?;
+  let decoded = decompressor.decompress(read_resp.compressed_data, &l_meta)?;
+  println!("field values:");
+  for fv in &decoded {
+    println!("{:?}", fv);
+  }
 
   Ok(())
 }

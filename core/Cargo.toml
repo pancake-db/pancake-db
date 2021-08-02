@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 pancake-db-idl = {path= "../../pancake-idl/rust", version="0.0.0"}
 protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
-q_compress = "0.2.2"
+q_compress = {path="../../quantile-compression"}
 serde_json = "1.0.59"
 serde = {version="1.0.117", features=["derive"]}
 zstd = "0.9"

@@ -12,6 +12,8 @@ use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey}
 use super::Server;
 use hyper::body::Bytes;
 
+const TARGET_ROWS_PER_SEGMENT: usize = 100;
+
 impl Server {
   pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> PancakeResult<WriteToPartitionResponse> {
     let table_name = &req.table_name;
@@ -60,7 +62,7 @@ impl Server {
 
     utils::create_if_new(&dirs::partition_dir(&self.dir, partition_key)).await?;
     let segments_meta = self.segments_metadata_cache.get_or_create(partition_key)
-      .await;
+      .await?;
 
     let segment_id = segments_meta.write_segment_id;
 
@@ -80,6 +82,10 @@ impl Server {
     let flush_meta = self.flush_metadata_cache
       .get(&segment_key)
       .await;
+
+    if flush_meta.n + rows.len() > TARGET_ROWS_PER_SEGMENT {
+      self.segments_metadata_cache.start_new_write_segment(partition_key, &segment_id).await?;
+    }
 
     let mut compaction_futures = HashMap::new();
     for write_version in &flush_meta.write_versions {

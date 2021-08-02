@@ -8,8 +8,9 @@ edition = "2018"
 async-std = "1.9.0"
 async-trait = "0.1.48"
 hyper = "0.14.9"
-pancake-db-client = {path="../../client", version="0.0.0"}
-pancake-db-idl = {path="../../../pancake-idl/rust", version="0.0.0"}
+pancake-db-client = {path="../../client"}
+pancake-db-core = {path="../../core"}
+pancake-db-idl = {path="../../../pancake-idl/rust"}
 protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
 serde_json = "1.0.59"
 serde = {version="1.0.117", features=["derive"]}

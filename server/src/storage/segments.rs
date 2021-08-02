@@ -9,6 +9,7 @@ use crate::types::PartitionKey;
 use crate::utils;
 
 use super::traits::{CacheData, Metadata};
+use pancake_db_core::errors::{PancakeResult, PancakeError};
 
 impl MetadataKey for PartitionKey {
   const ENTITY_NAME: &'static str = "partition segments file";
@@ -18,6 +19,7 @@ impl MetadataKey for PartitionKey {
 pub struct SegmentsMetadata {
   pub write_segment_id: String,
   pub segment_ids: Vec<String>,
+  pub start_new_write_segment: bool,
 }
 
 impl Metadata<PartitionKey> for SegmentsMetadata {
@@ -32,14 +34,19 @@ impl SegmentsMetadata {
     SegmentsMetadata {
       write_segment_id: segment_id.to_string(),
       segment_ids: vec![segment_id.to_string()],
+      start_new_write_segment: false,
     }
   }
+}
+
+fn new_segment_id() -> String {
+  Uuid::new_v4().to_string()
 }
 
 pub type SegmentsMetadataCache = CacheData<PartitionKey, SegmentsMetadata>;
 
 impl SegmentsMetadataCache {
-  pub async fn get_or_create(&self, key: &PartitionKey) -> SegmentsMetadata {
+  pub async fn start_new_write_segment(&self, key: &PartitionKey, dead_segment_id: &str) -> PancakeResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let maybe_option = map.get(key);
@@ -54,23 +61,64 @@ impl SegmentsMetadataCache {
     };
 
     match option {
-      Some(res) => res,
+      Some(mut existing) if existing.write_segment_id == dead_segment_id => {
+        existing.start_new_write_segment = true;
+        existing.overwrite(&self.dir, key).await?;
+        map.insert(key.clone(), Some(existing.clone()));
+        Ok(())
+      },
+      _ => Err(PancakeError::internal("unexpected start new write segment on empty table"))
+    }
+  }
+
+  pub async fn get_or_create(&self, key: &PartitionKey) -> PancakeResult<SegmentsMetadata> {
+    let mut mux_guard = self.data.write().await;
+    let map = &mut *mux_guard;
+    let maybe_option = map.get(key);
+
+    let option = match maybe_option {
+      Some(res) => res.clone(),
       None => {
-        let segment_id = Uuid::new_v4().to_string();
+        let res = SegmentsMetadata::load(&self.dir, key).await.map(|x| *x);
+        map.insert(key.clone(), res.clone());
+        res
+      }
+    };
+
+    match option {
+      Some(mut res) => {
+        if res.start_new_write_segment {
+          let segment_id = new_segment_id();
+          res.segment_ids.push(segment_id.clone());
+          res.write_segment_id = segment_id.clone();
+          res.start_new_write_segment = false;
+          res.overwrite(&self.dir, key).await?;
+          self.provision_segment(key, segment_id).await?;
+          map.insert(key.clone(), Some(res.clone()));
+        }
+        Ok(res)
+      },
+      None => {
+        let segment_id = new_segment_id();
         let meta = SegmentsMetadata::new(&segment_id);
-        meta.overwrite(&self.dir, key).await.expect("could not overwrite segments meta");
-        let segment_key = key.segment_key(segment_id);
-        utils::create_if_new(&dirs::segment_dir(
-          &self.dir,
-          &segment_key,
-        )).await.expect("failed to create segment dir");
-        utils::create_if_new(&dirs::version_dir(
-          &self.dir,
-          &segment_key.compaction_key(0),
-        )).await.expect("failed to create version dir");
+        meta.overwrite(&self.dir, key).await?;
+        self.provision_segment(key, segment_id).await?;
         map.insert(key.clone(), Some(meta.clone()));
-        meta
+        Ok(meta)
       }
     }
+  }
+
+  pub async fn provision_segment(&self, key: &PartitionKey, segment_id: String) -> PancakeResult<()> {
+    let segment_key = key.segment_key(segment_id);
+    utils::create_if_new(&dirs::segment_dir(
+      &self.dir,
+      &segment_key,
+    )).await?;
+    utils::create_if_new(&dirs::version_dir(
+      &self.dir,
+      &segment_key.compaction_key(0),
+    )).await?;
+    Ok(())
   }
 }
