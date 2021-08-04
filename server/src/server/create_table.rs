@@ -16,9 +16,9 @@ impl Server {
       None => Err(PancakeError::invalid("missing table schema")),
     }?.as_ref();
 
-    utils::create_if_new(&self.dir).await?;
+    utils::create_if_new(&self.opts.dir).await?;
 
-    let table_dir = dirs::table_dir(&self.dir, &req.table_name);
+    let table_dir = dirs::table_dir(&self.opts.dir, &req.table_name);
     utils::create_if_new(&table_dir).await?;
 
     self.schema_cache.assert(&req.table_name, schema).await?;

@@ -1,13 +1,15 @@
 use std::convert::Infallible;
 
-use pancake_db_core::compression;
-use pancake_db_core::encoding;
-use pancake_db_core::errors::{PancakeError, PancakeResult};
+use hyper::body::Bytes;
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use protobuf::MessageField;
 use tokio::fs;
 use warp::{Filter, Rejection, Reply};
+
+use pancake_db_core::compression;
+use pancake_db_core::encoding;
+use pancake_db_core::errors::{PancakeError, PancakeResult};
 
 use crate::dirs;
 use crate::storage::compaction::CompressionParams;
@@ -16,7 +18,6 @@ use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
-use hyper::body::Bytes;
 
 impl Server {
   pub async fn read_compact_col(
@@ -24,11 +25,11 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    compression_params: Option<&CompressionParams>,
+    compression_params: &CompressionParams,
     limit: usize,
   ) -> PancakeResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
-    let path = dirs::compact_col_file(&self.dir, &compaction_key, &col.name);
+    let path = dirs::compact_col_file(&self.opts.dir, &compaction_key, &col.name);
     let bytes = utils::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
@@ -52,7 +53,7 @@ impl Server {
     limit: usize,
   ) -> PancakeResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
-    let path = dirs::flush_col_file(&self.dir, &compaction_key, &col.name);
+    let path = dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name);
     let bytes = utils::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
@@ -73,16 +74,21 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    compression_params: Option<&CompressionParams>,
+    maybe_compression_params: Option<&CompressionParams>,
     limit: usize,
   ) -> PancakeResult<Vec<FieldValue>> {
-    let mut values = self.read_compact_col(
-      segment_key,
-      col,
-      metadata,
-      compression_params,
-      limit
-    ).await?;
+    let mut values = Vec::new();
+    if let Some(compression_params) = maybe_compression_params {
+      values.extend(
+        self.read_compact_col(
+          segment_key,
+          col,
+          metadata,
+          compression_params,
+          limit
+        ).await?
+      );
+    }
     if values.len() < limit {
       values.extend(self.read_flush_col(
         segment_key,
@@ -101,7 +107,7 @@ impl Server {
     meta: &PartitionMeta,
   ) -> PancakeResult<Vec<PartitionField>> {
     let dir = dirs::partition_dir(
-      &self.dir,
+      &self.opts.dir,
       &PartitionKey {
         table_name: table_name.to_string(),
         partition: NormalizedPartition::partial(parent)?
@@ -117,7 +123,7 @@ impl Server {
       let fname = entry.file_name();
       let parts = fname
         .to_str()
-        .expect("how can os string not be str")
+        .unwrap()
         .split('=')
         .collect::<Vec<&str>>();
 
@@ -249,12 +255,12 @@ impl Server {
     // TODO: pagination
     let compaction_key = segment_key.compaction_key(flush_meta.read_version);
     let compressed_filename = dirs::compact_col_file(
-      &self.dir,
+      &self.opts.dir,
       &compaction_key,
       &col_name,
     );
     let uncompressed_filename = dirs::flush_col_file(
-      &self.dir,
+      &self.opts.dir,
       &compaction_key,
       &col_name,
     );

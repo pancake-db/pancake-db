@@ -12,8 +12,6 @@ use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey}
 use super::Server;
 use hyper::body::Bytes;
 
-const TARGET_ROWS_PER_SEGMENT: usize = 100;
-
 impl Server {
   pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> PancakeResult<WriteToPartitionResponse> {
     let table_name = &req.table_name;
@@ -60,7 +58,7 @@ impl Server {
     let schema = self.schema_cache.get_result(table_name)
       .await?;
 
-    utils::create_if_new(&dirs::partition_dir(&self.dir, partition_key)).await?;
+    utils::create_if_new(&dirs::partition_dir(&self.opts.dir, partition_key)).await?;
     let segments_meta = self.segments_metadata_cache.get_or_create(partition_key)
       .await?;
 
@@ -83,7 +81,7 @@ impl Server {
       .get(&segment_key)
       .await;
 
-    if flush_meta.n + rows.len() > TARGET_ROWS_PER_SEGMENT {
+    if flush_meta.n + rows.len() >= self.opts.default_rows_per_segment {
       self.segments_metadata_cache.start_new_write_segment(partition_key, &segment_id).await?;
     }
 
@@ -115,7 +113,7 @@ impl Server {
           .collect::<Vec<FieldValue>>();
         let bytes = encoding::encode(&field_values, col.nested_list_depth as u8)?;
         utils::append_to_file(
-          &dirs::flush_col_file(&self.dir, &compaction_key, &col.name),
+          &dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name),
           &bytes,
         ).await?;
       }

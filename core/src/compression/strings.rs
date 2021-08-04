@@ -4,7 +4,7 @@ use pancake_db_idl::schema::ColumnMeta;
 use crate::encoding;
 use crate::errors::PancakeResult;
 
-use super::{CompressionParams, Compressor, Decompressor};
+use super::{Compressor, Decompressor};
 
 const ZSTD_LEVEL: i32 = 5;
 
@@ -22,10 +22,6 @@ impl Compressor for ZstdCompressor {
 pub struct ZstdDecompressor {}
 
 impl Decompressor for ZstdDecompressor {
-  fn from_parameters(_: Option<&CompressionParams>) -> ZstdDecompressor {
-    ZstdDecompressor {}
-  }
-
   fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
     let decompressed_bytes = zstd::decode_all(bytes)?;
     let fake_meta = ColumnMeta {

@@ -1,13 +1,15 @@
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use pancake_db_core::errors::PancakeResult;
 
 use crate::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
 
 use super::traits::{CacheData, Metadata};
-use pancake_db_core::errors::PancakeResult;
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";
@@ -18,6 +20,7 @@ pub struct FlushMetadata {
   pub n: usize,
   pub write_versions: Vec<u64>,
   pub read_version: u64,
+  pub read_version_since: DateTime<Utc>,
 }
 
 impl Metadata<SegmentKey> for FlushMetadata {
@@ -42,6 +45,7 @@ impl Default for FlushMetadata {
       n: 0,
       read_version: 0,
       write_versions: vec![0],
+      read_version_since: Utc::now(),
     }
   }
 }
@@ -86,6 +90,7 @@ impl FlushMetadataCache {
 
     metadata.read_version = read_version;
     metadata.write_versions = new_versions;
+    metadata.read_version_since = Utc::now();
     metadata.overwrite(&self.dir, key).await?;
     Ok(())
   }

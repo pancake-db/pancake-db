@@ -20,7 +20,7 @@ pub mod storage;
 #[tokio::main]
 async fn main() {
   let opts: Opt = Opt::from_args();
-  let server = Server::new(&opts.dir);
+  let server = Server::new(opts.clone());
   let backgrounds = server.init().await;
 
   let filter = server.warp_filter();

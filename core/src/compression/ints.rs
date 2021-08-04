@@ -4,7 +4,7 @@ use q_compress::{BitReader, I64Decompressor};
 
 use crate::errors::{PancakeError, PancakeResult};
 
-use super::{CompressionParams, Compressor, Decompressor};
+use super::{Compressor, Decompressor};
 
 const Q_MAX_DEPTH: u32 = 7;
 
@@ -36,10 +36,6 @@ impl Compressor for I64QCompressor {
 pub struct I64QDecompressor {}
 
 impl Decompressor for I64QDecompressor {
-  fn from_parameters(_: Option<&CompressionParams>) -> I64QDecompressor {
-    I64QDecompressor {}
-  }
-
   fn decompress_atoms(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
     let mut bit_reader = BitReader::from(bytes.to_vec());
     let decompressor = I64Decompressor::from_reader(&mut bit_reader)?;

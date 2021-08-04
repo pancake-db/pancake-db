@@ -11,17 +11,18 @@ use crate::errors::{PancakeError, PancakeResult};
 mod strings;
 mod ints;
 
-const Q_COMPRESS: &str = "q_compress";
-const ZSTD: &str = "zstd";
 pub type CompressionParams = String;
+pub const Q_COMPRESS: &str = "q_compress";
+pub const ZSTD: &str = "zstd";
+const REPETITION_LEVEL_Q_COMPRESSION_LEVEL: u32 = 6;
 
 pub fn get_decompressor(
   dtype: DataType,
-  parameters: Option<&CompressionParams>
+  parameters: &CompressionParams
 ) -> PancakeResult<Box<dyn Decompressor>> {
   match dtype {
-    DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(strings::ZstdDecompressor::from_parameters(parameters))),
-    DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(ints::I64QDecompressor::from_parameters(parameters))),
+    DataType::STRING if parameters == ZSTD => Ok(Box::new(strings::ZstdDecompressor {})),
+    DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(ints::I64QDecompressor {})),
     _ => Err(PancakeError::internal(&format!("unknown decompression param / data type combination: {:?}, {:?}", parameters, dtype))),
   }
 }
@@ -35,11 +36,11 @@ pub fn choose_compression_params(dtype: DataType) -> CompressionParams {
 
 pub fn get_compressor(
   dtype: DataType,
-  parameters: Option<&CompressionParams>
+  parameters: &CompressionParams,
 ) -> PancakeResult<Box<dyn Compressor>> {
   match dtype {
-    DataType::STRING if parameters.is_some() && parameters.unwrap() == ZSTD => Ok(Box::new(ZstdCompressor {})),
-    DataType::INT64 if parameters.is_some() && parameters.unwrap() == Q_COMPRESS => Ok(Box::new(I64QCompressor {})),
+    DataType::STRING if parameters == ZSTD => Ok(Box::new(ZstdCompressor {})),
+    DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(I64QCompressor {})),
     _ => Err(PancakeError::invalid(&format!("unknown compression param / data type combination: {:?}, {:?}", parameters, dtype))),
   }
 }
@@ -97,7 +98,10 @@ fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> Panca
 
 fn compress_repetition_levels(values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
   let rep_levels = get_multi_repetition_levels(values, meta.nested_list_depth as u8)?;
-  let compressor = q_compress::U32Compressor::train(rep_levels.clone(), 6)?;
+  let compressor = q_compress::U32Compressor::train(
+    rep_levels.clone(),
+    REPETITION_LEVEL_Q_COMPRESSION_LEVEL
+  )?;
   Ok(compressor.compress(&rep_levels)?)
 }
 
@@ -194,7 +198,6 @@ impl AtomNester {
 }
 
 pub trait Decompressor {
-  fn from_parameters(parameters: Option<&CompressionParams>) -> Self where Self: Sized;
   fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>>;
   fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
     let mut bit_reader = BitReader::from(bytes);

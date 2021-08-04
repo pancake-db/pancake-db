@@ -15,6 +15,7 @@ use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dml::field_value::Value;
 use tokio::time::Duration;
+use pancake_db_core::encoding::decode;
 
 const TABLE_NAME: &str = "t";
 
@@ -141,31 +142,40 @@ async fn main() -> ClientResult<()> {
   let list_resp = client.list_segments(&list_segments_eq).await?;
   println!("Listed segments: {:?}", list_resp);
 
-  let segment_id = &list_resp.segments[0].segment_id;
-  let read_segment_column_req = ReadSegmentColumnRequest {
-    table_name: TABLE_NAME.to_string(),
-    partition: vec![
-      PartitionField {
-        name: "part".to_string(),
-        value: Some(PartitionValue::string_val("x0".to_string())),
-        ..Default::default()
-      }
-    ],
-    segment_id: segment_id.to_string(),
-    column_name: "l".to_string(),
-    ..Default::default()
-  };
-  let read_resp = client.read_segment_column(&read_segment_column_req).await?;
-  println!("Read: {:?}", read_resp);
+  let mut total = 0;
+  for segment in &list_resp.segments {
+    let segment_id = &segment.segment_id;
+    let read_segment_column_req = ReadSegmentColumnRequest {
+      table_name: TABLE_NAME.to_string(),
+      partition: vec![
+        PartitionField {
+          name: "part".to_string(),
+          value: Some(PartitionValue::string_val("x0".to_string())),
+          ..Default::default()
+        }
+      ],
+      segment_id: segment_id.to_string(),
+      column_name: "l".to_string(),
+      ..Default::default()
+    };
+    let read_resp = client.read_segment_column(&read_segment_column_req).await?;
+    println!("Read: {:?}", read_resp);
 
-  let decompressor = compression::get_decompressor(
-    DataType::STRING,
-    Some(&read_resp.compressor_name)
-  )?;
-  let decoded = decompressor.decompress(read_resp.compressed_data, &l_meta)?;
-  println!("field values:");
-  for fv in &decoded {
-    println!("{:?}", fv);
+    let mut count = 0;
+    if !read_resp.compressed_data.is_empty() {
+      let decompressor = compression::get_decompressor(
+        DataType::STRING,
+        Some(&read_resp.compressor_name)
+      )?;
+      let decompressed = decompressor.decompress(read_resp.compressed_data, &l_meta)?;
+      count += decompressed.len();
+    }
+    if !read_resp.uncompressed_data.is_empty() {
+      let decoded = decode(&read_resp.uncompressed_data, &l_meta)?;
+      count += decoded.len();
+    }
+    total += count;
+    println!("read segment {} with {} rows (total {})", segment_id, count, total);
   }
 
   Ok(())
