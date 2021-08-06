@@ -4,7 +4,7 @@ use pancake_db_idl::schema::{ColumnMeta, Schema};
 use tokio::fs;
 
 use pancake_db_core::compression;
-use pancake_db_core::compression::Compressor;
+use pancake_db_core::compression::ValueCompressor;
 use pancake_db_core::errors::PancakeResult;
 
 use crate::dirs;
@@ -98,7 +98,7 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     old_compression_params: Option<&CompressionParams>,
-    compressor: &dyn Compressor,
+    compressor: &dyn ValueCompressor,
     new_version: u64,
   ) -> PancakeResult<()> {
     let values = self.read_col(

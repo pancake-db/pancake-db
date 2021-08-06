@@ -16,10 +16,15 @@ pub const Q_COMPRESS: &str = "q_compress";
 pub const ZSTD: &str = "zstd";
 const REPETITION_LEVEL_Q_COMPRESSION_LEVEL: u32 = 6;
 
+pub trait Primitive {
+  fn try_from_value(v: &Value) -> PancakeResult<Self> where Self: Sized;
+  fn to_value(&self) -> Value;
+}
+
 pub fn get_decompressor(
   dtype: DataType,
   parameters: &CompressionParams
-) -> PancakeResult<Box<dyn Decompressor>> {
+) -> PancakeResult<Box<dyn ValueDecompressor>> {
   match dtype {
     DataType::STRING if parameters == ZSTD => Ok(Box::new(strings::ZstdDecompressor {})),
     DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(ints::I64QDecompressor {})),
@@ -37,7 +42,7 @@ pub fn choose_compression_params(dtype: DataType) -> CompressionParams {
 pub fn get_compressor(
   dtype: DataType,
   parameters: &CompressionParams,
-) -> PancakeResult<Box<dyn Compressor>> {
+) -> PancakeResult<Box<dyn ValueCompressor>> {
   match dtype {
     DataType::STRING if parameters == ZSTD => Ok(Box::new(ZstdCompressor {})),
     DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(I64QCompressor {})),
@@ -124,7 +129,23 @@ fn get_multi_atoms(values: &[FieldValue]) -> Vec<Value> {
 }
 
 pub trait Compressor {
+  type T: Primitive;
+  fn compress_primitives(&self, primitives: &[Self::T]) -> PancakeResult<Vec<u8>>;
+}
+
+pub trait ValueCompressor {
   fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>>;
+  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>>;
+}
+
+impl<C, T> ValueCompressor for C where C: Compressor<T=T>, T: Primitive {
+  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
+    let mut primitives = Vec::new();
+    for v in values {
+      primitives.push(T::try_from_value(v)?);
+    }
+    self.compress_primitives(&primitives)
+  }
 
   fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
     let mut res = compress_repetition_levels(values, meta)?;
@@ -133,6 +154,33 @@ pub trait Compressor {
     Ok(res)
   }
 }
+
+// pub struct ValueCompressorWrapper<T: Primitive, C: Compressor<T>> {
+//   compressor: C
+// }
+//
+// impl<T, C> From<C> for ValueCompressorWrapper<T, C> where T: Primitive, C: Compressor<T> {
+//   fn from(compressor: C) -> ValueCompressorWrapper<T, C> {
+//     ValueCompressorWrapper { compressor }
+//   }
+// }
+//
+// impl ValueCompressor for ValueCompressorWrapper<T: Primitive, C: Compressor<T>> {
+//   fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
+//     let mut primitives = Vec::new();
+//     for v in values {
+//       primitives.push(T::try_from_value(v)?);
+//     }
+//     self.compress_primitives(&primitives)
+//   }
+//
+//   fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
+//     let mut res = compress_repetition_levels(values, meta)?;
+//     let atoms = get_multi_atoms(values);
+//     res.extend(self.compress_atoms(&atoms)?);
+//     Ok(res)
+//   }
+// }
 
 struct AtomNester {
   rep_levels: Vec<u8>,
@@ -198,7 +246,25 @@ impl AtomNester {
 }
 
 pub trait Decompressor {
+  type T: Primitive;
+  fn decompress_primitives(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Self::T>>;
+}
+
+pub trait ValueDecompressor {
   fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>>;
+  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>>;
+}
+
+impl<D, T> ValueDecompressor for D where D: Decompressor<T=T>, T: Primitive {
+  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
+    self.decompress_primitives(bytes, meta)
+      .map(|ps| {
+        ps.iter()
+          .map(|p| p.to_value())
+          .collect()
+      })
+  }
+
   fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
     let mut bit_reader = BitReader::from(bytes);
     let bit_reader_ptr = &mut bit_reader;

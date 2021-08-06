@@ -42,6 +42,13 @@ impl Error {
       kind: ErrorKind::Http {status}
     }
   }
+
+  pub fn other(message: String) -> Self {
+    Error {
+      message,
+      kind: ErrorKind::Other,
+    }
+  }
 }
 
 impl Display for Error {

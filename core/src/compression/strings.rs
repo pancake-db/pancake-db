@@ -2,18 +2,34 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::schema::ColumnMeta;
 
 use crate::encoding;
-use crate::errors::PancakeResult;
+use crate::errors::{PancakeResult, PancakeError};
 
 use super::{Compressor, Decompressor};
+use crate::compression::{Primitive, ValueDecompressor, ValueCompressor};
+use pancake_db_idl::dtype::DataType;
 
 const ZSTD_LEVEL: i32 = 5;
+
+impl Primitive for String {
+  fn try_from_value(v: &Value) -> PancakeResult<String> {
+    match v {
+      Value::string_val(res) => Ok(res.clone()),
+      _ => Err(PancakeError::internal("unable to extract string from value"))
+    }
+  }
+
+  fn to_value(&self) -> Value {
+    Value::string_val(self.clone())
+  }
+}
 
 pub struct ZstdCompressor {}
 
 impl Compressor for ZstdCompressor {
-  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
+  type T = String;
+  fn compress_primitives(&self, values: &[String]) -> PancakeResult<Vec<u8>> {
     let raw_bytes = values.iter()
-      .flat_map(|v| encoding::atomic_value_bytes(v).unwrap())
+      .flat_map(|p| encoding::string_atomic_value_bytes(p))
       .collect::<Vec<u8>>();
     Ok(zstd::encode_all(&*raw_bytes, ZSTD_LEVEL)?)
   }
@@ -22,17 +38,10 @@ impl Compressor for ZstdCompressor {
 pub struct ZstdDecompressor {}
 
 impl Decompressor for ZstdDecompressor {
-  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
+  type T = String;
+  fn decompress_primitives(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<String>> {
     let decompressed_bytes = zstd::decode_all(bytes)?;
-    let fake_meta = ColumnMeta {
-      dtype: meta.dtype,
-      nested_list_depth: 0,
-      ..Default::default()
-    };
-    Ok(encoding::decode(&decompressed_bytes, &fake_meta)?
-      .iter()
-      .map(|v| v.value.as_ref().unwrap().clone())
-      .collect())
+    encoding::decode_strings(&decompressed_bytes)
   }
 }
 
@@ -45,25 +54,22 @@ mod tests {
 
   #[test]
   fn test_serde() -> PancakeResult<()> {
-    let strings = vec!["orange", "banana", "grapefruit", "ÿ\\'\""];
-    let values = strings.iter()
-      .map(|s| Value::string_val(s.to_string()))
-      .collect::<Vec<Value>>();
+    let strs = vec!["orange", "banana", "grapefruit", "ÿ\\'\""];
+    let strings = strs.iter()
+      .map(|s| s.to_string())
+      .collect::<Vec<String>>();
 
     let compressor = ZstdCompressor {};
-    let bytes = compressor.compress_atoms(&values)?;
+    let bytes = compressor.compress_primitives(&strings)?;
 
     let decompressor = ZstdDecompressor {};
-    let recovered_values = decompressor.decompress_atoms(
+    let recovered_strings = decompressor.decompress_primitives(
       &bytes,
-      &ColumnMeta {dtype: ProtobufEnumOrUnknown::new(DataType::STRING), ..Default::default()}
+      &ColumnMeta {
+        dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
+        ..Default::default()
+      }
     )?;
-    let recovered_strings = recovered_values.iter()
-      .map(|v| match v {
-        Value::string_val(s) => s,
-        _ => panic!("unexpected")
-      })
-      .collect::<Vec<&String>>();
     assert_eq!(
       strings,
       recovered_strings,

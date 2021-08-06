@@ -18,6 +18,7 @@ use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
 
 use super::Server;
+use warp::http::Response;
 
 impl Server {
   pub async fn read_compact_col(
@@ -287,6 +288,30 @@ impl Server {
   }
 
   async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.read_segment_column_from_bytes(body).await)
+    let pancake_res = server.read_segment_column_from_bytes(body).await;
+    if pancake_res.is_err() {
+      return utils::pancake_result_into_warp(pancake_res);
+    }
+
+    let resp = pancake_res.unwrap();
+    let resp_meta = ReadSegmentColumnResponse {
+      compressor_name: resp.compressor_name.clone(),
+      continuation_token: resp.continuation_token.clone(),
+      ..Default::default()
+    };
+    let mut resp_bytes = protobuf::json::print_to_string(&resp_meta)
+      .unwrap()
+      .into_bytes();
+    resp_bytes.extend("\n".as_bytes());
+    if resp.uncompressed_data.len() > 0 {
+      resp_bytes.extend(resp.uncompressed_data)
+    } else {
+      resp_bytes.extend(resp.compressed_data)
+    }
+    Ok(Box::new(
+      Response::builder()
+        .body(resp_bytes)
+        .expect("unable to build response")
+    ))
   }
 }

@@ -14,7 +14,6 @@ use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, F
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dml::field_value::Value;
-use tokio::time::Duration;
 use pancake_db_core::encoding::decode;
 
 const TABLE_NAME: &str = "t";
@@ -120,7 +119,7 @@ async fn main() -> ClientResult<()> {
   };
   for _ in 0..1000 as u32 {
     client.write_to_partition(&write_to_partition_req).await?;
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    // tokio::time::sleep(Duration::from_millis(10)).await;
   }
   let write_resp = client.write_to_partition(&write_to_partition_req).await?;
   println!("Wrote rows: {:?}", write_resp);
@@ -155,7 +154,7 @@ async fn main() -> ClientResult<()> {
         }
       ],
       segment_id: segment_id.to_string(),
-      column_name: "l".to_string(),
+      column_name: "i".to_string(),
       ..Default::default()
     };
     let read_resp = client.read_segment_column(&read_segment_column_req).await?;
@@ -164,8 +163,8 @@ async fn main() -> ClientResult<()> {
     let mut count = 0;
     if !read_resp.compressed_data.is_empty() {
       let decompressor = compression::get_decompressor(
-        DataType::STRING,
-        Some(&read_resp.compressor_name)
+        DataType::INT64,
+        &read_resp.compressor_name
       )?;
       let decompressed = decompressor.decompress(read_resp.compressed_data, &l_meta)?;
       count += decompressed.len();

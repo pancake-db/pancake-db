@@ -76,14 +76,16 @@ fn value_bytes(v: &Value, traverse_depth: u8, escape_depth: u8) -> PancakeResult
   }
 }
 
+pub fn string_atomic_value_bytes(x: &str) -> Vec<u8> {
+  let tail = x.as_bytes();
+  let mut res = (tail.len() as u16).to_be_bytes().to_vec();
+  res.extend(tail);
+  res
+}
+
 pub fn atomic_value_bytes(v: &Value) -> PancakeResult<Vec<u8>> {
   match v {
-    Value::string_val(x) => {
-      let tail = x.clone().into_bytes();
-      let mut res = (tail.len() as u16).to_be_bytes().to_vec();
-      res.extend(tail);
-      Ok(res)
-    },
+    Value::string_val(x) => Ok(string_atomic_value_bytes(x)),
     Value::int64_val(x) => Ok(x.to_be_bytes().to_vec()),
     Value::list_val(_) => Err(PancakeError::invalid("expected to traverse down to atomic elements but found list"))
   }
@@ -119,6 +121,13 @@ impl<'a> Debug for ByteReader<'a> {
 }
 
 impl<'a> ByteReader<'a> {
+  pub fn new(bytes: &'a [u8], nested_list_depth: u8) -> Self {
+    ByteReader {
+      bytes,
+      i: 0,
+      nested_list_depth,
+    }
+  }
   pub fn complete(&self) -> bool {
     self.i >= self.bytes.len()
   }
@@ -167,7 +176,7 @@ impl<'a> ByteReader<'a> {
 
 pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
   let mut res = Vec::new();
-  let mut reader = ByteReader { bytes, i: 0, nested_list_depth: meta.nested_list_depth as u8 };
+  let mut reader = ByteReader::new(bytes, meta.nested_list_depth as u8);
   while !reader.complete() {
     let b0 = reader.read_one()?;
     if b0 == NULL_BYTE {
@@ -191,13 +200,26 @@ pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>>
   Ok(res)
 }
 
+pub fn decode_strings(bytes: &[u8]) -> PancakeResult<Vec<String>> {
+  let mut reader = ByteReader::new(bytes, 0);
+  let mut res = Vec::new();
+  while !reader.complete() {
+    res.push(decode_string(&mut reader)?);
+  }
+  Ok(res)
+}
+
+fn decode_string(reader: &mut ByteReader) -> PancakeResult<String> {
+  let len_bytes = utils::try_byte_array::<2>(&reader.unescaped_read_n(2)?)?;
+  let len = u16::from_be_bytes(len_bytes) as usize;
+  Ok(String::from_utf8(reader.unescaped_read_n(len)?)?)
+}
+
 fn decode_value(reader: &mut ByteReader, meta: &ColumnMeta, current_depth: u8) -> PancakeResult<FieldValue> {
   if current_depth == meta.nested_list_depth as u8 {
     match meta.dtype.unwrap() {
       DataType::STRING => {
-        let len_bytes = utils::try_byte_array::<2>(&reader.unescaped_read_n(2)?)?;
-        let len = u16::from_be_bytes(len_bytes) as usize;
-        let x = String::from_utf8(reader.unescaped_read_n(len)?)?;
+        let x = decode_string(reader)?;
         Ok(FieldValue {
           value: Some(Value::string_val(x)),
           ..Default::default()
