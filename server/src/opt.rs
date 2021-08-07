@@ -16,4 +16,6 @@ pub struct Opt {
   pub compaction_loop_seconds: u64,
   #[structopt(long, default_value = "7200")]
   pub delete_stale_compaction_seconds: i64,
+  #[structopt(long, default_value = "262144")]
+  pub read_page_byte_size: usize,
 }

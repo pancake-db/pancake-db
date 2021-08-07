@@ -5,8 +5,7 @@ use crate::encoding;
 use crate::errors::{PancakeResult, PancakeError};
 
 use super::{Compressor, Decompressor};
-use crate::compression::{Primitive, ValueDecompressor, ValueCompressor};
-use pancake_db_idl::dtype::DataType;
+use crate::compression::Primitive;
 
 const ZSTD_LEVEL: i32 = 5;
 
@@ -39,7 +38,7 @@ pub struct ZstdDecompressor {}
 
 impl Decompressor for ZstdDecompressor {
   type T = String;
-  fn decompress_primitives(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<String>> {
+  fn decompress_primitives(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<String>> {
     let decompressed_bytes = zstd::decode_all(bytes)?;
     encoding::decode_strings(&decompressed_bytes)
   }

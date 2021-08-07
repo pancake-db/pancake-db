@@ -25,6 +25,11 @@ async fn main() -> ClientResult<()> {
     1337,
   );
 
+  let i_meta = ColumnMeta {
+    name: "i".to_string(),
+    dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+    ..Default::default()
+  };
   let l_meta = ColumnMeta {
     name: "l".to_string(),
     dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
@@ -42,11 +47,7 @@ async fn main() -> ClientResult<()> {
         }
       ],
       columns: vec![
-        ColumnMeta {
-          name: "i".to_string(),
-          dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
-          ..Default::default()
-        },
+        i_meta.clone(),
         ColumnMeta {
           name: "s".to_string(),
           dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
@@ -144,33 +145,49 @@ async fn main() -> ClientResult<()> {
   let mut total = 0;
   for segment in &list_resp.segments {
     let segment_id = &segment.segment_id;
-    let read_segment_column_req = ReadSegmentColumnRequest {
-      table_name: TABLE_NAME.to_string(),
-      partition: vec![
-        PartitionField {
-          name: "part".to_string(),
-          value: Some(PartitionValue::string_val("x0".to_string())),
-          ..Default::default()
-        }
-      ],
-      segment_id: segment_id.to_string(),
-      column_name: "i".to_string(),
-      ..Default::default()
-    };
-    let read_resp = client.read_segment_column(&read_segment_column_req).await?;
-    println!("Read: {:?}", read_resp);
-
+    let mut first = true;
+    let mut continuation_token = "".to_string();
+    let mut compressed_data = Vec::new();
+    let mut uncompressed_data = Vec::new();
+    let mut compressor_name = "".to_string();
+    while first || !continuation_token.is_empty() {
+      let read_segment_column_req = ReadSegmentColumnRequest {
+        table_name: TABLE_NAME.to_string(),
+        partition: vec![
+          PartitionField {
+            name: "part".to_string(),
+            value: Some(PartitionValue::string_val("x0".to_string())),
+            ..Default::default()
+          }
+        ],
+        segment_id: segment_id.to_string(),
+        column_name: "i".to_string(),
+        continuation_token: continuation_token.clone(),
+        ..Default::default()
+      };
+      let read_resp = client.read_segment_column(&read_segment_column_req).await?;
+      println!("Read: {} {} with {} comp and {} uncomp", continuation_token, read_resp.compressor_name, read_resp.compressed_data.len(), read_resp.uncompressed_data.len());
+      continuation_token = read_resp.continuation_token.clone();
+      first = false;
+      compressed_data.extend(&read_resp.compressed_data);
+      uncompressed_data.extend(&read_resp.uncompressed_data);
+      if !read_resp.compressor_name.is_empty() {
+        compressor_name = read_resp.compressor_name.clone();
+      }
+    }
     let mut count = 0;
-    if !read_resp.compressed_data.is_empty() {
+    if !compressor_name.is_empty() {
+      println!("decompressing {} compressed bytes", compressed_data.len());
       let decompressor = compression::get_decompressor(
         DataType::INT64,
-        &read_resp.compressor_name
+        &compressor_name
       )?;
-      let decompressed = decompressor.decompress(read_resp.compressed_data, &l_meta)?;
+      let decompressed = decompressor.decompress(compressed_data, &i_meta)?;
       count += decompressed.len();
     }
-    if !read_resp.uncompressed_data.is_empty() {
-      let decoded = decode(&read_resp.uncompressed_data, &l_meta)?;
+    if !uncompressed_data.is_empty() {
+      println!("decoding {} uncompressed bytes", uncompressed_data.len());
+      let decoded = decode(&uncompressed_data, &i_meta)?;
       count += decoded.len();
     }
     total += count;

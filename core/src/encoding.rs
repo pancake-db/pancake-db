@@ -150,7 +150,7 @@ impl<'a> ByteReader<'a> {
     if b == ESCAPE_BYTE {
       self.read_one()
     } else if b > TOP_NEST_LEVEL_BYTE - self.nested_list_depth {
-      Err(PancakeError::internal("unexpected unescaped byte"))
+      Err(PancakeError::internal(&format!("unexpected unescaped byte at {}", self.i)))
     } else {
       Ok(b)
     }

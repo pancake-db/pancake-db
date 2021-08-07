@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::convert::{Infallible, TryFrom};
 
 use hyper::body::Bytes;
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
@@ -19,6 +19,89 @@ use crate::utils;
 
 use super::Server;
 use warp::http::Response;
+use std::fmt::{Display, Formatter};
+
+#[derive(Clone, Debug)]
+enum FileType {
+  Flush,
+  Compact,
+}
+
+impl Display for FileType {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "{}",
+      match self {
+        FileType::Flush => "F",
+        FileType::Compact => "C",
+      }
+    )
+  }
+}
+
+#[derive(Clone, Debug)]
+struct SegmentColumnContinuation {
+  version: u64,
+  file_type: FileType,
+  offset: u64,
+}
+
+impl SegmentColumnContinuation {
+  fn new(version: u64) -> Self {
+    SegmentColumnContinuation {
+      version,
+      file_type: if version > 0 { FileType::Compact } else { FileType::Flush },
+      offset: 0,
+    }
+  }
+}
+
+impl Display for SegmentColumnContinuation {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "{}/{}/{}",
+      self.version,
+      self.file_type,
+      self.offset,
+    )
+  }
+}
+
+impl TryFrom<String> for SegmentColumnContinuation {
+  type Error = PancakeError;
+
+  fn try_from(s: String) -> PancakeResult<Self> {
+    let parts = s
+      .split('/')
+      .collect::<Vec<&str>>();
+
+    if parts.len() != 3 {
+      return Err(PancakeError::invalid("invalid continuation token"));
+    }
+
+    let version = parts[0].parse::<u64>()
+      .map_err(|_| PancakeError::invalid("invalid continuation token version"))?;
+
+    let file_type = if parts[1] == "F" {
+      FileType::Flush
+    } else if parts[1] == "C" {
+      FileType::Compact
+    } else {
+      return Err(PancakeError::invalid("invalid continuation token file type"));
+    };
+
+    let offset = parts[2].parse::<u64>()
+      .map_err(|_| PancakeError::invalid("invalid continuation token offset"))?;
+
+    Ok(SegmentColumnContinuation {
+      version,
+      file_type,
+      offset,
+    })
+  }
+}
 
 impl Server {
   pub async fn read_compact_col(
@@ -221,20 +304,10 @@ impl Server {
 
   async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> PancakeResult<ReadSegmentColumnResponse> {
     let col_name = req.column_name;
+    // TODO fix edge case where data in a new column is written between schema read and flush metadata read
     let schema = self.schema_cache
       .get_result(&req.table_name)
       .await?;
-    let partition = NormalizedPartition::full(&schema, &req.partition)?;
-    let segment_key = SegmentKey {
-      table_name: req.table_name.clone(),
-      partition,
-      segment_id: req.segment_id.clone(),
-    };
-    let flush_meta_future = self.flush_metadata_cache
-      .get(&segment_key);
-
-    let flush_meta = flush_meta_future
-      .await;
 
     let mut valid_col = false;
     for col_meta_item in &schema.columns {
@@ -247,39 +320,95 @@ impl Server {
       return Err(PancakeError::does_not_exist("column", &col_name));
     }
 
-    let compaction_key = segment_key.compaction_key(flush_meta.read_version);
-    let compaction = self.compaction_cache
-      .get(compaction_key)
+    let partition = NormalizedPartition::full(&schema, &req.partition)?;
+    let segment_key = SegmentKey {
+      table_name: req.table_name.clone(),
+      partition,
+      segment_id: req.segment_id.clone(),
+    };
+    let flush_meta = self.flush_metadata_cache
+      .get(&segment_key)
       .await;
 
-    // TODO: error handling
-    // TODO: pagination
-    let compaction_key = segment_key.compaction_key(flush_meta.read_version);
-    let compressed_filename = dirs::compact_col_file(
-      &self.opts.dir,
-      &compaction_key,
-      &col_name,
-    );
-    let uncompressed_filename = dirs::flush_col_file(
-      &self.opts.dir,
-      &compaction_key,
-      &col_name,
-    );
+    let continuation = if req.continuation_token.is_empty() {
+      SegmentColumnContinuation::new(flush_meta.read_version)
+    } else {
+      SegmentColumnContinuation::try_from(req.continuation_token.clone())?
+    };
 
-    let compressor_name = compaction.col_compression_params
-      .get(&col_name)
-      .map(|c| c.clone() as String)
-      .unwrap_or_default();
+    let compaction_key = segment_key.compaction_key(continuation.version);
+    let compaction = self.compaction_cache
+      .get(compaction_key.clone())
+      .await;
 
-    let compressed_data = utils::read_if_exists(compressed_filename).await.unwrap_or_default();
-    let uncompressed_data = utils::read_if_exists(uncompressed_filename).await.unwrap_or_default();
+    match continuation.file_type {
+      FileType::Compact => {
+        let compressed_filename = dirs::compact_col_file(
+          &self.opts.dir,
+          &compaction_key,
+          &col_name,
+        );
+        let compressor_name = compaction.col_compression_params
+          .get(&col_name)
+          .map(|c| c.clone() as String)
+          .unwrap_or_default();
 
-    Ok(ReadSegmentColumnResponse {
-      compressor_name,
-      compressed_data,
-      uncompressed_data,
-      ..Default::default()
-    })
+        let compressed_data = utils::read_with_offset(
+          compressed_filename,
+          continuation.offset,
+          self.opts.read_page_byte_size,
+        ).await?;
+
+        let next = if compressed_data.len() < self.opts.read_page_byte_size {
+          SegmentColumnContinuation {
+            version: continuation.version,
+            file_type: FileType::Flush,
+            offset: 0
+          }
+        } else {
+          SegmentColumnContinuation {
+            version: continuation.version,
+            file_type: FileType::Compact,
+            offset: continuation.offset + compressed_data.len() as u64
+          }
+        };
+
+        Ok(ReadSegmentColumnResponse {
+          compressor_name,
+          compressed_data,
+          uncompressed_data: Vec::new(),
+          continuation_token: next.to_string(),
+          ..Default::default()
+        })
+      },
+      FileType::Flush => {
+        let uncompressed_filename = dirs::flush_col_file(
+          &self.opts.dir,
+          &compaction_key,
+          &col_name,
+        );
+        let uncompressed_data = utils::read_with_offset(
+          uncompressed_filename,
+          continuation.offset,
+          self.opts.read_page_byte_size,
+        ).await?;
+        let next_token = if uncompressed_data.len() < self.opts.read_page_byte_size {
+          "".to_string()
+        } else {
+          SegmentColumnContinuation {
+            version: continuation.version,
+            file_type: FileType::Flush,
+            offset: continuation.offset + uncompressed_data.len() as u64
+          }.to_string()
+        };
+        Ok(ReadSegmentColumnResponse {
+          compressed_data: Vec::new(),
+          uncompressed_data,
+          continuation_token: next_token,
+          ..Default::default()
+        })
+      }
+    }
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> PancakeResult<ReadSegmentColumnResponse> {
@@ -303,7 +432,7 @@ impl Server {
       .unwrap()
       .into_bytes();
     resp_bytes.extend("\n".as_bytes());
-    if resp.uncompressed_data.len() > 0 {
+    if !resp.uncompressed_data.is_empty() {
       resp_bytes.extend(resp.uncompressed_data)
     } else {
       resp_bytes.extend(resp.compressed_data)

@@ -5,8 +5,7 @@ use q_compress::{BitReader, I64Decompressor};
 use crate::errors::{PancakeError, PancakeResult};
 
 use super::{Compressor, Decompressor};
-use crate::compression::{Primitive, ValueCompressor, ValueDecompressor};
-use pancake_db_idl::dtype::DataType;
+use crate::compression::Primitive;
 
 const Q_MAX_DEPTH: u32 = 7;
 

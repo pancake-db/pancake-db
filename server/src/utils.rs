@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use std::fmt::Debug;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, SeekFrom};
 use std::path::Path;
 
 use pancake_db_core::errors::{PancakeError, PancakeErrorKind, PancakeResult};
@@ -11,16 +11,44 @@ use pancake_db_idl::partition_dtype::PartitionDataType;
 use serde::Serialize;
 use tokio::fs;
 use tokio::io;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, AsyncSeekExt, AsyncReadExt};
 use warp::http::{StatusCode, Response};
 use warp::Reply;
 use protobuf::Message;
 use hyper::body::Bytes;
 
-pub async fn read_if_exists(fname: impl AsRef<Path>) -> Option<Vec<u8>> {
-  match fs::read(fname).await {
-    Ok(bytes) => Some(bytes),
-    Err(_) => None,
+pub async fn read_with_offset(fname: impl AsRef<Path>, offset: u64, bytes: usize) -> io::Result<Vec<u8>> {
+  // return completed: bool, and bytes if any
+  let mut maybe_file = fs::File::open(fname).await
+    .map(Some)
+    .or_else(|e| match e.kind() {
+      io::ErrorKind::NotFound => Ok(None),
+      _ => Err(e),
+    })?;
+
+  if maybe_file.is_none() {
+    return Ok(Vec::new());
+  }
+
+  let file = maybe_file.as_mut().unwrap();
+  file.seek(SeekFrom::Start(offset)).await?;
+
+  let mut res = vec![0_u8].repeat(bytes);
+  let mut count = 0;
+  while count < bytes {
+    match file.read(&mut res[count..]).await {
+      Ok(0) => break,
+      Ok(n) => {
+        count += n;
+      }
+      Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+      Err(e) => return Err(e),
+    }
+  }
+  if count < bytes {
+    Ok(res[..count].to_vec())
+  } else {
+    Ok(res)
   }
 }
 
