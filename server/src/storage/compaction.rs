@@ -9,8 +9,6 @@ use crate::types::CompactionKey;
 
 use super::traits::{CacheData, Metadata, MetadataKey};
 
-pub type CompressionParams = String;
-
 impl MetadataKey for CompactionKey {
   const ENTITY_NAME: &'static str = "compaction";
 }
@@ -18,14 +16,14 @@ impl MetadataKey for CompactionKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
   pub compacted_n: usize,
-  pub col_compression_params: HashMap<String, CompressionParams>
+  pub col_codecs: HashMap<String, String>
 }
 
 impl Default for Compaction {
   fn default() -> Compaction {
     Compaction {
       compacted_n: 0,
-      col_compression_params: HashMap::new(),
+      col_codecs: HashMap::new(),
     }
   }
 }

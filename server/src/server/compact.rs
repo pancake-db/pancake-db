@@ -8,7 +8,7 @@ use pancake_db_core::compression::ValueCompressor;
 use pancake_db_core::errors::PancakeResult;
 
 use crate::dirs;
-use crate::storage::compaction::{Compaction, CompressionParams};
+use crate::storage::compaction::Compaction;
 use crate::storage::flush::FlushMetadata;
 use crate::types::SegmentKey;
 use crate::utils;
@@ -77,10 +77,10 @@ impl Server {
   }
 
   fn plan_compaction(&self, schema: &Schema, metadata: &FlushMetadata) -> Compaction {
-    let mut col_compression_params = HashMap::new();
+    let mut col_codecs = HashMap::new();
 
     for col in &schema.columns {
-      col_compression_params.insert(
+      col_codecs.insert(
         col.name.clone(),
         compression::choose_compression_params(col.dtype.unwrap())
       );
@@ -88,7 +88,7 @@ impl Server {
 
     Compaction {
       compacted_n: metadata.n,
-      col_compression_params,
+      col_codecs,
     }
   }
 
@@ -97,7 +97,7 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    old_compression_params: Option<&CompressionParams>,
+    old_compression_params: Option<&String>,
     compressor: &dyn ValueCompressor,
     new_version: u64,
   ) -> PancakeResult<()> {
@@ -126,11 +126,11 @@ impl Server {
     new_version: u64,
   ) -> PancakeResult<()> {
     for col in &schema.columns {
-      let old_compression_params = old_compaction.col_compression_params
+      let old_compression_params = old_compaction.col_codecs
         .get(&col.name);
       let compressor = compression::get_compressor(
         col.dtype.unwrap(),
-        compaction.col_compression_params.get(&col.name).unwrap()
+        compaction.col_codecs.get(&col.name).unwrap()
       )?;
       self.execute_col_compaction(
         segment_key,

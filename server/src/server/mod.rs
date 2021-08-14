@@ -18,6 +18,7 @@ mod create_table;
 mod write;
 mod read;
 mod compact;
+mod get_schema;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
@@ -190,6 +191,7 @@ impl Server {
           .or(Self::write_to_partition_filter())
           .or(Self::read_segment_column_filter())
           .or(Self::list_segments_filter())
+          .or(Self::get_schema_filter())
       )
   }
 }

@@ -3,7 +3,6 @@ use std::convert::{Infallible, TryFrom};
 use hyper::body::Bytes;
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, ReadSegmentColumnRequest, ReadSegmentColumnResponse, Segment};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
-use protobuf::MessageField;
 use tokio::fs;
 use warp::{Filter, Rejection, Reply};
 
@@ -12,7 +11,6 @@ use pancake_db_core::encoding;
 use pancake_db_core::errors::{PancakeError, PancakeResult};
 
 use crate::dirs;
-use crate::storage::compaction::CompressionParams;
 use crate::storage::flush::FlushMetadata;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
@@ -109,7 +107,7 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    compression_params: &CompressionParams,
+    codec: &str,
     limit: usize,
   ) -> PancakeResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
@@ -118,7 +116,7 @@ impl Server {
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let decompressor = compression::get_decompressor(col.dtype.unwrap(), compression_params)?;
+      let decompressor = compression::get_decompressor(col.dtype.unwrap(), codec)?;
       let decoded = decompressor.decompress(bytes, col)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])
@@ -158,7 +156,7 @@ impl Server {
     segment_key: &SegmentKey,
     col: &ColumnMeta,
     metadata: &FlushMetadata,
-    maybe_compression_params: Option<&CompressionParams>,
+    maybe_compression_params: Option<&String>,
     limit: usize,
   ) -> PancakeResult<Vec<FieldValue>> {
     let mut values = Vec::new();
@@ -270,7 +268,6 @@ impl Server {
     }
 
     Ok(ListSegmentsResponse {
-      schema: MessageField::some(schema),
       segments,
       continuation_token: "".to_string(),
       ..Default::default()
@@ -341,6 +338,10 @@ impl Server {
       .get(compaction_key.clone())
       .await;
 
+    let mut response = ReadSegmentColumnResponse {
+      row_count: flush_meta.n as u32,
+      ..Default::default()
+    };
     match continuation.file_type {
       FileType::Compact => {
         let compressed_filename = dirs::compact_col_file(
@@ -348,7 +349,7 @@ impl Server {
           &compaction_key,
           &col_name,
         );
-        let compressor_name = compaction.col_compression_params
+        let codec = compaction.col_codecs
           .get(&col_name)
           .map(|c| c.clone() as String)
           .unwrap_or_default();
@@ -373,13 +374,9 @@ impl Server {
           }
         };
 
-        Ok(ReadSegmentColumnResponse {
-          compressor_name,
-          compressed_data,
-          uncompressed_data: Vec::new(),
-          continuation_token: next.to_string(),
-          ..Default::default()
-        })
+        response.codec = codec;
+        response.compressed_data = compressed_data;
+        response.continuation_token = next.to_string();
       },
       FileType::Flush => {
         let uncompressed_filename = dirs::flush_col_file(
@@ -401,14 +398,12 @@ impl Server {
             offset: continuation.offset + uncompressed_data.len() as u64
           }.to_string()
         };
-        Ok(ReadSegmentColumnResponse {
-          compressed_data: Vec::new(),
-          uncompressed_data,
-          continuation_token: next_token,
-          ..Default::default()
-        })
+
+        response.uncompressed_data = uncompressed_data;
+        response.continuation_token = next_token;
       }
     }
+    Ok(response)
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> PancakeResult<ReadSegmentColumnResponse> {
@@ -423,11 +418,9 @@ impl Server {
     }
 
     let resp = pancake_res.unwrap();
-    let resp_meta = ReadSegmentColumnResponse {
-      compressor_name: resp.compressor_name.clone(),
-      continuation_token: resp.continuation_token.clone(),
-      ..Default::default()
-    };
+    let mut resp_meta = resp.clone();
+    resp_meta.uncompressed_data = Vec::new();
+    resp_meta.compressed_data = Vec::new();
     let mut resp_bytes = protobuf::json::print_to_string(&resp_meta)
       .unwrap()
       .into_bytes();

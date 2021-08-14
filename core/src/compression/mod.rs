@@ -11,7 +11,6 @@ use crate::errors::{PancakeError, PancakeResult};
 mod strings;
 mod ints;
 
-pub type CompressionParams = String;
 pub const Q_COMPRESS: &str = "q_compress";
 pub const ZSTD: &str = "zstd";
 const REPETITION_LEVEL_Q_COMPRESSION_LEVEL: u32 = 6;
@@ -23,7 +22,7 @@ pub trait Primitive {
 
 pub fn get_decompressor(
   dtype: DataType,
-  parameters: &CompressionParams
+  parameters: &str
 ) -> PancakeResult<Box<dyn ValueDecompressor>> {
   match dtype {
     DataType::STRING if parameters == ZSTD => Ok(Box::new(strings::ZstdDecompressor {})),
@@ -32,7 +31,7 @@ pub fn get_decompressor(
   }
 }
 
-pub fn choose_compression_params(dtype: DataType) -> CompressionParams {
+pub fn choose_compression_params(dtype: DataType) -> String {
   match dtype {
     DataType::INT64 => Q_COMPRESS.to_string(),
     DataType::STRING => ZSTD.to_string(),
@@ -41,7 +40,7 @@ pub fn choose_compression_params(dtype: DataType) -> CompressionParams {
 
 pub fn get_compressor(
   dtype: DataType,
-  parameters: &CompressionParams,
+  parameters: &String,
 ) -> PancakeResult<Box<dyn ValueCompressor>> {
   match dtype {
     DataType::STRING if parameters == ZSTD => Ok(Box::new(ZstdCompressor {})),

@@ -149,7 +149,7 @@ async fn main() -> ClientResult<()> {
     let mut continuation_token = "".to_string();
     let mut compressed_data = Vec::new();
     let mut uncompressed_data = Vec::new();
-    let mut compressor_name = "".to_string();
+    let mut codec = "".to_string();
     while first || !continuation_token.is_empty() {
       let read_segment_column_req = ReadSegmentColumnRequest {
         table_name: TABLE_NAME.to_string(),
@@ -166,21 +166,21 @@ async fn main() -> ClientResult<()> {
         ..Default::default()
       };
       let read_resp = client.read_segment_column(&read_segment_column_req).await?;
-      println!("Read: {} {} with {} comp and {} uncomp", continuation_token, read_resp.compressor_name, read_resp.compressed_data.len(), read_resp.uncompressed_data.len());
+      println!("Read: {} {} with {} comp and {} uncomp", continuation_token, read_resp.codec, read_resp.compressed_data.len(), read_resp.uncompressed_data.len());
       continuation_token = read_resp.continuation_token.clone();
       first = false;
       compressed_data.extend(&read_resp.compressed_data);
       uncompressed_data.extend(&read_resp.uncompressed_data);
-      if !read_resp.compressor_name.is_empty() {
-        compressor_name = read_resp.compressor_name.clone();
+      if !read_resp.codec.is_empty() {
+        codec = read_resp.codec.clone();
       }
     }
     let mut count = 0;
-    if !compressor_name.is_empty() {
+    if !codec.is_empty() {
       println!("decompressing {} compressed bytes", compressed_data.len());
       let decompressor = compression::get_decompressor(
         DataType::INT64,
-        &compressor_name
+        &codec
       )?;
       let decompressed = decompressor.decompress(compressed_data, &i_meta)?;
       count += decompressed.len();

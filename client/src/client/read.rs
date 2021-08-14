@@ -4,7 +4,7 @@ use hyper::body::HttpBody;
 use crate::errors::{Error, Result};
 
 use super::Client;
-use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, FieldValue};
+use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 
 fn parse_read_segment_response(bytes: Vec<u8>) -> Result<ReadSegmentColumnResponse> {
   let delim_bytes = "}\n".as_bytes();
@@ -23,7 +23,7 @@ fn parse_read_segment_response(bytes: Vec<u8>) -> Result<ReadSegmentColumnRespon
   let mut res = ReadSegmentColumnResponse::new();
   protobuf::json::merge_from_str(&mut res, &content_str)?;
   let rest = bytes[i + delim_bytes.len()..].to_vec();
-  if res.compressor_name.is_empty() {
+  if res.codec.is_empty() {
     res.uncompressed_data = rest;
   } else {
     res.compressed_data = rest;
