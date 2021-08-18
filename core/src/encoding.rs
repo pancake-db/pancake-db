@@ -175,9 +175,17 @@ impl<'a> ByteReader<'a> {
 }
 
 pub fn decode(bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
+  decode_limited(bytes, meta, usize::MAX)
+}
+
+pub fn decode_limited(
+  bytes: &[u8],
+  meta: &ColumnMeta,
+  limit: usize
+) -> PancakeResult<Vec<FieldValue>> {
   let mut res = Vec::new();
   let mut reader = ByteReader::new(bytes, meta.nested_list_depth as u8);
-  while !reader.complete() {
+  while !reader.complete() && res.len() < limit {
     let b0 = reader.read_one()?;
     if b0 == NULL_BYTE {
       res.push(FieldValue::new());
