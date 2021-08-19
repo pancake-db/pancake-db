@@ -259,9 +259,15 @@ impl Server {
         .get_result(&partition_key)
         .await?;
       for segment_id in &segments_meta.segment_ids {
+        let count = if req.include_counts {
+          self.get_count(partition_key.segment_key(segment_id.clone())).await
+        } else {
+          0_u32
+        };
         segments.push(Segment {
           partition: partition.clone(),
           segment_id: segment_id.clone(),
+          count,
           ..Default::default()
         });
       }
@@ -272,6 +278,12 @@ impl Server {
       continuation_token: "".to_string(),
       ..Default::default()
     })
+  }
+
+  async fn get_count(&self, segment_key: SegmentKey) -> u32 {
+    self.flush_metadata_cache.get(&segment_key)
+      .await
+      .n as u32
   }
 
   async fn list_segments_from_bytes(&self, body: Bytes) -> PancakeResult<ListSegmentsResponse> {
