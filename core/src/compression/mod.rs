@@ -2,50 +2,62 @@ use pancake_db_idl::dml::{FieldValue, RepeatedFieldValue};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::ColumnMeta;
-use q_compress::{BitReader, U32Decompressor};
+use q_compress::{BitReader, U32Compressor, U32Decompressor};
 
-use crate::compression::ints::I64QCompressor;
-use crate::compression::strings::ZstdCompressor;
 use crate::errors::{PancakeError, PancakeResult};
 
-mod strings;
+mod bools;
+mod floats;
 mod ints;
+mod q_codec;
+mod string_like;
+mod zstd_codec;
 
 pub const Q_COMPRESS: &str = "q_compress";
 pub const ZSTD: &str = "zstd";
 const REPETITION_LEVEL_Q_COMPRESSION_LEVEL: u32 = 6;
 
-pub trait Primitive {
+pub trait Primitive: 'static {
   fn try_from_value(v: &Value) -> PancakeResult<Self> where Self: Sized;
   fn to_value(&self) -> Value;
-}
-
-pub fn get_decompressor(
-  dtype: DataType,
-  parameters: &str
-) -> PancakeResult<Box<dyn ValueDecompressor>> {
-  match dtype {
-    DataType::STRING if parameters == ZSTD => Ok(Box::new(strings::ZstdDecompressor {})),
-    DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(ints::I64QDecompressor {})),
-    _ => Err(PancakeError::internal(&format!("unknown decompression param / data type combination: {:?}, {:?}", parameters, dtype))),
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>>;
+  fn new_value_codec(codec: &str) -> Option<Box<dyn ValueCodec>> where Self: Sized {
+    Self::new_codec(codec).map(|c| {
+      let c: Box<dyn ValueCodec> = Box::new(c);
+      c
+    })
   }
 }
 
-pub fn choose_compression_params(dtype: DataType) -> String {
+pub fn new_codec(
+  dtype: DataType,
+  codec: &str,
+) -> PancakeResult<Box<dyn ValueCodec>> {
+  let maybe_res: Option<Box<dyn ValueCodec>> = match dtype {
+    DataType::STRING => String::new_value_codec(codec),
+    DataType::INT64 => i64::new_value_codec(codec),
+    DataType::BYTES => Vec::<u8>::new_value_codec(codec),
+    DataType::BOOL => bool::new_value_codec(codec),
+    DataType::FLOAT64 => f64::new_value_codec(codec),
+  };
+
+  match maybe_res {
+    Some(res) => Ok(res),
+    None => Err(PancakeError::invalid(&format!(
+      "compression codec {} unavailable for data type {:?}",
+      codec,
+      dtype,
+    )))
+  }
+}
+
+pub fn choose_codec(dtype: DataType) -> String {
   match dtype {
     DataType::INT64 => Q_COMPRESS.to_string(),
     DataType::STRING => ZSTD.to_string(),
-  }
-}
-
-pub fn get_compressor(
-  dtype: DataType,
-  parameters: &String,
-) -> PancakeResult<Box<dyn ValueCompressor>> {
-  match dtype {
-    DataType::STRING if parameters == ZSTD => Ok(Box::new(ZstdCompressor {})),
-    DataType::INT64 if parameters == Q_COMPRESS => Ok(Box::new(I64QCompressor {})),
-    _ => Err(PancakeError::invalid(&format!("unknown compression param / data type combination: {:?}, {:?}", parameters, dtype))),
+    DataType::BYTES => ZSTD.to_string(),
+    DataType::FLOAT64 => Q_COMPRESS.to_string(),
+    DataType::BOOL => Q_COMPRESS.to_string(),
   }
 }
 
@@ -102,7 +114,7 @@ fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> Panca
 
 fn compress_repetition_levels(values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
   let rep_levels = get_multi_repetition_levels(values, meta.nested_list_depth as u8)?;
-  let compressor = q_compress::U32Compressor::train(
+  let compressor = U32Compressor::train(
     rep_levels.clone(),
     REPETITION_LEVEL_Q_COMPRESSION_LEVEL
   )?;
@@ -127,17 +139,15 @@ fn get_multi_atoms(values: &[FieldValue]) -> Vec<Value> {
     .collect()
 }
 
-pub trait Compressor {
+pub trait Codec {
   type T: Primitive;
+
   fn compress_primitives(&self, primitives: &[Self::T]) -> PancakeResult<Vec<u8>>;
+
+  fn decompress_primitives(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Self::T>>;
 }
 
-pub trait ValueCompressor {
-  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>>;
-  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>>;
-}
-
-impl<C, T> ValueCompressor for C where C: Compressor<T=T>, T: Primitive {
+impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
   fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
     let mut primitives = Vec::new();
     for v in values {
@@ -152,34 +162,45 @@ impl<C, T> ValueCompressor for C where C: Compressor<T=T>, T: Primitive {
     res.extend(self.compress_atoms(&atoms)?);
     Ok(res)
   }
+
+  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
+    self.decompress_primitives(bytes, meta)
+      .map(|ps| {
+        ps.iter()
+          .map(|p| p.to_value())
+          .collect()
+      })
+  }
+
+  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
+    let mut bit_reader = BitReader::from(bytes);
+    let bit_reader_ptr = &mut bit_reader;
+    let rep_level_decompressor = U32Decompressor::from_reader(bit_reader_ptr)?;
+    let rep_levels = rep_level_decompressor.decompress(bit_reader_ptr)
+      .iter()
+      .map(|&l| l as u8)
+      .collect();
+
+    let remaining_bytes = bit_reader.drain_bytes()?.to_vec();
+    drop(bit_reader);
+
+    let atoms = self.decompress_atoms(&remaining_bytes, meta)?;
+    let mut nester = AtomNester::from_levels_and_atoms(
+      rep_levels,
+      atoms,
+      meta.nested_list_depth as u8,
+    );
+    nester.nested_field_values()
+  }
 }
 
-// pub struct ValueCompressorWrapper<T: Primitive, C: Compressor<T>> {
-//   compressor: C
-// }
-//
-// impl<T, C> From<C> for ValueCompressorWrapper<T, C> where T: Primitive, C: Compressor<T> {
-//   fn from(compressor: C) -> ValueCompressorWrapper<T, C> {
-//     ValueCompressorWrapper { compressor }
-//   }
-// }
-//
-// impl ValueCompressor for ValueCompressorWrapper<T: Primitive, C: Compressor<T>> {
-//   fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
-//     let mut primitives = Vec::new();
-//     for v in values {
-//       primitives.push(T::try_from_value(v)?);
-//     }
-//     self.compress_primitives(&primitives)
-//   }
-//
-//   fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
-//     let mut res = compress_repetition_levels(values, meta)?;
-//     let atoms = get_multi_atoms(values);
-//     res.extend(self.compress_atoms(&atoms)?);
-//     Ok(res)
-//   }
-// }
+pub trait ValueCodec {
+  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>>;
+  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>>;
+
+  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>>;
+  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>>;
+}
 
 struct AtomNester {
   rep_levels: Vec<u8>,
@@ -244,44 +265,3 @@ impl AtomNester {
   }
 }
 
-pub trait Decompressor {
-  type T: Primitive;
-  fn decompress_primitives(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Self::T>>;
-}
-
-pub trait ValueDecompressor {
-  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>>;
-  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>>;
-}
-
-impl<D, T> ValueDecompressor for D where D: Decompressor<T=T>, T: Primitive {
-  fn decompress_atoms(&self, bytes: &[u8], meta: &ColumnMeta) -> PancakeResult<Vec<Value>> {
-    self.decompress_primitives(bytes, meta)
-      .map(|ps| {
-        ps.iter()
-          .map(|p| p.to_value())
-          .collect()
-      })
-  }
-
-  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
-    let mut bit_reader = BitReader::from(bytes);
-    let bit_reader_ptr = &mut bit_reader;
-    let rep_level_decompressor = U32Decompressor::from_reader(bit_reader_ptr)?;
-    let rep_levels = rep_level_decompressor.decompress(bit_reader_ptr)
-      .iter()
-      .map(|&l| l as u8)
-      .collect();
-
-    let remaining_bytes = bit_reader.drain_bytes()?.to_vec();
-    drop(bit_reader);
-
-    let atoms = self.decompress_atoms(&remaining_bytes, meta)?;
-    let mut nester = AtomNester::from_levels_and_atoms(
-      rep_levels,
-      atoms,
-      meta.nested_list_depth as u8,
-    );
-    nester.nested_field_values()
-  }
-}

@@ -13,6 +13,7 @@ use crate::utils;
 pub enum PartitionValue {
   STRING(String),
   INT64(i64),
+  BOOL(bool),
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -26,6 +27,7 @@ impl NormalizedPartitionField {
     let value_str = match &self.value {
       PartitionValue::STRING(x) => x.clone(),
       PartitionValue::INT64(x) => x.to_string(),
+      PartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string()
     };
     PathBuf::from(format!("{}={}", self.name, value_str))
   }
@@ -36,6 +38,7 @@ impl From<&PartitionField> for NormalizedPartitionField {
     let value = match raw_field.value.as_ref().expect("raw partition field is missing value") {
       Value::string_val(x) => PartitionValue::STRING(x.clone()),
       Value::int64_val(x) => PartitionValue::INT64(*x),
+      Value::bool_val(x) => PartitionValue::BOOL(*x),
     };
     NormalizedPartitionField {
       name: raw_field.name.clone(),

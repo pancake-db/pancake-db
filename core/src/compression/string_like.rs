@@ -1,13 +1,10 @@
 use pancake_db_idl::dml::field_value::Value;
-use pancake_db_idl::schema::ColumnMeta;
 
-use crate::encoding;
 use crate::errors::{PancakeResult, PancakeError};
 
-use super::{Compressor, Decompressor};
-use crate::compression::Primitive;
-
-const ZSTD_LEVEL: i32 = 5;
+use super::Codec;
+use crate::compression::{Primitive, ZSTD};
+use crate::compression::zstd_codec::{StringZstdCodec, BytesZstdCodec};
 
 impl Primitive for String {
   fn try_from_value(v: &Value) -> PancakeResult<String> {
@@ -20,29 +17,37 @@ impl Primitive for String {
   fn to_value(&self) -> Value {
     Value::string_val(self.clone())
   }
-}
 
-pub struct ZstdCompressor {}
-
-impl Compressor for ZstdCompressor {
-  type T = String;
-  fn compress_primitives(&self, values: &[String]) -> PancakeResult<Vec<u8>> {
-    let raw_bytes = values.iter()
-      .flat_map(|p| encoding::string_atomic_value_bytes(p))
-      .collect::<Vec<u8>>();
-    Ok(zstd::encode_all(&*raw_bytes, ZSTD_LEVEL)?)
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+    if codec == ZSTD {
+      Some(Box::new(StringZstdCodec {}))
+    } else {
+      None
+    }
   }
 }
 
-pub struct ZstdDecompressor {}
+impl Primitive for Vec<u8> {
+  fn try_from_value(v: &Value) -> PancakeResult<Vec<u8>> {
+    match v {
+      Value::bytes_val(res) => Ok(res.clone()),
+      _ => Err(PancakeError::internal("unable to extract string from value"))
+    }
+  }
 
-impl Decompressor for ZstdDecompressor {
-  type T = String;
-  fn decompress_primitives(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<String>> {
-    let decompressed_bytes = zstd::decode_all(bytes)?;
-    encoding::decode_strings(&decompressed_bytes)
+  fn to_value(&self) -> Value {
+    Value::bytes_val(self.clone())
+  }
+
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+    if codec == ZSTD {
+      Some(Box::new(BytesZstdCodec {}))
+    } else {
+      None
+    }
   }
 }
+
 
 #[cfg(test)]
 mod tests {

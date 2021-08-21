@@ -81,6 +81,9 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   match dtype {
     DataType::STRING => traverse_field_value(value, &|v: &FieldValue| v.has_string_val()),
     DataType::INT64 => traverse_field_value(value, &|v: &FieldValue| v.has_int64_val()),
+    DataType::BOOL => traverse_field_value(value, &|v: &FieldValue| v.has_bool_val()),
+    DataType::BYTES => traverse_field_value(value, &|v: &FieldValue| v.has_bytes_val()),
+    DataType::FLOAT64 => traverse_field_value(value, &|v: &FieldValue| v.has_float64_val()),
   }
 }
 
@@ -101,6 +104,7 @@ pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &Partitio
   match dtype {
     PartitionDataType::STRING => field.has_string_val(),
     PartitionDataType::INT64 => field.has_int64_val(),
+    PartitionDataType::BOOL => field.has_bool_val(),
   }
 }
 
@@ -117,7 +121,16 @@ pub fn partition_field_from_string(
         Err(_) => None
       }
     },
-    PartitionDataType::STRING => Some(partition_field::Value::string_val(value_str.to_string()))
+    PartitionDataType::STRING => Some(partition_field::Value::string_val(value_str.to_string())),
+    PartitionDataType::BOOL => {
+      if value_str == "true" {
+        Some(partition_field::Value::bool_val(true))
+      } else if value_str == "false" {
+        Some(partition_field::Value::bool_val(false))
+      } else {
+        None
+      }
+    }
   };
   if value.is_none() {
     return Err(PancakeError::internal("failed to parse partition field value"));

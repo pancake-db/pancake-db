@@ -116,7 +116,7 @@ impl Server {
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let decompressor = compression::get_decompressor(col.dtype.unwrap(), codec)?;
+      let decompressor = compression::new_codec(col.dtype.unwrap(), codec)?;
       let decoded = decompressor.decompress(bytes, col)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])

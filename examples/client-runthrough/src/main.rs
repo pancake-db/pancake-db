@@ -111,7 +111,7 @@ async fn main() -> ClientResult<()> {
     partition: vec![
       PartitionField {
         name: "part".to_string(),
-        value: Some(PartitionValue::string_val("x0".to_string())),
+        value: Some(PartitionValue::string_val("x1".to_string())),
         ..Default::default()
       },
     ],
@@ -178,7 +178,7 @@ async fn main() -> ClientResult<()> {
     let mut count = 0;
     if !codec.is_empty() {
       println!("decompressing {} compressed bytes", compressed_data.len());
-      let decompressor = compression::get_decompressor(
+      let decompressor = compression::new_codec(
         DataType::INT64,
         &codec
       )?;

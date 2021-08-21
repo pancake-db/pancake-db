@@ -4,7 +4,7 @@ use pancake_db_idl::schema::{ColumnMeta, Schema};
 use tokio::fs;
 
 use pancake_db_core::compression;
-use pancake_db_core::compression::ValueCompressor;
+use pancake_db_core::compression::ValueCodec;
 use pancake_db_core::errors::PancakeResult;
 
 use crate::dirs;
@@ -82,7 +82,7 @@ impl Server {
     for col in &schema.columns {
       col_codecs.insert(
         col.name.clone(),
-        compression::choose_compression_params(col.dtype.unwrap())
+        compression::choose_codec(col.dtype.unwrap())
       );
     }
 
@@ -98,7 +98,7 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     old_compression_params: Option<&String>,
-    compressor: &dyn ValueCompressor,
+    compressor: &dyn ValueCodec,
     new_version: u64,
   ) -> PancakeResult<()> {
     let values = self.read_col(
@@ -128,7 +128,7 @@ impl Server {
     for col in &schema.columns {
       let old_compression_params = old_compaction.col_codecs
         .get(&col.name);
-      let compressor = compression::get_compressor(
+      let compressor = compression::new_codec(
         col.dtype.unwrap(),
         compaction.col_codecs.get(&col.name).unwrap()
       )?;
