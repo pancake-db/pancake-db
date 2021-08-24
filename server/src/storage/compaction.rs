@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dirs;
 use crate::types::CompactionKey;
+use crate::impl_metadata_serde_json;
 
 use super::traits::{CacheData, Metadata, MetadataKey};
 
@@ -18,6 +19,8 @@ pub struct Compaction {
   pub compacted_n: usize,
   pub col_codecs: HashMap<String, String>
 }
+
+impl_metadata_serde_json!(Compaction);
 
 impl Default for Compaction {
   fn default() -> Compaction {

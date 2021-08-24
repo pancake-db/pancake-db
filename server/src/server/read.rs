@@ -140,14 +140,9 @@ impl Server {
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let decoded = encoding::decode(&bytes, col)?;
-      let limited;
-      if limit < decoded.len() {
-        limited = Vec::from(&decoded[0..limit]);
-      } else {
-        limited = decoded;
-      }
-      Ok(limited)
+      let dtype = utils::unwrap_dtype(col.dtype)?;
+      let decoder = encoding::new_encoder_decoder(dtype, col.nested_list_depth as u8);
+      Ok(decoder.decode_limited(&bytes, limit)?)
     }
   }
 

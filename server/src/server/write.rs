@@ -111,7 +111,9 @@ impl Server {
           .iter()
           .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or_default())
           .collect::<Vec<FieldValue>>();
-        let bytes = encoding::encode(&field_values, col.nested_list_depth as u8)?;
+        let dtype = utils::unwrap_dtype(col.dtype)?;
+        let encoder = encoding::new_encoder_decoder(dtype, col.nested_list_depth as u8);
+        let bytes = encoder.encode(&field_values)?;
         utils::append_to_file(
           &dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name),
           &bytes,

@@ -1,8 +1,6 @@
-use pancake_db_idl::schema::ColumnMeta;
-
-use crate::compression::Primitive;
+use crate::primitives::Primitive;
 use crate::encoding;
-use crate::encoding::StringLike;
+use crate::primitives::StringLike;
 use crate::errors::PancakeResult;
 
 use super::Codec;
@@ -28,7 +26,7 @@ macro_rules! zstdcodec {
         Ok(zstd::encode_all(&*raw_bytes, ZSTD_LEVEL)?)
       }
 
-      fn decompress_primitives(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<$primitive_type>> {
+      fn decompress_primitives(&self, bytes: &[u8]) -> PancakeResult<Vec<$primitive_type>> {
         let decompressed_bytes = zstd::decode_all(bytes)?;
         encoding::decode_string_likes(&decompressed_bytes)
       }

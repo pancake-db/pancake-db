@@ -1,11 +1,11 @@
-use pancake_db_idl::schema::ColumnMeta;
 use q_compress::BitReader;
 use q_compress::compressor::Compressor as RawQCompressor;
 use q_compress::decompressor::Decompressor as RawQDecompressor;
 use q_compress::types::NumberLike;
 
-use crate::compression::{Codec, Primitive};
+use crate::compression::Codec;
 use crate::errors::PancakeResult;
+use crate::primitives::Primitive;
 
 const Q_MAX_DEPTH: u32 = 7;
 
@@ -29,7 +29,7 @@ macro_rules! qcompressor {
         )?;
         Ok(compressor.compress(&primitives)?)
       }
-      fn decompress_primitives(&self, bytes: &[u8], _meta: &ColumnMeta) -> PancakeResult<Vec<$primitive_type>> {
+      fn decompress_primitives(&self, bytes: &[u8]) -> PancakeResult<Vec<$primitive_type>> {
         let mut bit_reader = BitReader::from(bytes.to_vec());
         let decompressor = RawQDecompressor::<$primitive_type>::from_reader(&mut bit_reader)?;
         Ok(decompressor.decompress(&mut bit_reader))

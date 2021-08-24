@@ -14,7 +14,7 @@ use tokio::io;
 use tokio::io::{AsyncWriteExt, AsyncSeekExt, AsyncReadExt};
 use warp::http::{StatusCode, Response};
 use warp::Reply;
-use protobuf::Message;
+use protobuf::{Message, ProtobufEnumOrUnknown};
 use hyper::body::Bytes;
 
 pub async fn read_with_offset(fname: impl AsRef<Path>, offset: u64, bytes: usize) -> io::Result<Vec<u8>> {
@@ -184,7 +184,7 @@ pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> PancakeResult<T> {
   Ok(req)
 }
 
-pub fn pancake_result_into_warp<T: Serialize + Message>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
+pub fn pancake_result_into_warp<T: Message>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
   let body_res = res.and_then(|pb|
     protobuf::json::print_to_string(&pb)
       .map_err(|_| PancakeError::internal("unable to write response as json"))
@@ -208,4 +208,11 @@ pub fn pancake_result_into_warp<T: Serialize + Message>(res: PancakeResult<T>) -
       )))
     }
   }
+}
+
+pub fn unwrap_dtype(dtype: ProtobufEnumOrUnknown<DataType>) -> PancakeResult<DataType> {
+  dtype.enum_value()
+    .map_err(|enum_code|
+      PancakeError::internal(&format!("unknown data type code {}", enum_code))
+    )
 }

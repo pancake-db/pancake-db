@@ -14,7 +14,7 @@ use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, F
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dml::field_value::Value;
-use pancake_db_core::encoding::decode;
+use pancake_db_core::encoding;
 
 const TABLE_NAME: &str = "t";
 
@@ -111,16 +111,15 @@ async fn main() -> ClientResult<()> {
     partition: vec![
       PartitionField {
         name: "part".to_string(),
-        value: Some(PartitionValue::string_val("x1".to_string())),
+        value: Some(PartitionValue::string_val("x0".to_string())),
         ..Default::default()
       },
     ],
     rows,
     ..Default::default()
   };
-  for _ in 0..1000 as u32 {
+  for _ in 0..10000 as u32 {
     client.write_to_partition(&write_to_partition_req).await?;
-    // tokio::time::sleep(Duration::from_millis(10)).await;
   }
   let write_resp = client.write_to_partition(&write_to_partition_req).await?;
   println!("Wrote rows: {:?}", write_resp);
@@ -150,6 +149,7 @@ async fn main() -> ClientResult<()> {
     let mut compressed_data = Vec::new();
     let mut uncompressed_data = Vec::new();
     let mut codec = "".to_string();
+    let col = i_meta.clone();
     while first || !continuation_token.is_empty() {
       let read_segment_column_req = ReadSegmentColumnRequest {
         table_name: TABLE_NAME.to_string(),
@@ -161,7 +161,7 @@ async fn main() -> ClientResult<()> {
           }
         ],
         segment_id: segment_id.to_string(),
-        column_name: "i".to_string(),
+        column_name: col.name.clone(),
         continuation_token: continuation_token.clone(),
         ..Default::default()
       };
@@ -187,7 +187,11 @@ async fn main() -> ClientResult<()> {
     }
     if !uncompressed_data.is_empty() {
       println!("decoding {} uncompressed bytes", uncompressed_data.len());
-      let decoded = decode(&uncompressed_data, &i_meta)?;
+      let decoder = encoding::new_encoder_decoder(
+        col.dtype.unwrap(),
+        col.nested_list_depth as u8,
+      );
+      let decoded = decoder.decode(&uncompressed_data)?;
       count += decoded.len();
     }
     total += count;

@@ -1,12 +1,41 @@
 use pancake_db_idl::dml::field_value::Value;
 
-use crate::errors::{PancakeResult, PancakeError};
+use crate::compression::Codec;
+use crate::compression::ZSTD;
+use crate::compression::zstd_codec::{BytesZstdCodec, StringZstdCodec};
+use crate::encoding;
+use crate::encoding::ByteReader;
+use crate::errors::{PancakeError, PancakeResult};
+use crate::primitives::Primitive;
 
-use super::Codec;
-use crate::compression::{Primitive, ZSTD};
-use crate::compression::zstd_codec::{StringZstdCodec, BytesZstdCodec};
+use super::StringLike;
+use std::string::FromUtf8Error;
+use std::convert::Infallible;
+use pancake_db_idl::dtype::DataType;
+
+impl StringLike for String {
+  type Error = FromUtf8Error;
+  fn into_bytes(&self) -> Vec<u8> {
+    self.as_bytes().to_vec()
+  }
+  fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+    String::from_utf8(bytes)
+  }
+}
+
+impl StringLike for Vec<u8> {
+  type Error = Infallible;
+  fn into_bytes(&self) -> Vec<u8> {
+    self.clone()
+  }
+
+  fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+    Ok(bytes)
+  }
+}
 
 impl Primitive for String {
+  const DTYPE: DataType = DataType::STRING;
   fn try_from_value(v: &Value) -> PancakeResult<String> {
     match v {
       Value::string_val(res) => Ok(res.clone()),
@@ -25,9 +54,18 @@ impl Primitive for String {
       None
     }
   }
+
+  fn encode(&self) -> Vec<u8> {
+    encoding::string_like_atomic_value_bytes(self)
+  }
+
+  fn decode(reader: &mut ByteReader) -> PancakeResult<Self> {
+    encoding::decode_string_like(reader)
+  }
 }
 
 impl Primitive for Vec<u8> {
+  const DTYPE: DataType = DataType::BYTES;
   fn try_from_value(v: &Value) -> PancakeResult<Vec<u8>> {
     match v {
       Value::bytes_val(res) => Ok(res.clone()),
@@ -45,6 +83,14 @@ impl Primitive for Vec<u8> {
     } else {
       None
     }
+  }
+
+  fn encode(&self) -> Vec<u8> {
+    encoding::string_like_atomic_value_bytes(self)
+  }
+
+  fn decode(reader: &mut ByteReader) -> PancakeResult<Self> {
+    encoding::decode_string_like(reader)
   }
 }
 

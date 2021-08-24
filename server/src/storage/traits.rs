@@ -5,34 +5,51 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use tokio::fs;
-use tokio::io;
 use tokio::sync::RwLock;
 
 use pancake_db_core::errors::{PancakeError, PancakeResult};
 use crate::utils;
 
+pub trait MetadataJson {
+  fn to_json_string(&self) -> PancakeResult<String>;
+  fn from_json_str(s: &str) -> PancakeResult<Self> where Self: Sized;
+}
+
+#[macro_export]
+macro_rules! impl_metadata_serde_json {
+  ($T:ident) => {
+    impl $crate::storage::traits::MetadataJson for $T {
+      fn to_json_string(&self) -> PancakeResult<String> {
+        Ok(serde_json::to_string(&self)?)
+      }
+      fn from_json_str(s: &str) -> PancakeResult<Self> {
+        Ok(serde_json::from_str(s)?)
+      }
+    }
+  }
+}
+
 #[async_trait]
-pub trait Metadata<K: Sync>: Serialize + DeserializeOwned + Clone + Sync {
+pub trait Metadata<K: Sync>: MetadataJson + Clone + Sync {
   fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &Path, k: &K) -> PathBuf {
     dir.join(Self::relative_path(k))
   }
 
-  async fn load(dir: &Path, k: &K) -> Option<Box<Self>> {
+  async fn load(dir: &Path, k: &K) -> Option<Self> {
+    // TODO real error handling here
     return match fs::read_to_string(Self::path(dir, k)).await {
-      Ok(json_str) => Some(serde_json::from_str(&json_str).unwrap()),
+      Ok(json_string) => Some(Self::from_json_str(&json_string).expect("unable to parse metadata")),
       Err(_) => None,
     }
   }
 
-  async fn overwrite(&self, dir: &Path, k: &K) -> io::Result<()> {
+  async fn overwrite(&self, dir: &Path, k: &K) -> PancakeResult<()> {
     let path = Self::path(dir, k);
-    let metadata_str = serde_json::to_string(&self).expect("unable to serialize");
-    return utils::overwrite_file(&path, metadata_str.as_bytes()).await;
+    let metadata_str = self.to_json_string()?;
+    return Ok(utils::overwrite_file(&path, metadata_str.as_bytes()).await?);
   }
 }
 
@@ -57,12 +74,11 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
     match maybe_metadata {
       Some(metadata) => metadata,
       None => {
-        let (res_box, mut mux_guard) = futures::future::join(
+        let (res, mut mux_guard) = futures::future::join(
           V::load(&self.dir, k),
           self.data.write()
         ).await;
         let map = &mut *mux_guard;
-        let res = res_box.map(|x| *x);
         map.insert(k.clone(), res.clone());
         res
       },

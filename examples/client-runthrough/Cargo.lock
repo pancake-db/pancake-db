@@ -621,8 +621,6 @@ dependencies = [
  "pancake-db-idl",
  "protobuf",
  "q_compress",
- "serde",
- "serde_json",
  "zstd",
 ]
 
@@ -649,7 +647,6 @@ version = "0.0.0"
 dependencies = [
  "protobuf",
  "protoc-rust",
- "serde",
 ]
 
 [[package]]
@@ -751,10 +748,6 @@ dependencies = [
 name = "protobuf"
 version = "3.0.0-pre"
 source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
-dependencies = [
- "serde",
- "serde_derive",
-]
 
 [[package]]
 name = "protobuf-codegen"

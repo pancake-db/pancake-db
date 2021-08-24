@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::impl_metadata_serde_json;
 use crate::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::PartitionKey;
@@ -21,6 +22,8 @@ pub struct SegmentsMetadata {
   pub segment_ids: Vec<String>,
   pub start_new_write_segment: bool,
 }
+
+impl_metadata_serde_json!(SegmentsMetadata);
 
 impl Metadata<PartitionKey> for SegmentsMetadata {
   fn relative_path(key: &PartitionKey) -> PathBuf {
@@ -54,7 +57,7 @@ impl SegmentsMetadataCache {
     let option = match maybe_option {
       Some(res) => res.clone(),
       None => {
-        let res = SegmentsMetadata::load(&self.dir, key).await.map(|x| *x);
+        let res = SegmentsMetadata::load(&self.dir, key).await;
         map.insert(key.clone(), res.clone());
         res
       }
@@ -79,7 +82,7 @@ impl SegmentsMetadataCache {
     let option = match maybe_option {
       Some(res) => res.clone(),
       None => {
-        let res = SegmentsMetadata::load(&self.dir, key).await.map(|x| *x);
+        let res = SegmentsMetadata::load(&self.dir, key).await;
         map.insert(key.clone(), res.clone());
         res
       }

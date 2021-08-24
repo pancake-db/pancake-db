@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use pancake_db_core::errors::PancakeResult;
 
+use crate::impl_metadata_serde_json;
 use crate::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
@@ -23,6 +24,8 @@ pub struct FlushMetadata {
   pub read_version_since: DateTime<Utc>,
 }
 
+impl_metadata_serde_json!(FlushMetadata);
+
 impl Metadata<SegmentKey> for FlushMetadata {
   fn relative_path(key: &SegmentKey) -> PathBuf {
     dirs::relative_segment_dir(key)
@@ -34,7 +37,6 @@ impl FlushMetadata {
   async fn load_or_default(dir: &Path, key: &SegmentKey) -> FlushMetadata {
     FlushMetadata::load(dir, key)
       .await
-      .map(|x| *x)
       .unwrap_or_default()
   }
 }

@@ -3,15 +3,28 @@ use std::path::PathBuf;
 use pancake_db_idl::schema::Schema;
 
 use crate::dirs;
-use crate::storage::traits::MetadataKey;
+use crate::storage::traits::{MetadataKey, MetadataJson};
 
 use super::traits::{CacheData, Metadata};
 use pancake_db_core::errors::{PancakeResult, PancakeError};
+use protobuf::json;
+use protobuf::json::parse_from_str;
 
 type SchemaKey = String;
 
 impl MetadataKey for SchemaKey {
   const ENTITY_NAME: &'static str = "schema";
+}
+
+impl MetadataJson for Schema {
+  fn to_json_string(&self) -> PancakeResult<String> {
+    json::print_to_string(self)
+      .map_err(|_| PancakeError::internal("unable to print schema to json string"))
+  }
+
+  fn from_json_str(s: &str) -> PancakeResult<Schema> {
+    Ok(parse_from_str(s)?)
+  }
 }
 
 impl Metadata<SchemaKey> for Schema {
@@ -31,7 +44,7 @@ impl SchemaCache {
     if !map.contains_key(&table_name_string) {
       map.insert(
         table_name.to_string(),
-        Schema::load(&self.dir, &table_name_string).await.map(|s| *s)
+        Schema::load(&self.dir, &table_name_string).await
       );
     }
 
