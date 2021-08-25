@@ -5,13 +5,13 @@ use pancake_db_idl::ddl::{GetSchemaRequest, GetSchemaResponse};
 use protobuf::MessageField;
 use warp::{Filter, Rejection, Reply};
 
-use pancake_db_core::errors::PancakeResult;
+use crate::errors::ServerResult;
 
 use crate::server::Server;
 use crate::utils;
 
 impl Server {
-  pub async fn get_schema(&self, req: GetSchemaRequest) -> PancakeResult<GetSchemaResponse> {
+  pub async fn get_schema(&self, req: GetSchemaRequest) -> ServerResult<GetSchemaResponse> {
     self.schema_cache.get_result(&req.table_name)
       .await
       .map(|schema| GetSchemaResponse {
@@ -28,7 +28,7 @@ impl Server {
       .and_then(Self::get_schema_from_body)
   }
 
-  async fn get_schema_from_bytes(&self, body: Bytes) -> PancakeResult<GetSchemaResponse> {
+  async fn get_schema_from_bytes(&self, body: Bytes) -> ServerResult<GetSchemaResponse> {
     let req = utils::parse_pb::<GetSchemaRequest>(body)?;
     self.get_schema(req).await
   }

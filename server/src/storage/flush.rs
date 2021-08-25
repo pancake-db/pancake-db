@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use pancake_db_core::errors::PancakeResult;
+use crate::errors::ServerResult;
 
 use crate::impl_metadata_serde_json;
 use crate::dirs;
@@ -61,7 +61,7 @@ impl FlushMetadataCache {
       .unwrap_or_default()
   }
 
-  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> PancakeResult<()> {
+  pub async fn increment_n(&self, key: &SegmentKey, incr: usize) -> ServerResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) || map.get(key).unwrap().is_none() {
@@ -74,7 +74,7 @@ impl FlushMetadataCache {
     Ok(())
   }
 
-  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> PancakeResult<()> {
+  pub async fn update_read_version(&self, key: &SegmentKey, read_version: u64) -> ServerResult<()> {
     let mut new_versions = Vec::new();
 
     let mut mux_guard = self.data.write().await;
@@ -97,7 +97,7 @@ impl FlushMetadataCache {
     Ok(())
   }
 
-  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> PancakeResult<()>{
+  pub async fn add_write_version(&self, key: &SegmentKey, write_version: u64) -> ServerResult<()>{
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) {

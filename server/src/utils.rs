@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::io::{ErrorKind, SeekFrom};
 use std::path::Path;
 
-use pancake_db_core::errors::{PancakeError, PancakeErrorKind, PancakeResult};
+use crate::errors::{ServerError, ServerResult};
 use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter, FieldValue};
 use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dtype::DataType;
@@ -12,7 +12,7 @@ use serde::Serialize;
 use tokio::fs;
 use tokio::io;
 use tokio::io::{AsyncWriteExt, AsyncSeekExt, AsyncReadExt};
-use warp::http::{StatusCode, Response};
+use warp::http::Response;
 use warp::Reply;
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use hyper::body::Bytes;
@@ -52,11 +52,12 @@ pub async fn read_with_offset(fname: impl AsRef<Path>, offset: u64, bytes: usize
   }
 }
 
-pub async fn create_if_new(dir: impl AsRef<Path>) -> io::Result<()> {
+// returns whether it already exists
+pub async fn create_if_new(dir: impl AsRef<Path>) -> io::Result<bool> {
   match fs::create_dir(dir).await {
-    Ok(_) => Ok(()),
+    Ok(_) => Ok(false),
     Err(e) => match e.kind() {
-      ErrorKind::AlreadyExists => Ok(()),
+      ErrorKind::AlreadyExists => Ok(true),
       _ => Err(e),
     },
   }
@@ -112,7 +113,7 @@ pub fn partition_field_from_string(
   name: &str,
   value_str: &str,
   dtype: PartitionDataType
-) -> PancakeResult<PartitionField> {
+) -> ServerResult<PartitionField> {
   let value = match dtype {
     PartitionDataType::INT64 => {
       let parsed: Result<i64, _> = value_str.parse();
@@ -133,7 +134,7 @@ pub fn partition_field_from_string(
     }
   };
   if value.is_none() {
-    return Err(PancakeError::internal("failed to parse partition field value"));
+    return Err(ServerError::internal("failed to parse partition field value"));
   }
   Ok(PartitionField {
     name: name.to_string(),
@@ -174,20 +175,20 @@ struct ErrorResponse {
   pub message: String,
 }
 
-pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> PancakeResult<T> {
+pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> ServerResult<T> {
   let body_string = String::from_utf8(body.to_vec()).map_err(|_|
-    PancakeError::invalid("body bytes do not parse to string")
+    ServerError::invalid("body bytes do not parse to string")
   )?;
   let req = protobuf::json::parse_from_str::<T>(&body_string).map_err(|_|
-    PancakeError::invalid("body string does not parse to correct request format")
+    ServerError::invalid("body string does not parse to correct request format")
   )?;
   Ok(req)
 }
 
-pub fn pancake_result_into_warp<T: Message>(res: PancakeResult<T>) -> Result<Box<dyn Reply>, Infallible> {
+pub fn pancake_result_into_warp<T: Message>(res: ServerResult<T>) -> Result<Box<dyn Reply>, Infallible> {
   let body_res = res.and_then(|pb|
     protobuf::json::print_to_string(&pb)
-      .map_err(|_| PancakeError::internal("unable to write response as json"))
+      .map_err(|_| ServerError::internal("unable to write response as json"))
   );
   match body_res {
     Ok(body) => {
@@ -197,22 +198,17 @@ pub fn pancake_result_into_warp<T: Message>(res: PancakeResult<T>) -> Result<Box
       let reply = warp::reply::json(&ErrorResponse {
         message: e.to_string(),
       });
-      let status_code = match e.kind {
-        PancakeErrorKind::DoesNotExist {entity_name: _, value: _} => StatusCode::NOT_FOUND,
-        PancakeErrorKind::Invalid {explanation: _} => StatusCode::BAD_REQUEST,
-        PancakeErrorKind::Internal {explanation: _} => StatusCode::INTERNAL_SERVER_ERROR,
-      };
       Ok(Box::new(warp::reply::with_status(
         reply,
-        status_code,
+        e.kind.warp_status_code(),
       )))
     }
   }
 }
 
-pub fn unwrap_dtype(dtype: ProtobufEnumOrUnknown<DataType>) -> PancakeResult<DataType> {
+pub fn unwrap_dtype(dtype: ProtobufEnumOrUnknown<DataType>) -> ServerResult<DataType> {
   dtype.enum_value()
     .map_err(|enum_code|
-      PancakeError::internal(&format!("unknown data type code {}", enum_code))
+      ServerError::internal(&format!("unknown data type code {}", enum_code))
     )
 }

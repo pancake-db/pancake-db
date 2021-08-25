@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use protobuf::json::{ParseError, PrintError};
 use hyper::http::uri::InvalidUri;
 use std::string::FromUtf8Error;
-use pancake_db_core::errors::PancakeError;
+use pancake_db_core::errors::CoreError;
 
 pub trait OtherUpcastable: std::error::Error {}
 impl OtherUpcastable for FromUtf8Error {}
@@ -14,44 +14,44 @@ impl OtherUpcastable for hyper::http::Error {}
 impl OtherUpcastable for serde_json::Error {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Error {
+pub struct ClientError {
   pub message: String,
-  pub kind: ErrorKind,
+  pub kind: ClientErrorKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ErrorKind {
+pub enum ClientErrorKind {
   Http { status: StatusCode },
   Other,
 }
 
-impl Display for ErrorKind {
+impl Display for ClientErrorKind {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     let s = match &self {
-      ErrorKind::Http {status} => format!("HTTP error {}", status),
-      ErrorKind::Other => format!("client-side error"),
+      ClientErrorKind::Http {status} => format!("HTTP error {}", status),
+      ClientErrorKind::Other => format!("client-side error"),
     };
     f.write_str(&s)
   }
 }
 
-impl Error {
+impl ClientError {
   pub fn http(status: StatusCode, message: &str) -> Self {
-    Error {
+    ClientError {
       message: message.to_string(),
-      kind: ErrorKind::Http {status}
+      kind: ClientErrorKind::Http {status}
     }
   }
 
   pub fn other(message: String) -> Self {
-    Error {
+    ClientError {
       message,
-      kind: ErrorKind::Other,
+      kind: ClientErrorKind::Other,
     }
   }
 }
 
-impl Display for Error {
+impl Display for ClientError {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     write!(
       f,
@@ -62,42 +62,42 @@ impl Display for Error {
   }
 }
 
-impl<T> From<T> for Error where T: OtherUpcastable {
-  fn from(e: T) -> Error {
-    Error {
+impl<T> From<T> for ClientError where T: OtherUpcastable {
+  fn from(e: T) -> ClientError {
+    ClientError {
       message: e.to_string(),
-      kind: ErrorKind::Other,
+      kind: ClientErrorKind::Other,
     }
   }
 }
 
-impl From<PrintError> for Error {
-  fn from(e: PrintError) -> Error {
-    Error {
+impl From<PrintError> for ClientError {
+  fn from(e: PrintError) -> ClientError {
+    ClientError {
       message: format!("{:?}", e),
-      kind: ErrorKind::Other,
+      kind: ClientErrorKind::Other,
     }
   }
 }
 
-impl From<ParseError> for Error {
-  fn from(e: ParseError) -> Error {
-    Error {
+impl From<ParseError> for ClientError {
+  fn from(e: ParseError) -> ClientError {
+    ClientError {
       message: format!("{:?}", e),
-      kind: ErrorKind::Other,
+      kind: ClientErrorKind::Other,
     }
   }
 }
 
-impl From<PancakeError> for Error {
-  fn from(e: PancakeError) -> Error {
-    Error {
-      message: format!("{}", e),
-      kind: ErrorKind::Other,
+impl From<CoreError> for ClientError {
+  fn from(e: CoreError) -> ClientError {
+    ClientError {
+      message: e.to_string(),
+      kind: ClientErrorKind::Other,
     }
   }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for ClientError {}
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type ClientResult<T> = Result<T, ClientError>;

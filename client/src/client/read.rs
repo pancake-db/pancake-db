@@ -1,18 +1,18 @@
 use hyper::{Body, Method, Request, StatusCode};
 use hyper::body::HttpBody;
 
-use crate::errors::{Error, Result};
+use crate::errors::{ClientError, ClientResult};
 
 use super::Client;
 use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 
-fn parse_read_segment_response(bytes: Vec<u8>) -> Result<ReadSegmentColumnResponse> {
+fn parse_read_segment_response(bytes: Vec<u8>) -> ClientResult<ReadSegmentColumnResponse> {
   let delim_bytes = "}\n".as_bytes();
   let mut i = 0;
   loop {
     let end_idx = i + delim_bytes.len();
     if end_idx > bytes.len() {
-      return Err(Error::other(format!("could not parse read segment column response")));
+      return Err(ClientError::other(format!("could not parse read segment column response")));
     }
     if &bytes[i..end_idx] == delim_bytes {
       break;
@@ -33,7 +33,7 @@ fn parse_read_segment_response(bytes: Vec<u8>) -> Result<ReadSegmentColumnRespon
 }
 
 impl Client {
-  pub async fn list_segments(&self, req: &ListSegmentsRequest) -> Result<ListSegmentsResponse> {
+  pub async fn list_segments(&self, req: &ListSegmentsRequest) -> ClientResult<ListSegmentsResponse> {
     let uri = self.rest_endpoint("list_segments");
     let pb_str = protobuf::json::print_to_string(req)?;
 
@@ -50,14 +50,14 @@ impl Client {
     }
 
     if status != StatusCode::OK {
-      return Err(Error::http(status, &content));
+      return Err(ClientError::http(status, &content));
     }
     let mut res = ListSegmentsResponse::new();
     protobuf::json::merge_from_str(&mut res, &content)?;
     Ok(res)
   }
 
-  pub async fn read_segment_column(&self, req: &ReadSegmentColumnRequest) -> Result<ReadSegmentColumnResponse> {
+  pub async fn read_segment_column(&self, req: &ReadSegmentColumnRequest) -> ClientResult<ReadSegmentColumnResponse> {
     let uri = self.rest_endpoint("read_segment_column");
     let pb_str = protobuf::json::print_to_string(req)?;
 
@@ -75,7 +75,7 @@ impl Client {
 
     if status != StatusCode::OK {
       let content_str = String::from_utf8(content).unwrap_or("<unparseable bytes>".to_string());
-      return Err(Error::http(status, &content_str));
+      return Err(ClientError::http(status, &content_str));
     }
 
     parse_read_segment_response(content)

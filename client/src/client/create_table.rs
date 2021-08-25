@@ -2,12 +2,12 @@ use hyper::{Body, Method, Request, StatusCode};
 use hyper::body::HttpBody;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 
-use crate::errors::{Error, Result};
+use crate::errors::{ClientError, ClientResult};
 
 use super::Client;
 
 impl Client {
-  pub async fn create_table(&self, req: &CreateTableRequest) -> Result<CreateTableResponse> {
+  pub async fn create_table(&self, req: &CreateTableRequest) -> ClientResult<CreateTableResponse> {
     let uri = self.rest_endpoint("create_table");
     let pb_str = protobuf::json::print_to_string(req)?;
 
@@ -24,7 +24,7 @@ impl Client {
     }
 
     if status != StatusCode::OK {
-      return Err(Error::http(status, &content));
+      return Err(ClientError::http(status, &content));
     }
     let mut res = CreateTableResponse::new();
     protobuf::json::merge_from_str(&mut res, &content)?;

@@ -5,7 +5,7 @@ use crate::compression::ZSTD;
 use crate::compression::zstd_codec::{BytesZstdCodec, StringZstdCodec};
 use crate::encoding;
 use crate::encoding::ByteReader;
-use crate::errors::{PancakeError, PancakeResult};
+use crate::errors::{CoreError, CoreResult};
 use crate::primitives::Primitive;
 
 use super::StringLike;
@@ -36,10 +36,10 @@ impl StringLike for Vec<u8> {
 
 impl Primitive for String {
   const DTYPE: DataType = DataType::STRING;
-  fn try_from_value(v: &Value) -> PancakeResult<String> {
+  fn try_from_value(v: &Value) -> CoreResult<String> {
     match v {
       Value::string_val(res) => Ok(res.clone()),
-      _ => Err(PancakeError::internal("unable to extract string from value"))
+      _ => Err(CoreError::invalid("unable to extract string from value"))
     }
   }
 
@@ -59,17 +59,17 @@ impl Primitive for String {
     encoding::string_like_atomic_value_bytes(self)
   }
 
-  fn decode(reader: &mut ByteReader) -> PancakeResult<Self> {
+  fn decode(reader: &mut ByteReader) -> CoreResult<Self> {
     encoding::decode_string_like(reader)
   }
 }
 
 impl Primitive for Vec<u8> {
   const DTYPE: DataType = DataType::BYTES;
-  fn try_from_value(v: &Value) -> PancakeResult<Vec<u8>> {
+  fn try_from_value(v: &Value) -> CoreResult<Vec<u8>> {
     match v {
       Value::bytes_val(res) => Ok(res.clone()),
-      _ => Err(PancakeError::internal("unable to extract string from value"))
+      _ => Err(CoreError::invalid("unable to extract string from value"))
     }
   }
 
@@ -89,7 +89,7 @@ impl Primitive for Vec<u8> {
     encoding::string_like_atomic_value_bytes(self)
   }
 
-  fn decode(reader: &mut ByteReader) -> PancakeResult<Self> {
+  fn decode(reader: &mut ByteReader) -> CoreResult<Self> {
     encoding::decode_string_like(reader)
   }
 }
@@ -103,7 +103,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_serde() -> PancakeResult<()> {
+  fn test_serde() -> CoreResult<()> {
     let strs = vec!["orange", "banana", "grapefruit", "ÿ\\'\""];
     let strings = strs.iter()
       .map(|s| s.to_string())

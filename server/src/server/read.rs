@@ -8,7 +8,7 @@ use warp::{Filter, Rejection, Reply};
 
 use pancake_db_core::compression;
 use pancake_db_core::encoding;
-use pancake_db_core::errors::{PancakeError, PancakeResult};
+use crate::errors::{ServerError, ServerResult};
 
 use crate::dirs;
 use crate::storage::flush::FlushMetadata;
@@ -68,30 +68,30 @@ impl Display for SegmentColumnContinuation {
 }
 
 impl TryFrom<String> for SegmentColumnContinuation {
-  type Error = PancakeError;
+  type Error = ServerError;
 
-  fn try_from(s: String) -> PancakeResult<Self> {
+  fn try_from(s: String) -> ServerResult<Self> {
     let parts = s
       .split('/')
       .collect::<Vec<&str>>();
 
     if parts.len() != 3 {
-      return Err(PancakeError::invalid("invalid continuation token"));
+      return Err(ServerError::invalid("invalid continuation token"));
     }
 
     let version = parts[0].parse::<u64>()
-      .map_err(|_| PancakeError::invalid("invalid continuation token version"))?;
+      .map_err(|_| ServerError::invalid("invalid continuation token version"))?;
 
     let file_type = if parts[1] == "F" {
       FileType::Flush
     } else if parts[1] == "C" {
       FileType::Compact
     } else {
-      return Err(PancakeError::invalid("invalid continuation token file type"));
+      return Err(ServerError::invalid("invalid continuation token file type"));
     };
 
     let offset = parts[2].parse::<u64>()
-      .map_err(|_| PancakeError::invalid("invalid continuation token offset"))?;
+      .map_err(|_| ServerError::invalid("invalid continuation token offset"))?;
 
     Ok(SegmentColumnContinuation {
       version,
@@ -109,7 +109,7 @@ impl Server {
     metadata: &FlushMetadata,
     codec: &str,
     limit: usize,
-  ) -> PancakeResult<Vec<FieldValue>> {
+  ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::compact_col_file(&self.opts.dir, &compaction_key, &col.name);
     let bytes = utils::read_or_empty(&path).await?;
@@ -133,7 +133,7 @@ impl Server {
     col: &ColumnMeta,
     metadata: &FlushMetadata,
     limit: usize,
-  ) -> PancakeResult<Vec<FieldValue>> {
+  ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(metadata.read_version);
     let path = dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name);
     let bytes = utils::read_or_empty(&path).await?;
@@ -153,7 +153,7 @@ impl Server {
     metadata: &FlushMetadata,
     maybe_compression_params: Option<&String>,
     limit: usize,
-  ) -> PancakeResult<Vec<FieldValue>> {
+  ) -> ServerResult<Vec<FieldValue>> {
     let mut values = Vec::new();
     if let Some(compression_params) = maybe_compression_params {
       values.extend(
@@ -182,7 +182,7 @@ impl Server {
     table_name: &str,
     parent: &[PartitionField],
     meta: &PartitionMeta,
-  ) -> PancakeResult<Vec<PartitionField>> {
+  ) -> ServerResult<Vec<PartitionField>> {
     let dir = dirs::partition_dir(
       &self.opts.dir,
       &PartitionKey {
@@ -220,7 +220,7 @@ impl Server {
     Ok(res)
   }
 
-  async fn list_segments(&self, req: ListSegmentsRequest) -> PancakeResult<ListSegmentsResponse> {
+  async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {
     let schema = self.schema_cache
       .get_result(&req.table_name)
       .await?;
@@ -281,7 +281,7 @@ impl Server {
       .n as u32
   }
 
-  async fn list_segments_from_bytes(&self, body: Bytes) -> PancakeResult<ListSegmentsResponse> {
+  async fn list_segments_from_bytes(&self, body: Bytes) -> ServerResult<ListSegmentsResponse> {
     let req = utils::parse_pb::<ListSegmentsRequest>(body)?;
     self.list_segments(req).await
   }
@@ -306,7 +306,7 @@ impl Server {
       .and_then(Self::warp_read_segment_column)
   }
 
-  async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> PancakeResult<ReadSegmentColumnResponse> {
+  async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
     let col_name = req.column_name;
     // TODO fix edge case where data in a new column is written between schema read and flush metadata read
     let schema = self.schema_cache
@@ -321,7 +321,7 @@ impl Server {
     }
 
     if !valid_col {
-      return Err(PancakeError::does_not_exist("column", &col_name));
+      return Err(ServerError::does_not_exist("column", &col_name));
     }
 
     let partition = NormalizedPartition::full(&schema, &req.partition)?;
@@ -413,7 +413,7 @@ impl Server {
     Ok(response)
   }
 
-  async fn read_segment_column_from_bytes(&self, body: Bytes) -> PancakeResult<ReadSegmentColumnResponse> {
+  async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {
     let req = utils::parse_pb::<ReadSegmentColumnRequest>(body)?;
     self.read_segment_column(req).await
   }

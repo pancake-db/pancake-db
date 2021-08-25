@@ -14,6 +14,7 @@ mod server;
 mod dirs;
 mod types;
 mod opt;
+pub mod errors;
 pub mod storage;
 
 #[tokio::main]

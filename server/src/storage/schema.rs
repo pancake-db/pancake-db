@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use pancake_db_idl::schema::Schema;
-
-use crate::dirs;
-use crate::storage::traits::{MetadataKey, MetadataJson};
-
-use super::traits::{CacheData, Metadata};
-use pancake_db_core::errors::{PancakeResult, PancakeError};
 use protobuf::json;
 use protobuf::json::parse_from_str;
+
+use crate::dirs;
+use crate::errors::{ServerError, ServerResult};
+use crate::storage::traits::{MetadataJson, MetadataKey};
+
+use super::traits::{CacheData, Metadata};
 
 type SchemaKey = String;
 
@@ -17,12 +17,12 @@ impl MetadataKey for SchemaKey {
 }
 
 impl MetadataJson for Schema {
-  fn to_json_string(&self) -> PancakeResult<String> {
+  fn to_json_string(&self) -> ServerResult<String> {
     json::print_to_string(self)
-      .map_err(|_| PancakeError::internal("unable to print schema to json string"))
+      .map_err(|_| ServerError::internal("unable to print schema to json string"))
   }
 
-  fn from_json_str(s: &str) -> PancakeResult<Schema> {
+  fn from_json_str(s: &str) -> ServerResult<Schema> {
     Ok(parse_from_str(s)?)
   }
 }
@@ -37,7 +37,7 @@ impl Metadata<SchemaKey> for Schema {
 pub type SchemaCache = CacheData<SchemaKey, Schema>;
 
 impl SchemaCache {
-  pub async fn assert(&self, table_name: &str, schema: &Schema) -> PancakeResult<()> {
+  pub async fn assert(&self, table_name: &str, schema: &Schema) -> ServerResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let table_name_string = table_name.to_string();
@@ -53,7 +53,7 @@ impl SchemaCache {
         if existing_schema == schema {
           Ok(())
         } else {
-          Err(PancakeError::invalid("existing schema does not match"))
+          Err(ServerError::invalid("existing schema does not match"))
         }
       },
       None => {

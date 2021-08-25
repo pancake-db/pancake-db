@@ -3,7 +3,7 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 
 use crate::utils;
-use crate::errors::{PancakeResult, PancakeError};
+use crate::errors::{CoreResult, CoreError};
 use crate::primitives::{StringLike, Primitive};
 use std::marker::PhantomData;
 use std::fmt::{Debug, Formatter};
@@ -27,10 +27,10 @@ pub fn new_encoder_decoder(dtype: DataType, nested_list_depth: u8) -> Box<dyn En
 }
 
 pub trait EncoderDecoder {
-  fn encode(&self, values: &[FieldValue]) -> PancakeResult<Vec<u8>>;
-  fn decode_limited(&self, bytes: &[u8], limit: usize) -> PancakeResult<Vec<FieldValue>>;
+  fn encode(&self, values: &[FieldValue]) -> CoreResult<Vec<u8>>;
+  fn decode_limited(&self, bytes: &[u8], limit: usize) -> CoreResult<Vec<FieldValue>>;
 
-  fn decode(&self, bytes: &[u8]) -> PancakeResult<Vec<FieldValue>> {
+  fn decode(&self, bytes: &[u8]) -> CoreResult<Vec<FieldValue>> {
     self.decode_limited(bytes, usize::MAX)
   }
 }
@@ -41,11 +41,11 @@ struct EncoderDecoderImpl<T: Primitive> {
 }
 
 impl<T: Primitive> EncoderDecoder for EncoderDecoderImpl<T> {
-  fn encode(&self, values: &[FieldValue]) -> PancakeResult<Vec<u8>> {
+  fn encode(&self, values: &[FieldValue]) -> CoreResult<Vec<u8>> {
     let mut res = Vec::new();
 
     for maybe_value in values {
-      let mut maybe_err: PancakeResult<()> = Ok(());
+      let mut maybe_err: CoreResult<()> = Ok(());
       match &maybe_value.value {
         Some(value) => {
           let bytes = self.value_bytes(value, 0);
@@ -71,7 +71,7 @@ impl<T: Primitive> EncoderDecoder for EncoderDecoderImpl<T> {
     &self,
     bytes: &[u8],
     limit: usize
-  ) -> PancakeResult<Vec<FieldValue>> {
+  ) -> CoreResult<Vec<FieldValue>> {
     let mut res = Vec::new();
     let mut reader = ByteReader::new(bytes, self.escape_depth);
     while !reader.complete() && res.len() < limit {
@@ -86,7 +86,7 @@ impl<T: Primitive> EncoderDecoder for EncoderDecoderImpl<T> {
             res.push(FieldValue::new());
           }
         } else if res.len() != count {
-          return Err(PancakeError::internal("in-file count did not match number of decoded entries"));
+          return Err(CoreError::corrupt("in-file count did not match number of decoded entries"));
         }
       } else {
         reader.back_one();
@@ -108,14 +108,14 @@ impl<T: Primitive> EncoderDecoderImpl<T> {
   }
   // TODO bit packing for booleans?
   // TODO use counts instead of null bytes for long runs of nulls?
-  fn value_bytes(&self, v: &Value, traverse_depth: u8) -> PancakeResult<Vec<u8>> {
+  fn value_bytes(&self, v: &Value, traverse_depth: u8) -> CoreResult<Vec<u8>> {
     if traverse_depth == self.escape_depth {
       Ok(escape_bytes(&self.atomic_value_bytes(v)?, self.escape_depth))
     } else {
       match v {
         Value::list_val(l) => {
           let mut res = Vec::new();
-          let mut maybe_err: Option<PancakeError> = None;
+          let mut maybe_err: Option<CoreError> = None;
           for val in &l.vals {
             match self.value_bytes(val.value.as_ref().unwrap(), traverse_depth + 1) {
               Ok(bytes) => res.extend(bytes),
@@ -136,16 +136,16 @@ impl<T: Primitive> EncoderDecoderImpl<T> {
             }
           }
         },
-        _ => Err(PancakeError::invalid("expected a list to traverse but found atomic type"))
+        _ => Err(CoreError::invalid("expected a list to traverse but found atomic type"))
       }
     }
   }
 
-  pub fn atomic_value_bytes(&self, v: &Value) -> PancakeResult<Vec<u8>> {
+  pub fn atomic_value_bytes(&self, v: &Value) -> CoreResult<Vec<u8>> {
     Ok(T::try_from_value(v)?.encode())
   }
 
-  fn decode_value(&self, reader: &mut ByteReader, current_depth: u8) -> PancakeResult<FieldValue> {
+  fn decode_value(&self, reader: &mut ByteReader, current_depth: u8) -> CoreResult<FieldValue> {
     if current_depth == self.escape_depth as u8 {
       let value = T::decode(reader)?.to_value();
       Ok(FieldValue {
@@ -221,27 +221,27 @@ impl<'a> ByteReader<'a> {
     self.i -= 1;
   }
 
-  pub fn read_one(&mut self) -> PancakeResult<u8> {
+  pub fn read_one(&mut self) -> CoreResult<u8> {
     if self.i >= self.bytes.len() {
-      return Err(PancakeError::internal("read_one out of bytes"));
+      return Err(CoreError::corrupt("read_one out of bytes"));
     }
     let res = self.bytes[self.i];
     self.i += 1;
     Ok(res)
   }
 
-  pub fn unescaped_read_one(&mut self) -> PancakeResult<u8> {
+  pub fn unescaped_read_one(&mut self) -> CoreResult<u8> {
     let b = self.read_one()?;
     if b == ESCAPE_BYTE {
       self.read_one()
     } else if b > TOP_NEST_LEVEL_BYTE - self.nested_list_depth {
-      Err(PancakeError::internal(&format!("unexpected unescaped byte at {}", self.i)))
+      Err(CoreError::corrupt(&format!("unexpected unescaped byte at {}", self.i)))
     } else {
       Ok(b)
     }
   }
 
-  pub fn unescaped_read_n(&mut self, n: usize) -> PancakeResult<Vec<u8>> {
+  pub fn unescaped_read_n(&mut self, n: usize) -> CoreResult<Vec<u8>> {
     let mut res = Vec::with_capacity(n);
     for _ in 0..n {
       res.push(self.unescaped_read_one()?);
@@ -249,9 +249,9 @@ impl<'a> ByteReader<'a> {
     Ok(res)
   }
 
-  pub fn read_n(&mut self, n: usize) -> PancakeResult<&'a [u8]> {
+  pub fn read_n(&mut self, n: usize) -> CoreResult<&'a [u8]> {
     if self.i + n >= self.bytes.len() {
-      return Err(PancakeError::internal("read_n out of bytes"));
+      return Err(CoreError::corrupt("read_n out of bytes"));
     }
     let res = &self.bytes[self.i..self.i+n];
     self.i += n;
@@ -266,7 +266,7 @@ pub fn string_like_atomic_value_bytes<T: StringLike>(x: &T) -> Vec<u8> {
   res
 }
 
-pub fn decode_string_likes<T>(bytes: &[u8]) -> PancakeResult<Vec<T>> where T: StringLike {
+pub fn decode_string_likes<T>(bytes: &[u8]) -> CoreResult<Vec<T>> where T: StringLike {
   let mut reader = ByteReader::new(bytes, 0);
   let mut res = Vec::new();
   while !reader.complete() {
@@ -275,10 +275,14 @@ pub fn decode_string_likes<T>(bytes: &[u8]) -> PancakeResult<Vec<T>> where T: St
   Ok(res)
 }
 
-pub fn decode_string_like<T>(reader: &mut ByteReader) -> PancakeResult<T> where T: StringLike {
+pub fn decode_string_like<T>(reader: &mut ByteReader) -> CoreResult<T> where T: StringLike {
   let len_bytes = utils::try_byte_array::<2>(&reader.unescaped_read_n(2)?)?;
   let len = u16::from_be_bytes(len_bytes) as usize;
-  Ok(T::try_from_bytes(reader.unescaped_read_n(len)?)?)
+  let res = T::try_from_bytes(reader.unescaped_read_n(len)?)
+    .map_err(|e| {
+      CoreError::corrupt(&e.to_string())
+    })?;
+  Ok(res)
 }
 
 
@@ -286,7 +290,7 @@ pub fn decode_string_like<T>(reader: &mut ByteReader) -> PancakeResult<T> where 
 mod tests {
   use pancake_db_idl::dml::FieldValue;
   use pancake_db_idl::dml::field_value::Value;
-  use crate::errors::PancakeResult;
+  use crate::errors::CoreResult;
   use super::*;
   use protobuf::ProtobufEnumOrUnknown;
 
@@ -301,7 +305,7 @@ mod tests {
   }
 
   #[test]
-  fn test_strings() -> PancakeResult<()> {
+  fn test_strings() -> CoreResult<()> {
     let strings = vec![
       Some("azAZ09﹝ﾂﾂﾂ﹞ꗽꗼ".to_string()),  // characters that use bytes 0xff, 0xfe, 0xfd, 0xfc
       None,
@@ -332,7 +336,7 @@ mod tests {
   }
 
   #[test]
-  fn test_ints() -> PancakeResult<()> {
+  fn test_ints() -> CoreResult<()> {
     let ints: Vec<Option<i64>> = vec![
       Some(i64::MIN),
       Some(i64::MAX),
@@ -365,7 +369,7 @@ mod tests {
   }
 
   #[test]
-  fn test_nested_strings() -> PancakeResult<()> {
+  fn test_nested_strings() -> CoreResult<()> {
     let strings = vec![
       Some(vec![
         vec!["azAZ09﹝ﾂﾂﾂ﹞ꗽꗼ".to_string(), "abc".to_string()],

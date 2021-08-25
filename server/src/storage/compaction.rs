@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use pancake_db_core::errors::PancakeResult;
+use crate::errors::ServerResult;
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
@@ -46,7 +46,7 @@ impl CompactionCache {
       .unwrap_or_default()
   }
 
-  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> PancakeResult<()> {
+  pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> ServerResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     compaction.overwrite(&self.dir, &key).await?;

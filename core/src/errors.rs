@@ -1,76 +1,88 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
-
 use std::error::Error;
+use std::array::TryFromSliceError;
+use q_compress::errors::QCompressError;
 
-#[derive(Clone, Debug)]
-pub struct PancakeError {
-  pub kind: PancakeErrorKind,
+pub trait OtherUpcastable: Error {}
+impl OtherUpcastable for TryFromSliceError {}
+impl OtherUpcastable for std::io::Error {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoreErrorKind {
+  Invalid,
+  Other,
+  Corrupt,
 }
 
-#[derive(Clone, Debug)]
-pub enum PancakeErrorKind {
-  DoesNotExist {entity_name: &'static str, value: String},
-  Invalid {explanation: String},
-  Internal {explanation: String},
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoreError {
+  message: String,
+  pub kind: CoreErrorKind,
 }
 
-impl PancakeError {
-  pub fn does_not_exist(entity_name: &'static str, value: &str) -> PancakeError {
-    PancakeError {
-      kind: PancakeErrorKind::DoesNotExist {
-        entity_name,
-        value: value.to_string(),
-      }
+impl Error for CoreError {}
+
+impl CoreError {
+  fn create(explanation: &str, kind: CoreErrorKind) -> CoreError {
+    CoreError {
+      message: explanation.to_string(),
+      kind,
     }
   }
 
-  pub fn invalid(explanation: &str) -> PancakeError {
-    PancakeError {
-      kind: PancakeErrorKind::Invalid {
-        explanation: explanation.to_string()
-      }
-    }
+  pub fn invalid(explanation: &str) -> CoreError {
+    CoreError::create(explanation, CoreErrorKind::Invalid)
   }
 
-  pub fn internal(explanation: &str) -> PancakeError {
-    PancakeError {
-      kind: PancakeErrorKind::Internal {
-        explanation: explanation.to_string()
-      }
-    }
+  pub fn corrupt(explanation: &str) -> CoreError {
+    CoreError::create(explanation, CoreErrorKind::Corrupt)
   }
 }
 
-impl Display for PancakeError {
+impl Display for CoreError {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     match &self.kind {
-      PancakeErrorKind::DoesNotExist {entity_name, value} => write!(
+      CoreErrorKind::Invalid => write!(
         f,
-        "{} for {} does not exist",
-        entity_name,
-        value
+        "invalid input; {}",
+        self.message
       ),
-      PancakeErrorKind::Invalid {explanation} => write!(
+      CoreErrorKind::Other => write!(
         f,
-        "invalid request; {}",
-        explanation
+        "{}",
+        self.message
       ),
-      PancakeErrorKind::Internal { explanation } => write!(
+      CoreErrorKind::Corrupt => write!(
         f,
-        "internal error; {}",
-        explanation
+        "corrupt data or incorrect decoder/decompressor; {}",
+        self.message
       )
     }
   }
 }
 
-impl<E> From<E> for PancakeError where E: Error {
-  fn from(reason: E) -> Self {
-    PancakeError {
-      kind: PancakeErrorKind::Internal { explanation: reason.to_string() }
+impl<T> From<T> for CoreError where T: OtherUpcastable {
+  fn from(e: T) -> CoreError {
+    CoreError {
+      message: e.to_string(),
+      kind: CoreErrorKind::Other,
     }
   }
 }
 
-pub type PancakeResult<T> = Result<T, PancakeError>;
+impl From<QCompressError> for CoreError {
+  fn from(e: QCompressError) -> CoreError {
+    let kind = match e {
+      QCompressError::HeaderDtypeError {header_byte: _, decompressor_byte: _} => CoreErrorKind::Corrupt,
+      QCompressError::MagicHeaderError {header: _} => CoreErrorKind::Corrupt,
+      _ => CoreErrorKind::Other,
+    };
+    CoreError {
+      message: e.to_string(),
+      kind,
+    }
+  }
+}
+
+pub type CoreResult<T> = Result<T, CoreError>;

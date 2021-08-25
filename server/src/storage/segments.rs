@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::impl_metadata_serde_json;
 use crate::dirs;
+use crate::errors::{ServerError, ServerResult};
+use crate::impl_metadata_serde_json;
 use crate::storage::traits::MetadataKey;
 use crate::types::PartitionKey;
 use crate::utils;
 
 use super::traits::{CacheData, Metadata};
-use pancake_db_core::errors::{PancakeResult, PancakeError};
 
 impl MetadataKey for PartitionKey {
   const ENTITY_NAME: &'static str = "partition segments file";
@@ -49,7 +49,7 @@ fn new_segment_id() -> String {
 pub type SegmentsMetadataCache = CacheData<PartitionKey, SegmentsMetadata>;
 
 impl SegmentsMetadataCache {
-  pub async fn start_new_write_segment(&self, key: &PartitionKey, dead_segment_id: &str) -> PancakeResult<()> {
+  pub async fn start_new_write_segment(&self, key: &PartitionKey, dead_segment_id: &str) -> ServerResult<()> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let maybe_option = map.get(key);
@@ -70,11 +70,11 @@ impl SegmentsMetadataCache {
         map.insert(key.clone(), Some(existing.clone()));
         Ok(())
       },
-      _ => Err(PancakeError::internal("unexpected start new write segment on empty table"))
+      _ => Err(ServerError::internal("unexpected start new write segment on empty table"))
     }
   }
 
-  pub async fn get_or_create(&self, key: &PartitionKey) -> PancakeResult<SegmentsMetadata> {
+  pub async fn get_or_create(&self, key: &PartitionKey) -> ServerResult<SegmentsMetadata> {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let maybe_option = map.get(key);
@@ -112,7 +112,7 @@ impl SegmentsMetadataCache {
     }
   }
 
-  pub async fn provision_segment(&self, key: &PartitionKey, segment_id: String) -> PancakeResult<()> {
+  pub async fn provision_segment(&self, key: &PartitionKey, segment_id: String) -> ServerResult<()> {
     let segment_key = key.segment_key(segment_id);
     utils::create_if_new(&dirs::segment_dir(
       &self.dir,

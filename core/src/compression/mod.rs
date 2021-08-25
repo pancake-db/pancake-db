@@ -4,7 +4,7 @@ use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::ColumnMeta;
 use q_compress::{BitReader, U32Compressor, U32Decompressor};
 
-use crate::errors::{PancakeError, PancakeResult};
+use crate::errors::{CoreError, CoreResult};
 use crate::primitives::Primitive;
 
 pub mod q_codec;
@@ -17,7 +17,7 @@ const REPETITION_LEVEL_Q_COMPRESSION_LEVEL: u32 = 6;
 pub fn new_codec(
   dtype: DataType,
   codec: &str,
-) -> PancakeResult<Box<dyn ValueCodec>> {
+) -> CoreResult<Box<dyn ValueCodec>> {
   let maybe_res: Option<Box<dyn ValueCodec>> = match dtype {
     DataType::STRING => String::new_value_codec(codec),
     DataType::INT64 => i64::new_value_codec(codec),
@@ -28,7 +28,7 @@ pub fn new_codec(
 
   match maybe_res {
     Some(res) => Ok(res),
-    None => Err(PancakeError::invalid(&format!(
+    None => Err(CoreError::invalid(&format!(
       "compression codec {} unavailable for data type {:?}",
       codec,
       dtype,
@@ -50,18 +50,18 @@ fn get_repetition_levels(
   value: &FieldValue,
   traverse_depth: u8,
   schema_depth: u8
-) -> PancakeResult<Vec<u8>> {
+) -> CoreResult<Vec<u8>> {
   match &value.value {
     None => {
       if traverse_depth != 0 {
-        return Err(PancakeError::internal("null value found in nested position"));
+        return Err(CoreError::invalid("null value found in nested position"));
       }
 
       Ok(vec![0])
     },
     Some(Value::list_val(repeated)) => {
       if traverse_depth >= schema_depth {
-        return Err(PancakeError::internal("traversed to deeper than schema depth"));
+        return Err(CoreError::invalid("traversed to deeper than schema depth"));
       }
 
       let mut res = Vec::new();
@@ -73,7 +73,7 @@ fn get_repetition_levels(
     },
     _ => {
       if traverse_depth != schema_depth {
-        return Err(PancakeError::internal(
+        return Err(CoreError::invalid(
           &format!(
             "traverse depth of {} does not match schema depth of {}",
             traverse_depth,
@@ -88,7 +88,7 @@ fn get_repetition_levels(
 
 // 0 for null,
 // 1..n+1 for "next field value", "next field value in list", "... in sublist", ...,
-fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> PancakeResult<Vec<u32>> {
+fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> CoreResult<Vec<u32>> {
   let mut res = Vec::new();
   for fv in values {
     res.extend(
@@ -99,7 +99,7 @@ fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> Panca
   Ok(res)
 }
 
-fn compress_repetition_levels(values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
+fn compress_repetition_levels(values: &[FieldValue], meta: &ColumnMeta) -> CoreResult<Vec<u8>> {
   let rep_levels = get_multi_repetition_levels(values, meta.nested_list_depth as u8)?;
   let compressor = U32Compressor::train(
     rep_levels.clone(),
@@ -129,9 +129,9 @@ fn get_multi_atoms(values: &[FieldValue]) -> Vec<Value> {
 pub trait Codec {
   type T: Primitive;
 
-  fn compress_primitives(&self, primitives: &[Self::T]) -> PancakeResult<Vec<u8>>;
+  fn compress_primitives(&self, primitives: &[Self::T]) -> CoreResult<Vec<u8>>;
 
-  fn decompress_primitives(&self, bytes: &[u8]) -> PancakeResult<Vec<Self::T>>;
+  fn decompress_primitives(&self, bytes: &[u8]) -> CoreResult<Vec<Self::T>>;
 }
 
 pub struct RepLevels {
@@ -140,7 +140,7 @@ pub struct RepLevels {
 }
 
 impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
-  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>> {
+  fn compress_atoms(&self, values: &[Value]) -> CoreResult<Vec<u8>> {
     let mut primitives = Vec::new();
     for v in values {
       primitives.push(T::try_from_value(v)?);
@@ -148,14 +148,14 @@ impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
     self.compress_primitives(&primitives)
   }
 
-  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>> {
+  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> CoreResult<Vec<u8>> {
     let mut res = compress_repetition_levels(values, meta)?;
     let atoms = get_multi_atoms(values);
     res.extend(self.compress_atoms(&atoms)?);
     Ok(res)
   }
 
-  fn decompress_atoms(&self, bytes: &[u8]) -> PancakeResult<Vec<Value>> {
+  fn decompress_atoms(&self, bytes: &[u8]) -> CoreResult<Vec<Value>> {
     self.decompress_primitives(bytes)
       .map(|ps| {
         ps.iter()
@@ -164,7 +164,7 @@ impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
       })
   }
 
-  fn decompress_rep_levels(&self, bytes: Vec<u8>) -> PancakeResult<RepLevels> {
+  fn decompress_rep_levels(&self, bytes: Vec<u8>) -> CoreResult<RepLevels> {
     let mut bit_reader = BitReader::from(bytes);
     let bit_reader_ptr = &mut bit_reader;
     let rep_level_decompressor = U32Decompressor::from_reader(bit_reader_ptr)?;
@@ -179,7 +179,7 @@ impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
     })
   }
 
-  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>> {
+  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> CoreResult<Vec<FieldValue>> {
     let RepLevels { remaining_bytes, levels } = self.decompress_rep_levels(bytes)?;
     let atoms = self.decompress_atoms(&remaining_bytes)?;
     let mut nester = AtomNester::from_levels_and_atoms(
@@ -192,12 +192,12 @@ impl<T: Primitive> ValueCodec for Box<dyn Codec<T=T>> {
 }
 
 pub trait ValueCodec {
-  fn compress_atoms(&self, values: &[Value]) -> PancakeResult<Vec<u8>>;
-  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> PancakeResult<Vec<u8>>;
+  fn compress_atoms(&self, values: &[Value]) -> CoreResult<Vec<u8>>;
+  fn compress(&self, values: &[FieldValue], meta: &ColumnMeta) -> CoreResult<Vec<u8>>;
 
-  fn decompress_atoms(&self, bytes: &[u8]) -> PancakeResult<Vec<Value>>;
-  fn decompress_rep_levels(&self, bytes: Vec<u8>) -> PancakeResult<RepLevels>;
-  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> PancakeResult<Vec<FieldValue>>;
+  fn decompress_atoms(&self, bytes: &[u8]) -> CoreResult<Vec<Value>>;
+  fn decompress_rep_levels(&self, bytes: Vec<u8>) -> CoreResult<RepLevels>;
+  fn decompress(&self, bytes: Vec<u8>, meta: &ColumnMeta) -> CoreResult<Vec<FieldValue>>;
 }
 
 struct AtomNester {
@@ -219,7 +219,7 @@ impl AtomNester {
     }
   }
 
-  fn nested_field_value(&mut self, traverse_depth: u8) -> PancakeResult<FieldValue> {
+  fn nested_field_value(&mut self, traverse_depth: u8) -> CoreResult<FieldValue> {
     let mut level = self.rep_levels[self.i];
     if traverse_depth == 0 && level == 0 {
       //null
@@ -250,11 +250,11 @@ impl AtomNester {
         ..Default::default()
       })
     } else {
-      Err(PancakeError::internal("invalid repetition level found"))
+      Err(CoreError::corrupt("invalid repetition level found"))
     }
   }
 
-  pub fn nested_field_values(&mut self) -> PancakeResult<Vec<FieldValue>> {
+  pub fn nested_field_values(&mut self) -> CoreResult<Vec<FieldValue>> {
     let mut res = Vec::new();
     while self.i < self.rep_levels.len() {
       res.push(self.nested_field_value(0)?);

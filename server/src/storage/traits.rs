@@ -8,22 +8,22 @@ use async_trait::async_trait;
 use tokio::fs;
 use tokio::sync::RwLock;
 
-use pancake_db_core::errors::{PancakeError, PancakeResult};
+use crate::errors::{ServerError, ServerResult};
 use crate::utils;
 
 pub trait MetadataJson {
-  fn to_json_string(&self) -> PancakeResult<String>;
-  fn from_json_str(s: &str) -> PancakeResult<Self> where Self: Sized;
+  fn to_json_string(&self) -> ServerResult<String>;
+  fn from_json_str(s: &str) -> ServerResult<Self> where Self: Sized;
 }
 
 #[macro_export]
 macro_rules! impl_metadata_serde_json {
   ($T:ident) => {
     impl $crate::storage::traits::MetadataJson for $T {
-      fn to_json_string(&self) -> PancakeResult<String> {
+      fn to_json_string(&self) -> ServerResult<String> {
         Ok(serde_json::to_string(&self)?)
       }
-      fn from_json_str(s: &str) -> PancakeResult<Self> {
+      fn from_json_str(s: &str) -> ServerResult<Self> {
         Ok(serde_json::from_str(s)?)
       }
     }
@@ -46,7 +46,7 @@ pub trait Metadata<K: Sync>: MetadataJson + Clone + Sync {
     }
   }
 
-  async fn overwrite(&self, dir: &Path, k: &K) -> PancakeResult<()> {
+  async fn overwrite(&self, dir: &Path, k: &K) -> ServerResult<()> {
     let path = Self::path(dir, k);
     let metadata_str = self.to_json_string()?;
     return Ok(utils::overwrite_file(&path, metadata_str.as_bytes()).await?);
@@ -85,10 +85,10 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
     }
   }
 
-  pub async fn get_result(&self, k: &K) -> PancakeResult<V> {
+  pub async fn get_result(&self, k: &K) -> ServerResult<V> {
     match self.get_option(k).await {
       Some(metadata) => Ok(metadata),
-      None => Err(PancakeError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
+      None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
     }
   }
 

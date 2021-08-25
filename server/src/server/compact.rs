@@ -5,7 +5,7 @@ use tokio::fs;
 
 use pancake_db_core::compression;
 use pancake_db_core::compression::ValueCodec;
-use pancake_db_core::errors::PancakeResult;
+use crate::errors::ServerResult;
 
 use crate::dirs;
 use crate::storage::compaction::Compaction;
@@ -17,7 +17,7 @@ use super::Server;
 use chrono::{Utc, Duration};
 
 impl Server {
-  pub async fn compact_if_needed(&self, segment_key: &SegmentKey) -> PancakeResult<()> {
+  pub async fn compact_if_needed(&self, segment_key: &SegmentKey) -> ServerResult<()> {
     let table_name_string = segment_key.table_name.to_string();
     let metadata = self.flush_metadata_cache.get(&segment_key).await;
 
@@ -46,7 +46,7 @@ impl Server {
     &self,
     segment_key: &SegmentKey,
     current_read_version: u64,
-  ) -> PancakeResult<()> {
+  ) -> ServerResult<()> {
     let dir = dirs::segment_dir(&self.opts.dir, segment_key);
     let mut read_dir = fs::read_dir(&dir).await?;
     while let Ok(Some(entry)) = read_dir.next_entry().await {
@@ -100,7 +100,7 @@ impl Server {
     old_compression_params: Option<&String>,
     compressor: &dyn ValueCodec,
     new_version: u64,
-  ) -> PancakeResult<()> {
+  ) -> ServerResult<()> {
     let values = self.read_col(
       segment_key,
       col,
@@ -124,7 +124,7 @@ impl Server {
     old_compaction: &Compaction,
     compaction: &Compaction,
     new_version: u64,
-  ) -> PancakeResult<()> {
+  ) -> ServerResult<()> {
     for col in &schema.columns {
       let old_compression_params = old_compaction.col_codecs
         .get(&col.name);
@@ -149,7 +149,7 @@ impl Server {
     segment_key: &SegmentKey,
     schema: Schema,
     metadata: FlushMetadata
-  ) -> PancakeResult<()> {
+  ) -> ServerResult<()> {
     let new_version = metadata.read_version + 1;
 
     let compaction: Compaction = self.plan_compaction(&schema, &metadata);

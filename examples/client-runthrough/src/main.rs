@@ -9,7 +9,7 @@ use protobuf::{MessageField, ProtobufEnumOrUnknown};
 use tokio;
 
 use pancake_db_client::Client;
-use pancake_db_client::errors::Result as ClientResult;
+use pancake_db_client::errors::ClientResult;
 use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, FieldValue, RepeatedFieldValue, ListSegmentsRequest, PartitionFilter, ReadSegmentColumnRequest};
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;

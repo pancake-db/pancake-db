@@ -3,17 +3,17 @@ use pancake_db_idl::dml::field_value::Value;
 use crate::compression::Codec;
 use crate::compression::q_codec::BoolQCodec;
 use crate::compression::Q_COMPRESS;
-use crate::errors::{PancakeError, PancakeResult};
+use crate::errors::{CoreError, CoreResult};
 use crate::primitives::Primitive;
 use crate::encoding::ByteReader;
 use pancake_db_idl::dtype::DataType;
 
 impl Primitive for bool {
   const DTYPE: DataType = DataType::BOOL;
-  fn try_from_value(v: &Value) -> PancakeResult<bool> {
+  fn try_from_value(v: &Value) -> CoreResult<bool> {
     match v {
       Value::bool_val(res) => Ok(*res),
-      _ => Err(PancakeError::internal("cannot read bool from value")),
+      _ => Err(CoreError::invalid("cannot read bool from value")),
     }
   }
 
@@ -33,14 +33,14 @@ impl Primitive for bool {
     vec![*self as u8]
   }
 
-  fn decode(reader: &mut ByteReader) -> PancakeResult<bool> {
+  fn decode(reader: &mut ByteReader) -> CoreResult<bool> {
     let byte = reader.unescaped_read_one()?;
     if byte == 0 {
       Ok(false)
     } else if byte == 1 {
       Ok(true)
     } else {
-      Err(PancakeError::internal(&format!("unable to decode bit from byte {}", byte)))
+      Err(CoreError::corrupt(&format!("unable to decode bit from byte {}", byte)))
     }
   }
 }

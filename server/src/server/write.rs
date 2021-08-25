@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 
 use pancake_db_core::encoding;
-use pancake_db_core::errors::{PancakeError, PancakeResult};
+use crate::errors::{ServerError, ServerResult};
 use pancake_db_idl::dml::{FieldValue, WriteToPartitionRequest, WriteToPartitionResponse};
 use warp::{Filter, Rejection, Reply};
 
@@ -13,7 +13,7 @@ use super::Server;
 use hyper::body::Bytes;
 
 impl Server {
-  pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> PancakeResult<WriteToPartitionResponse> {
+  pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> ServerResult<WriteToPartitionResponse> {
     let table_name = &req.table_name;
     // validate data matches schema
     let schema = self.schema_cache.get_result(table_name).await?;
@@ -28,15 +28,15 @@ impl Server {
     }
     for row in &req.rows {
       for field in &row.fields {
-        let mut maybe_err: PancakeResult<()> = Ok(());
+        let mut maybe_err: ServerResult<()> = Ok(());
         match col_map.get(&field.name) {
           Some(col) => {
             if !utils::dtype_matches_field(&col.dtype.unwrap(), &field) {
-              maybe_err = Err(PancakeError::invalid("wrong dtype"));
+              maybe_err = Err(ServerError::invalid("wrong dtype"));
             }
           },
           _ => {
-            maybe_err = Err(PancakeError::invalid("unknown column"));
+            maybe_err = Err(ServerError::invalid("unknown column"));
           },
         };
 
@@ -53,7 +53,7 @@ impl Server {
     Ok(WriteToPartitionResponse::new())
   }
 
-  pub async fn flush(&self, partition_key: &PartitionKey) -> PancakeResult<()> {
+  pub async fn flush(&self, partition_key: &PartitionKey) -> ServerResult<()> {
     let table_name = &partition_key.table_name;
     let schema = self.schema_cache.get_result(table_name)
       .await?;
@@ -133,7 +133,7 @@ impl Server {
       .and_then(Self::warp_write_to_partition)
   }
 
-  async fn write_to_partition_from_bytes(&self, body: Bytes) -> PancakeResult<WriteToPartitionResponse> {
+  async fn write_to_partition_from_bytes(&self, body: Bytes) -> ServerResult<WriteToPartitionResponse> {
     let req = utils::parse_pb::<WriteToPartitionRequest>(body)?;
     self.write_to_partition(req).await
   }
