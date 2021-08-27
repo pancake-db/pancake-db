@@ -28,7 +28,7 @@ async fn main() {
   let tower_service = ServiceBuilder::new()
     .layer(AddExtensionLayer::new(server.clone()))
     .service(warp_service);
-  let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], opts.port)))
+  let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], opts.port)))
     .expect("port busy");
   let outcomes = futures::future::join3(
     HyperServer::from_tcp(listener)

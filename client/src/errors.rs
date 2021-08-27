@@ -1,9 +1,11 @@
-use hyper::StatusCode;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use protobuf::json::{ParseError, PrintError};
-use hyper::http::uri::InvalidUri;
 use std::string::FromUtf8Error;
+
+use hyper::http::uri::InvalidUri;
+use hyper::StatusCode;
+use protobuf::json::{ParseError, PrintError};
+
 use pancake_db_core::errors::CoreError;
 
 pub trait OtherUpcastable: std::error::Error {}

@@ -22,6 +22,7 @@ pub struct FlushMetadata {
   pub write_versions: Vec<u64>,
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
+  pub last_flush_at: DateTime<Utc>,
 }
 
 impl_metadata_serde_json!(FlushMetadata);
@@ -48,6 +49,7 @@ impl Default for FlushMetadata {
       read_version: 0,
       write_versions: vec![0],
       read_version_since: Utc::now(),
+      last_flush_at: Utc::now(),
     }
   }
 }
@@ -70,6 +72,7 @@ impl FlushMetadataCache {
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
     metadata.n += incr;
+    metadata.last_flush_at = Utc::now();
     metadata.overwrite(&self.dir, key).await?;
     Ok(())
   }

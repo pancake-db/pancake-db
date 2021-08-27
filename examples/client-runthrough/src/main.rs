@@ -21,7 +21,8 @@ const TABLE_NAME: &str = "t";
 #[tokio::main]
 async fn main() -> ClientResult<()> {
   let client = Client::from_ip_port(
-    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+    // IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+    IpAddr::V4(Ipv4Addr::new(3, 129, 244, 179)),
     1337,
   );
 
@@ -62,50 +63,53 @@ async fn main() -> ClientResult<()> {
   let create_resp = client.create_table(&create_table_req).await?;
   println!("Created table: {:?}", create_resp);
 
-  let rows = vec![
-    Row {
-      fields: vec![
-        Field {
-          name: "s".to_string(),
-          value: MessageField::some(FieldValue {
-            value: Some(Value::string_val("a row".to_string())),
-            ..Default::default()
-          }),
-          ..Default::default()
-        },
-        Field {
-          name: "i".to_string(),
-          value: MessageField::some(FieldValue {
-            value: Some(Value::int64_val(33)),
-            ..Default::default()
-          }),
-          ..Default::default()
-        },
-        Field {
-          name: "l".to_string(),
-          value: MessageField::some(FieldValue {
-            value: Some(Value::list_val(RepeatedFieldValue {
-              vals: vec![
-                FieldValue {
-                  value: Some(Value::string_val("l0 item".to_string())),
-                  ..Default::default()
-                },
-                FieldValue {
-                  value: Some(Value::string_val("l1 item".to_string())),
-                  ..Default::default()
-                },
-              ],
+  let mut rows = Vec::new();
+  for _ in 0..50 {
+    rows.push(
+      Row {
+        fields: vec![
+          Field {
+            name: "s".to_string(),
+            value: MessageField::some(FieldValue {
+              value: Some(Value::string_val("a row".to_string())),
               ..Default::default()
-            })),
+            }),
             ..Default::default()
-          }),
-          ..Default::default()
-        },
-      ],
-      ..Default::default()
-    },
-    Row::new(),
-  ];
+          },
+          Field {
+            name: "i".to_string(),
+            value: MessageField::some(FieldValue {
+              value: Some(Value::int64_val(33)),
+              ..Default::default()
+            }),
+            ..Default::default()
+          },
+          Field {
+            name: "l".to_string(),
+            value: MessageField::some(FieldValue {
+              value: Some(Value::list_val(RepeatedFieldValue {
+                vals: vec![
+                  FieldValue {
+                    value: Some(Value::string_val("l0 item".to_string())),
+                    ..Default::default()
+                  },
+                  FieldValue {
+                    value: Some(Value::string_val("l1 item".to_string())),
+                    ..Default::default()
+                  },
+                ],
+                ..Default::default()
+              })),
+              ..Default::default()
+            }),
+            ..Default::default()
+          },
+        ],
+        ..Default::default()
+      },
+    );
+    rows.push(Row::new());
+  }
   let write_to_partition_req = WriteToPartitionRequest {
     table_name: TABLE_NAME.to_string(),
     partition: vec![
@@ -118,11 +122,11 @@ async fn main() -> ClientResult<()> {
     rows,
     ..Default::default()
   };
-  for _ in 0..10000 as u32 {
+  for _ in 0..1000 as u32 {
     client.write_to_partition(&write_to_partition_req).await?;
   }
-  let write_resp = client.write_to_partition(&write_to_partition_req).await?;
-  println!("Wrote rows: {:?}", write_resp);
+  // let write_resp = client.write_to_partition(&write_to_partition_req).await?;
+  // println!("Wrote rows: {:?}", write_resp);
 
   let list_segments_eq = ListSegmentsRequest {
     table_name: TABLE_NAME.to_string(),
