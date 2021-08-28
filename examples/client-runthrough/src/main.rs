@@ -21,8 +21,8 @@ const TABLE_NAME: &str = "t";
 #[tokio::main]
 async fn main() -> ClientResult<()> {
   let client = Client::from_ip_port(
-    // IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-    IpAddr::V4(Ipv4Addr::new(3, 129, 244, 179)),
+    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+    // IpAddr::V4(Ipv4Addr::new(3, 129, 244, 179)),
     1337,
   );
 

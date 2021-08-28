@@ -88,8 +88,15 @@ impl Staged {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     let res = state.compaction_candidates.clone();
-    state.compaction_candidates = HashSet::new();
     res
+  }
+
+  pub async fn remove_compaction_candidates(&self, keys: &[SegmentKey]) -> () {
+    let mut mux_guard = self.mutex.lock().await;
+    let state = &mut *mux_guard;
+    for key in keys {
+      state.compaction_candidates.remove(key);
+    }
   }
 }
 
@@ -146,12 +153,20 @@ impl Server {
         let compaction_candidates = compact_clone.staged
           .get_compaction_candidates()
           .await;
+        let mut segment_keys_to_remove = Vec::new();
         for segment_key in &compaction_candidates {
-          match self.compact_if_needed(segment_key).await {
-            Ok(()) => (),
-            Err(e) => println!("oh no why did compact fail {}", e),
+          let remove = self.compact_if_needed(segment_key).await
+            .unwrap_or_else(|e| {
+              println!("oh no why did compact fail {}", e);
+              false
+            });
+          if remove {
+            segment_keys_to_remove.push(segment_key.clone());
           }
         }
+        compact_clone.staged
+          .remove_compaction_candidates(&segment_keys_to_remove)
+          .await;
 
         let is_active = self.activity.is_active().await;
         if !is_active {

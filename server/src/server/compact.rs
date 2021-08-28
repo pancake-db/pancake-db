@@ -17,7 +17,9 @@ use super::Server;
 use chrono::{Utc, Duration};
 
 impl Server {
-  pub async fn compact_if_needed(&self, segment_key: &SegmentKey) -> ServerResult<()> {
+  // returns true if the segment will no longer need compaction (until more flushes happen),
+  // false if it might still need compaction in the future
+  pub async fn compact_if_needed(&self, segment_key: &SegmentKey) -> ServerResult<bool> {
     let table_name_string = segment_key.table_name.to_string();
     let metadata = self.flush_metadata_cache.get(&segment_key).await;
 
@@ -27,13 +29,13 @@ impl Server {
 
     let schema = self.schema_cache.get_result(&table_name_string).await?;
 
-    if metadata.write_versions.len() > 1  || metadata.n < self.opts.min_rows_for_compaction {
+    if metadata.write_versions.len() > 1 || metadata.n < self.opts.min_rows_for_compaction {
       //already compacting or too few rows to warrant compaction
-      return Ok(());
+      return Ok(true);
     }
     let current_time = Utc::now();
     if current_time - metadata.read_version_since < Duration::seconds(self.opts.min_compaction_intermission_seconds) {
-      return Ok(());
+      return Ok(false);
     }
 
     let existing_compaction = self.compaction_cache
@@ -44,9 +46,11 @@ impl Server {
     let n_rows_has_doubled = metadata.n >= 2 * existing_compaction.compacted_n;
     let n_rows_has_been_constant = current_time - metadata.last_flush_at > Duration::seconds(self.opts.compact_as_constant_seconds);
     if n_rows_has_doubled || (n_rows_has_increased && n_rows_has_been_constant) {
-      return self.compact(segment_key, schema, metadata).await;
+      self.compact(segment_key, schema, metadata).await?;
+      Ok(true)
+    } else {
+      Ok(false)
     }
-    Ok(())
   }
 
   async fn delete_old_versions(
