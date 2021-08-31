@@ -17,6 +17,18 @@ use warp::Reply;
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use hyper::body::Bytes;
 
+pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
+  match fs::File::open(fname).await {
+    Ok(_) => Ok(true),
+    Err(e) => {
+      match e.kind() {
+        io::ErrorKind::NotFound => Ok(false),
+        _ => Err(e)
+      }
+    }
+  }
+}
+
 pub async fn read_with_offset(fname: impl AsRef<Path>, offset: u64, bytes: usize) -> io::Result<Vec<u8>> {
   // return completed: bool, and bytes if any
   let mut maybe_file = fs::File::open(fname).await

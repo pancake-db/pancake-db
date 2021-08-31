@@ -12,7 +12,7 @@ use crate::errors::{ServerError, ServerResult};
 
 use crate::dirs;
 use crate::storage::flush::FlushMetadata;
-use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
+use crate::types::{NormalizedPartition, PartitionKey, SegmentKey, CompactionKey};
 use crate::utils;
 
 use super::Server;
@@ -367,23 +367,27 @@ impl Server {
           self.opts.read_page_byte_size,
         ).await?;
 
-        let next = if compressed_data.len() < self.opts.read_page_byte_size {
-          SegmentColumnContinuation {
-            version: continuation.version,
-            file_type: FileType::Flush,
-            offset: 0
+        let next_token = if compressed_data.len() < self.opts.read_page_byte_size {
+          if self.has_uncompressed_data(&compaction_key, &col_name).await? {
+            SegmentColumnContinuation {
+              version: continuation.version,
+              file_type: FileType::Flush,
+              offset: 0
+            }.to_string()
+          } else {
+            "".to_string()
           }
         } else {
           SegmentColumnContinuation {
             version: continuation.version,
             file_type: FileType::Compact,
             offset: continuation.offset + compressed_data.len() as u64
-          }
+          }.to_string()
         };
 
         response.codec = codec;
         response.compressed_data = compressed_data;
-        response.continuation_token = next.to_string();
+        response.continuation_token = next_token;
       },
       FileType::Flush => {
         let uncompressed_filename = dirs::flush_col_file(
@@ -411,6 +415,10 @@ impl Server {
       }
     }
     Ok(response)
+  }
+
+  async fn has_uncompressed_data(&self, compaction_key: &CompactionKey, column_name: &str) -> ServerResult<bool> {
+    Ok(utils::file_exists(dirs::flush_col_file(&self.opts.dir, compaction_key, column_name)).await?)
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {

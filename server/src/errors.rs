@@ -30,7 +30,7 @@ impl ServerErrorKind {
 impl ServerError {
   pub fn does_not_exist(entity_name: &'static str, value: &str) -> ServerError {
     ServerError {
-      message: format!("entity {} with name {} does not exist", entity_name, value),
+      message: format!("{} with name {} does not exist", entity_name, value),
       kind: ServerErrorKind::DoesNotExist,
     }
   }
