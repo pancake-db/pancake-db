@@ -79,6 +79,9 @@ pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> 
 
 pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   let value = field.value.get_ref();
+  if value.value.is_none() {
+    return true;
+  }
   match dtype {
     DataType::STRING => traverse_field_value(value, &|v: &FieldValue| v.has_string_val()),
     DataType::INT64 => traverse_field_value(value, &|v: &FieldValue| v.has_int64_val()),

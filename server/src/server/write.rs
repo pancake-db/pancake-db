@@ -32,11 +32,16 @@ impl Server {
         match col_map.get(&field.name) {
           Some(col) => {
             if !utils::dtype_matches_field(&col.dtype.unwrap(), &field) {
-              maybe_err = Err(ServerError::invalid("wrong dtype"));
+              maybe_err = Err(ServerError::invalid(&format!(
+                "invalid field value for column {} with dtype {:?}: {:?}",
+                col.name,
+                col.dtype,
+                field,
+              )));
             }
           },
           _ => {
-            maybe_err = Err(ServerError::invalid("unknown column"));
+            maybe_err = Err(ServerError::invalid(&format!("unknown column: {}", field.name)));
           },
         };
 
