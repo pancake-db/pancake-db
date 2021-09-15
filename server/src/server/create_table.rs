@@ -2,10 +2,8 @@ use std::convert::Infallible;
 
 use crate::errors::{ServerError, ServerResult};
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
-use pancake_db_idl::ddl::create_table_request::Mode;
 use warp::{Filter, Rejection, Reply};
 
-use crate::dirs;
 use crate::server::Server;
 use crate::utils;
 use hyper::body::Bytes;
@@ -19,20 +17,12 @@ impl Server {
 
     utils::create_if_new(&self.opts.dir).await?;
 
-    let table_dir = dirs::table_dir(&self.opts.dir, &req.table_name);
-    let already_exists = utils::create_if_new(&table_dir).await?;
-    match (req.mode.enum_value_or_default(), already_exists) {
-      (Mode::FAIL_IF_EXISTS, true) => {
-        Err(ServerError::invalid(&format!("table already exists: {}", req.table_name)))
-      },
-      _ => {
-        self.schema_cache.assert(&req.table_name, schema).await?;
-        Ok(CreateTableResponse {
-          already_exists,
-          ..Default::default()
-        })
-      }
-    }
+    let already_exists = self.schema_cache
+      .create(&req.table_name, schema, req.mode.enum_value_or_default()).await?;
+    Ok(CreateTableResponse {
+      already_exists,
+      ..Default::default()
+    })
   }
 
   pub fn create_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

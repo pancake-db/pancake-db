@@ -42,6 +42,6 @@ pub struct Opt {
   #[structopt(long, default_value = "1800")]
   pub compact_as_constant_seconds: i64,
 
-  #[structopt(long, default_value = "262144")]
+  #[structopt(long, default_value = "1048576")]
   pub read_page_byte_size: usize,
 }

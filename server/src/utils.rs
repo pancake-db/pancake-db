@@ -292,7 +292,7 @@ pub fn byte_size_of_field(value: &FieldValue) -> usize {
     Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
     Value::float64_val(_) => 8,
     Value::list_val(x) => {
-      let mut res = 2;
+      let mut res = LIST_LENGTH_BYTES;
       for v in &x.vals {
         res += byte_size_of_field(v);
       }
