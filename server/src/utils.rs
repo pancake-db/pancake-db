@@ -16,6 +16,8 @@ use warp::http::Response;
 use warp::Reply;
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use hyper::body::Bytes;
+use pancake_db_idl::dml::partition_field::Value;
+use std::cmp::Ordering;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -158,21 +160,68 @@ pub fn partition_field_from_string(
   })
 }
 
-pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilter]) -> bool {
+fn cmp_partition_field_values(v0: &Value, v1: &Value) -> ServerResult<Ordering> {
+  match (v0, v1) {
+    (Value::bool_val(x0), Value::bool_val(x1)) => Ok(x0.cmp(x1)),
+    (Value::string_val(x0), Value::string_val(x1)) => Ok(x0.cmp(x1)),
+    (Value::int64_val(x0), Value::int64_val(x1)) => Ok(x0.cmp(x1)),
+    _ => Err(ServerError::invalid(&format!(
+      "partition filter value {:?} does not match data type of actual value {:?}",
+      v0,
+      v1,
+    )))
+  }
+}
+
+fn field_satisfies_basic_filter(field: &PartitionField, criterion: &PartitionField, satisfies: &dyn Fn(Ordering) -> bool) -> ServerResult<bool> {
+  if field.name != criterion.name {
+    Ok(true)
+  } else {
+    let ordering = cmp_partition_field_values(
+      field.value.as_ref().unwrap(),
+      criterion.value.as_ref().unwrap()
+    )?;
+    Ok(satisfies(ordering))
+  }
+}
+
+pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilter]) -> ServerResult<bool> {
   for field in partition {
     for filter in filters {
       let satisfies = match &filter.value {
-        Some(partition_filter::Value::equal_to(other)) => {
-          field.name != other.name || field.value == other.value
-        },
-        None => true,
-      };
+        Some(partition_filter::Value::equal_to(other)) => field_satisfies_basic_filter(
+          field,
+          other,
+          &|ordering| matches!(ordering, Ordering::Equal),
+        ),
+        Some(partition_filter::Value::less_than(other)) => field_satisfies_basic_filter(
+          field,
+          other,
+          &|ordering| matches!(ordering, Ordering::Less),
+        ),
+        Some(partition_filter::Value::less_or_eq_to(other)) => field_satisfies_basic_filter(
+          field,
+          other,
+          &|ordering| !matches!(ordering, Ordering::Greater),
+        ),
+        Some(partition_filter::Value::greater_than(other)) => field_satisfies_basic_filter(
+          field,
+          other,
+          &|ordering| matches!(ordering, Ordering::Greater),
+        ),
+        Some(partition_filter::Value::greater_or_eq_to(other)) => field_satisfies_basic_filter(
+          field,
+          other,
+          &|ordering| !matches!(ordering, Ordering::Less),
+        ),
+        None => Ok(true),
+      }?;
       if !satisfies {
-        return false;
+        return Ok(false);
       }
     }
   }
-  true
+  Ok(true)
 }
 
 pub async fn read_or_empty(path: &Path) -> io::Result<Vec<u8>> {

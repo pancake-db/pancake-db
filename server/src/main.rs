@@ -9,11 +9,11 @@ use tower_http::add_extension::AddExtensionLayer;
 use crate::opt::Opt;
 use crate::server::Server;
 
-mod utils;
-mod server;
 mod dirs;
-mod types;
 mod opt;
+mod server;
+mod types;
+mod utils;
 pub mod errors;
 pub mod storage;
 

@@ -235,7 +235,7 @@ impl Server {
         for leaf in subpartitions {
           let mut new_partition = partition.clone();
           new_partition.push(leaf);
-          if utils::satisfies_filters(&new_partition, &req.partition_filter) {
+          if utils::satisfies_filters(&new_partition, &req.partition_filter)? {
             new_partitions.push(new_partition);
           }
         }
