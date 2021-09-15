@@ -6,6 +6,7 @@ use crate::errors::{ServerError, ServerResult};
 use pancake_db_idl::dml::{FieldValue, WriteToPartitionRequest, WriteToPartitionResponse};
 use warp::{Filter, Rejection, Reply};
 
+use crate::constants::MAX_FIELD_BYTE_SIZE;
 use crate::{dirs, utils};
 use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 
@@ -28,24 +29,37 @@ impl Server {
     }
     for row in &req.rows {
       for field in &row.fields {
-        let mut maybe_err: ServerResult<()> = Ok(());
+        let mut err_msgs = Vec::new();
         match col_map.get(&field.name) {
           Some(col) => {
             if !utils::dtype_matches_field(&col.dtype.unwrap(), &field) {
-              maybe_err = Err(ServerError::invalid(&format!(
+              err_msgs.push(format!(
                 "invalid field value for column {} with dtype {:?}: {:?}",
                 col.name,
                 col.dtype,
                 field,
-              )));
+              ));
             }
           },
           _ => {
-            maybe_err = Err(ServerError::invalid(&format!("unknown column: {}", field.name)));
+            err_msgs.push(format!("unknown column: {}", field.name));
           },
         };
 
-        maybe_err?;
+        if field.value.is_some() {
+          let byte_size = utils::byte_size_of_field(field.value.as_ref().unwrap());
+          if byte_size > MAX_FIELD_BYTE_SIZE {
+            err_msgs.push(format!(
+              "field for {} exceeds max byte size of {}",
+              field.name,
+              MAX_FIELD_BYTE_SIZE
+            ))
+          }
+        }
+
+        if !err_msgs.is_empty() {
+          return Err(ServerError::invalid(&err_msgs.join("; ")));
+        }
       }
     }
 

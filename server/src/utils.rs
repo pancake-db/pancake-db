@@ -1,23 +1,26 @@
+use std::cmp::Ordering;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::io::{ErrorKind, SeekFrom};
 use std::path::Path;
 
-use crate::errors::{ServerError, ServerResult};
-use pancake_db_idl::dml::{partition_field, partition_filter, PartitionFilter, FieldValue};
+use hyper::body::Bytes;
+use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter};
 use pancake_db_idl::dml::{Field, PartitionField};
+use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
+use protobuf::{Message, ProtobufEnumOrUnknown};
 use serde::Serialize;
 use tokio::fs;
 use tokio::io;
-use tokio::io::{AsyncWriteExt, AsyncSeekExt, AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use warp::http::Response;
 use warp::Reply;
-use protobuf::{Message, ProtobufEnumOrUnknown};
-use hyper::body::Bytes;
-use pancake_db_idl::dml::partition_field::Value;
-use std::cmp::Ordering;
+
+use crate::errors::{ServerError, ServerResult};
+use crate::constants::LIST_LENGTH_BYTES;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -135,16 +138,16 @@ pub fn partition_field_from_string(
     PartitionDataType::INT64 => {
       let parsed: Result<i64, _> = value_str.parse();
       match parsed {
-        Ok(x) => Some(partition_field::Value::int64_val(x)),
+        Ok(x) => Some(PartitionValue::int64_val(x)),
         Err(_) => None
       }
     },
-    PartitionDataType::STRING => Some(partition_field::Value::string_val(value_str.to_string())),
+    PartitionDataType::STRING => Some(PartitionValue::string_val(value_str.to_string())),
     PartitionDataType::BOOL => {
       if value_str == "true" {
-        Some(partition_field::Value::bool_val(true))
+        Some(PartitionValue::bool_val(true))
       } else if value_str == "false" {
-        Some(partition_field::Value::bool_val(false))
+        Some(PartitionValue::bool_val(false))
       } else {
         None
       }
@@ -160,11 +163,11 @@ pub fn partition_field_from_string(
   })
 }
 
-fn cmp_partition_field_values(v0: &Value, v1: &Value) -> ServerResult<Ordering> {
+fn cmp_partition_field_values(v0: &PartitionValue, v1: &PartitionValue) -> ServerResult<Ordering> {
   match (v0, v1) {
-    (Value::bool_val(x0), Value::bool_val(x1)) => Ok(x0.cmp(x1)),
-    (Value::string_val(x0), Value::string_val(x1)) => Ok(x0.cmp(x1)),
-    (Value::int64_val(x0), Value::int64_val(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::bool_val(x0), PartitionValue::bool_val(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::string_val(x0), PartitionValue::string_val(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::int64_val(x0), PartitionValue::int64_val(x1)) => Ok(x0.cmp(x1)),
     _ => Err(ServerError::invalid(&format!(
       "partition filter value {:?} does not match data type of actual value {:?}",
       v0,
@@ -279,4 +282,21 @@ pub fn unwrap_dtype(dtype: ProtobufEnumOrUnknown<DataType>) -> ServerResult<Data
     .map_err(|enum_code|
       ServerError::internal(&format!("unknown data type code {}", enum_code))
     )
+}
+
+pub fn byte_size_of_field(value: &FieldValue) -> usize {
+  value.value.as_ref().map(|v| match v {
+    Value::int64_val(_) => 8,
+    Value::string_val(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::bool_val(_) => 1,
+    Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::float64_val(_) => 8,
+    Value::list_val(x) => {
+      let mut res = 2;
+      for v in &x.vals {
+        res += byte_size_of_field(v);
+      }
+      res
+    }
+  }).unwrap_or(1)
 }
