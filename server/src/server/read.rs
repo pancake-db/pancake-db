@@ -221,6 +221,8 @@ impl Server {
   }
 
   async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {
+    utils::validate_entity_name("table name", &req.table_name)?;
+
     let schema = self.schema_cache
       .get_result(&req.table_name)
       .await?;
@@ -307,6 +309,10 @@ impl Server {
   }
 
   async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
+    utils::validate_entity_name("table name", &req.table_name)?;
+    utils::validate_segment_id(&req.segment_id)?;
+    utils::validate_entity_name("column name", &req.column_name)?;
+
     let col_name = req.column_name;
     // TODO fix edge case where data in a new column is written between schema read and flush metadata read
     let schema = self.schema_cache

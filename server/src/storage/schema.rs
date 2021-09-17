@@ -81,6 +81,14 @@ fn is_subset(sub_schema: &Schema, schema: &Schema) -> bool {
 
 impl SchemaCache {
   pub async fn create(&self, table_name: &str, schema: &Schema, mode: SchemaMode) -> ServerResult<bool> {
+    utils::validate_entity_name("table name", table_name)?;
+    for meta in &schema.partitioning {
+      utils::validate_entity_name("partition name", &meta.name)?;
+    }
+    for meta in &schema.columns {
+      utils::validate_entity_name("column name", &meta.name)?;
+    }
+
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     let table_name_string = table_name.to_string();

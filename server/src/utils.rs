@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::io::{ErrorKind, SeekFrom};
 use std::path::Path;
+use std::str::FromStr;
 
 use hyper::body::Bytes;
 use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter};
@@ -21,6 +22,7 @@ use warp::Reply;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::constants::LIST_LENGTH_BYTES;
+use uuid::Uuid;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -299,4 +301,38 @@ pub fn byte_size_of_field(value: &FieldValue) -> usize {
       res
     }
   }).unwrap_or(1)
+}
+
+pub fn validate_segment_id(segment_id: &str) -> ServerResult<()> {
+  match Uuid::from_str(segment_id) {
+    Ok(_) => Ok(()),
+    Err(_) => Err(ServerError::invalid(&format!(
+      "{} is not a valid segment id (uuid)",
+      segment_id,
+    )))
+  }
+}
+
+pub fn validate_entity_name(entity: &str, name: &str) -> ServerResult<()> {
+  let first_char = match name.chars().nth(0) {
+    Some(c) => Ok(c),
+    None => Err(ServerError::invalid(&format!("{} name may not be empty", entity)))
+  }?;
+  if first_char == '_' {
+    return Err(ServerError::invalid(&format!(
+      "{} name \"{}\" may not start with an underscore",
+      entity,
+      name
+    )));
+  }
+
+  if name.chars().any(|c| c != '_' && !c.is_ascii_alphanumeric()) {
+    return Err(ServerError::invalid(&format!(
+      "{} name \"{}\" must contain only underscores and alphanumeric characters",
+      entity,
+      name
+    )))
+  }
+
+  Ok(())
 }
