@@ -9,6 +9,7 @@ mod bools;
 mod floats;
 mod ints;
 mod string_likes;
+mod timestamps;
 
 pub trait StringLike {
   type Error: std::error::Error;

@@ -8,12 +8,44 @@ use pancake_db_idl::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::utils;
+use std::convert::TryFrom;
+use protobuf::well_known_types::Timestamp;
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct PartitionMinute {
+  pub minutes: i64,
+}
+
+impl TryFrom<&Timestamp> for PartitionMinute {
+  type Error = ServerError;
+
+  fn try_from(t: &Timestamp) -> ServerResult<PartitionMinute> {
+    if t.nanos != 0 {
+      Err(ServerError::invalid(&format!(
+        "whole minute expected but {} nanoseconds found in timestamp",
+        t.nanos,
+      )))
+    } else if t.seconds % 60 != 0 {
+      Err(ServerError::invalid(&format!(
+        "whole minute expected but {} extra seconds found in timestamp",
+        t.seconds,
+      )))
+    } else {
+      Ok(PartitionMinute {
+        minutes: t.seconds.div_euclid(60)
+      })
+    }
+  }
+}
+
+// we use our own type instead of idl partition_field.Value so we can
+// have Hash, among other things
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PartitionValue {
   STRING(String),
   INT64(i64),
   BOOL(bool),
+  MINUTE(PartitionMinute),
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -27,23 +59,34 @@ impl NormalizedPartitionField {
     let value_str = match &self.value {
       PartitionValue::STRING(x) => x.clone(),
       PartitionValue::INT64(x) => x.to_string(),
-      PartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string()
+      PartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string(),
+      PartitionValue::MINUTE(x) => x.minutes.to_string(), // TODO
     };
     PathBuf::from(format!("{}={}", self.name, value_str))
   }
 }
 
-impl From<&PartitionField> for NormalizedPartitionField {
-  fn from(raw_field: &PartitionField) -> NormalizedPartitionField {
-    let value = match raw_field.value.as_ref().expect("raw partition field is missing value") {
-      Value::string_val(x) => PartitionValue::STRING(x.clone()),
-      Value::int64_val(x) => PartitionValue::INT64(*x),
-      Value::bool_val(x) => PartitionValue::BOOL(*x),
+impl TryFrom<&PartitionField> for NormalizedPartitionField {
+  type Error = ServerError;
+
+  fn try_from(raw_field: &PartitionField) -> ServerResult<NormalizedPartitionField> {
+    let value_result: ServerResult<PartitionValue> = match raw_field.value.as_ref().expect("raw partition field is missing value") {
+      Value::string_val(x) => {
+        utils::validate_partition_string(x)?;
+        Ok(PartitionValue::STRING(x.clone()))
+      },
+      Value::int64_val(x) => Ok(PartitionValue::INT64(*x)),
+      Value::bool_val(x) => Ok(PartitionValue::BOOL(*x)),
+      Value::timestamp_val(x) => {
+        let minute = PartitionMinute::try_from(x)?;
+        Ok(PartitionValue::MINUTE(minute))
+      }
     };
-    NormalizedPartitionField {
+    let value = value_result?;
+    Ok(NormalizedPartitionField {
       name: raw_field.name.clone(),
       value,
-    }
+    })
   }
 }
 
@@ -63,7 +106,7 @@ impl NormalizedPartition {
       if raw_field.value.is_none() {
         return Err(ServerError::invalid("partition field has no value"));
       }
-      fields.push(NormalizedPartitionField::from(raw_field));
+      fields.push(NormalizedPartitionField::try_from(raw_field)?);
     }
     Ok(NormalizedPartition { fields })
   }
@@ -93,7 +136,7 @@ impl NormalizedPartition {
       ) {
         return Err(ServerError::invalid("partition field dtype does not match schema"));
       }
-      fields.push(NormalizedPartitionField::from(raw_field));
+      fields.push(NormalizedPartitionField::try_from(raw_field)?);
     }
 
     Ok(NormalizedPartition {

@@ -2,7 +2,7 @@ use pancake_db_idl::dml::{FieldValue, RepeatedFieldValue};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::schema::ColumnMeta;
-use q_compress::{BitReader, U32Compressor, U32Decompressor};
+use q_compress::{BitReader, U32Compressor, U32Decompressor, TimestampNs};
 
 use crate::errors::{CoreError, CoreResult};
 use crate::primitives::Primitive;
@@ -24,6 +24,7 @@ pub fn new_codec(
     DataType::BYTES => Vec::<u8>::new_value_codec(codec),
     DataType::BOOL => bool::new_value_codec(codec),
     DataType::FLOAT64 => f64::new_value_codec(codec),
+    DataType::TIMESTAMP_NS => TimestampNs::new_value_codec(codec),
   };
 
   match maybe_res {
@@ -43,6 +44,7 @@ pub fn choose_codec(dtype: DataType) -> String {
     DataType::BYTES => ZSTD.to_string(),
     DataType::FLOAT64 => Q_COMPRESS.to_string(),
     DataType::BOOL => Q_COMPRESS.to_string(),
+    DataType::TIMESTAMP_NS => Q_COMPRESS.to_string(),
   }
 }
 

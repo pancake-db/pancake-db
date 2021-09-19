@@ -1,4 +1,4 @@
-use q_compress::BitReader;
+use q_compress::{BitReader, TimestampNs};
 use q_compress::compressor::Compressor as RawQCompressor;
 use q_compress::decompressor::Decompressor as RawQDecompressor;
 use q_compress::types::NumberLike;
@@ -41,3 +41,4 @@ macro_rules! qcompressor {
 qcompressor!(I64QCodec, i64);
 qcompressor!(BoolQCodec, bool);
 qcompressor!(F64QCodec, f64);
+qcompressor!(TimestampNsQCodec, TimestampNs);

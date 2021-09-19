@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::io::{ErrorKind, SeekFrom};
@@ -13,16 +14,17 @@ use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use protobuf::{Message, ProtobufEnumOrUnknown};
+use protobuf::well_known_types::Timestamp;
 use serde::Serialize;
 use tokio::fs;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::errors::{ServerError, ServerResult};
 use crate::constants::LIST_LENGTH_BYTES;
-use uuid::Uuid;
+use crate::errors::{ServerError, ServerResult};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -101,13 +103,15 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
   if value.value.is_none() {
     return true;
   }
-  match dtype {
-    DataType::STRING => traverse_field_value(value, &|v: &FieldValue| v.has_string_val()),
-    DataType::INT64 => traverse_field_value(value, &|v: &FieldValue| v.has_int64_val()),
-    DataType::BOOL => traverse_field_value(value, &|v: &FieldValue| v.has_bool_val()),
-    DataType::BYTES => traverse_field_value(value, &|v: &FieldValue| v.has_bytes_val()),
-    DataType::FLOAT64 => traverse_field_value(value, &|v: &FieldValue| v.has_float64_val()),
-  }
+  let checker = match dtype {
+    DataType::STRING => |v: &FieldValue| v.has_string_val(),
+    DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
+    DataType::BOOL => |v: &FieldValue| v.has_bool_val(),
+    DataType::BYTES =>  |v: &FieldValue| v.has_bytes_val(),
+    DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
+    DataType::TIMESTAMP_NS => |v: &FieldValue| v.has_timestamp_val(),
+  };
+  traverse_field_value(value, &checker)
 }
 
 fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> bool {
@@ -128,6 +132,7 @@ pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &Partitio
     PartitionDataType::STRING => field.has_string_val(),
     PartitionDataType::INT64 => field.has_int64_val(),
     PartitionDataType::BOOL => field.has_bool_val(),
+    PartitionDataType::TIMESTAMP_MINUTE => field.has_timestamp_val(),
   }
 }
 
@@ -153,7 +158,18 @@ pub fn partition_field_from_string(
       } else {
         None
       }
-    }
+    },
+    PartitionDataType::TIMESTAMP_MINUTE => {
+      // TODO
+      match value_str.parse::<i64>() {
+        Ok(x) => {
+          let mut t = Timestamp::new();
+          t.seconds = x * 60;
+          Some(PartitionValue::timestamp_val(t))
+        },
+        Err(_) => None,
+      }
+    },
   };
   if value.is_none() {
     return Err(ServerError::internal("failed to parse partition field value"));
@@ -293,6 +309,7 @@ pub fn byte_size_of_field(value: &FieldValue) -> usize {
     Value::bool_val(_) => 1,
     Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
     Value::float64_val(_) => 8,
+    Value::timestamp_val(_) => 12,
     Value::list_val(x) => {
       let mut res = LIST_LENGTH_BYTES;
       for v in &x.vals {
@@ -313,12 +330,37 @@ pub fn validate_segment_id(segment_id: &str) -> ServerResult<()> {
   }
 }
 
-pub fn validate_entity_name(entity: &str, name: &str) -> ServerResult<()> {
+pub fn validate_partition_string(value: &str) -> ServerResult<()> {
+  let mut allowable_special_chars = HashSet::new();
+  allowable_special_chars.extend(vec!['-', '_', '!', '*', '(', ')']);
+  if value.chars().any(|c| !c.is_ascii_alphanumeric() && !allowable_special_chars.contains(&c)) {
+    let allowable_string = allowable_special_chars.iter()
+      .map(|c| c.to_string())
+      .collect::<Vec<String>>()
+      .join("");
+    return Err(ServerError::invalid(&format!(
+      "partition string \"{}\" must contain only alphanumeric characters and characters from {}",
+      value,
+      allowable_string,
+    )))
+  }
+  Ok(())
+}
+
+pub fn validate_entity_name_for_read(entity: &str, name: &str) -> ServerResult<()> {
+  validate_entity_name(entity, name, false)
+}
+
+pub fn validate_entity_name_for_write(entity: &str, name: &str) -> ServerResult<()> {
+  validate_entity_name(entity, name, true)
+}
+
+fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResult<()> {
   let first_char = match name.chars().nth(0) {
     Some(c) => Ok(c),
     None => Err(ServerError::invalid(&format!("{} name may not be empty", entity)))
   }?;
-  if first_char == '_' {
+  if is_write && first_char == '_' {
     return Err(ServerError::invalid(&format!(
       "{} name \"{}\" may not start with an underscore",
       entity,

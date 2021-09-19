@@ -16,6 +16,7 @@ use hyper::body::Bytes;
 impl Server {
   pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> ServerResult<WriteToPartitionResponse> {
     let table_name = &req.table_name;
+    utils::validate_entity_name_for_read("table name", table_name)?;
     // validate data matches schema
     let schema = self.schema_cache.get_result(table_name).await?;
 

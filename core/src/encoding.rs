@@ -8,6 +8,7 @@ use crate::primitives::{StringLike, Primitive};
 use std::marker::PhantomData;
 use std::fmt::{Debug, Formatter};
 use std::fmt;
+use q_compress::TimestampNs;
 
 const ESCAPE_BYTE: u8 = 255;
 const COUNT_BYTE: u8 = 254;
@@ -23,6 +24,7 @@ pub fn new_encoder_decoder(dtype: DataType, nested_list_depth: u8) -> Box<dyn En
     DataType::FLOAT64 => Box::new(EncoderDecoderImpl::<f64>::new(nested_list_depth)),
     DataType::BYTES => Box::new(EncoderDecoderImpl::<Vec<u8>>::new(nested_list_depth)),
     DataType::BOOL => Box::new(EncoderDecoderImpl::<bool>::new(nested_list_depth)),
+    DataType::TIMESTAMP_NS => Box::new(EncoderDecoderImpl::<TimestampNs>::new(nested_list_depth)),
   }
 }
 
