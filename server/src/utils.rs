@@ -186,6 +186,8 @@ fn cmp_partition_field_values(v0: &PartitionValue, v1: &PartitionValue) -> Serve
     (PartitionValue::bool_val(x0), PartitionValue::bool_val(x1)) => Ok(x0.cmp(x1)),
     (PartitionValue::string_val(x0), PartitionValue::string_val(x1)) => Ok(x0.cmp(x1)),
     (PartitionValue::int64_val(x0), PartitionValue::int64_val(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::timestamp_val(x0), PartitionValue::timestamp_val(x1)) =>
+      Ok((x0.seconds, x0.nanos).cmp(&(x1.seconds, x1.nanos))),
     _ => Err(ServerError::invalid(&format!(
       "partition filter value {:?} does not match data type of actual value {:?}",
       v0,
