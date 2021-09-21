@@ -3,8 +3,10 @@ use std::fmt::{Display, Formatter};
 use std::error::Error;
 use std::array::TryFromSliceError;
 use q_compress::errors::QCompressError;
+use std::string::FromUtf8Error;
 
 pub trait OtherUpcastable: Error {}
+impl OtherUpcastable for FromUtf8Error {}
 impl OtherUpcastable for TryFromSliceError {}
 impl OtherUpcastable for std::io::Error {}
 

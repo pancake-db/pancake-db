@@ -19,9 +19,9 @@ macro_rules! qcompressor {
     pub struct $struct_name {}
 
     impl Codec for $struct_name {
-      type T = $primitive_type;
+      type P = $primitive_type;
 
-      fn compress_primitives(&self, primitives: &[$primitive_type]) -> CoreResult<Vec<u8>> {
+      fn compress_atoms(&self, primitives: &[$primitive_type]) -> CoreResult<Vec<u8>> {
         let nums = primitives.to_vec();
         let compressor = RawQCompressor::<$primitive_type>::train(
           nums,
@@ -29,7 +29,8 @@ macro_rules! qcompressor {
         )?;
         Ok(compressor.compress(&primitives)?)
       }
-      fn decompress_primitives(&self, bytes: &[u8]) -> CoreResult<Vec<$primitive_type>> {
+
+      fn decompress_atoms(&self, bytes: &[u8]) -> CoreResult<Vec<$primitive_type>> {
         let mut bit_reader = BitReader::from(bytes.to_vec());
         let decompressor = RawQDecompressor::<$primitive_type>::from_reader(&mut bit_reader)?;
         Ok(decompressor.decompress(&mut bit_reader))

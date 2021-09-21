@@ -9,10 +9,15 @@ use crate::compression::q_codec::TimestampNsQCodec;
 use crate::compression::Q_COMPRESS;
 use crate::encoding::ByteReader;
 use crate::errors::{CoreError, CoreResult};
-use crate::primitives::Primitive;
+use crate::primitives::{Primitive, Atom};
+
+impl Atom for TimestampNs {}
 
 impl Primitive for TimestampNs {
   const DTYPE: DataType = DataType::TIMESTAMP_NS;
+  const IS_ATOMIC: bool = true;
+
+  type A = Self;
 
   fn try_from_value(v: &Value) -> CoreResult<TimestampNs> {
     match v {
@@ -29,7 +34,15 @@ impl Primitive for TimestampNs {
     Value::timestamp_val(t)
   }
 
-  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+  fn to_atoms(&self) -> Vec<Self> {
+    vec![*self]
+  }
+
+  fn try_from_atoms(atoms: &[Self]) -> CoreResult<Self> {
+    Ok(atoms[0])
+  }
+
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<P=Self>>> {
     if codec == Q_COMPRESS {
       Some(Box::new(TimestampNsQCodec {}))
     } else {

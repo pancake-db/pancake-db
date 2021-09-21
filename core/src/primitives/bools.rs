@@ -4,12 +4,18 @@ use crate::compression::Codec;
 use crate::compression::q_codec::BoolQCodec;
 use crate::compression::Q_COMPRESS;
 use crate::errors::{CoreError, CoreResult};
-use crate::primitives::Primitive;
+use crate::primitives::{Primitive, Atom};
 use crate::encoding::ByteReader;
 use pancake_db_idl::dtype::DataType;
 
+impl Atom for bool {}
+
 impl Primitive for bool {
   const DTYPE: DataType = DataType::BOOL;
+  const IS_ATOMIC: bool = true;
+
+  type A = Self;
+
   fn try_from_value(v: &Value) -> CoreResult<bool> {
     match v {
       Value::bool_val(res) => Ok(*res),
@@ -21,7 +27,15 @@ impl Primitive for bool {
     Value::bool_val(*self)
   }
 
-  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+  fn to_atoms(&self) -> Vec<Self> {
+    vec![*self]
+  }
+
+  fn try_from_atoms(atoms: &[Self]) -> CoreResult<Self> {
+    Ok(atoms[0])
+  }
+
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<P=Self>>> {
     if codec == Q_COMPRESS {
       Some(Box::new(BoolQCodec {}))
     } else {

@@ -1,14 +1,15 @@
+use std::fmt::{Debug, Formatter};
+use std::fmt;
+use std::marker::PhantomData;
+
 use pancake_db_idl::dml::{FieldValue, RepeatedFieldValue};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
-
-use crate::utils;
-use crate::errors::{CoreResult, CoreError};
-use crate::primitives::{StringLike, Primitive};
-use std::marker::PhantomData;
-use std::fmt::{Debug, Formatter};
-use std::fmt;
 use q_compress::TimestampNs;
+
+use crate::errors::{CoreError, CoreResult};
+use crate::primitives::{Primitive, StringLike};
+use crate::utils;
 
 const ESCAPE_BYTE: u8 = 255;
 const COUNT_BYTE: u8 = 254;
@@ -37,9 +38,9 @@ pub trait EncoderDecoder {
   }
 }
 
-struct EncoderDecoderImpl<T: Primitive> {
+struct EncoderDecoderImpl<P: Primitive> {
   escape_depth: u8,
-  _phantom: PhantomData<T>,
+  _phantom: PhantomData<P>,
 }
 
 impl<T: Primitive> EncoderDecoder for EncoderDecoderImpl<T> {
@@ -98,10 +99,9 @@ impl<T: Primitive> EncoderDecoder for EncoderDecoderImpl<T> {
     }
     Ok(res)
   }
-
 }
 
-impl<T: Primitive> EncoderDecoderImpl<T> {
+impl<P: Primitive> EncoderDecoderImpl<P> {
   pub fn new(escape_depth: u8) -> Self {
     Self {
       escape_depth,
@@ -144,12 +144,12 @@ impl<T: Primitive> EncoderDecoderImpl<T> {
   }
 
   pub fn atomic_value_bytes(&self, v: &Value) -> CoreResult<Vec<u8>> {
-    Ok(T::try_from_value(v)?.encode())
+    Ok(P::try_from_value(v)?.encode())
   }
 
   fn decode_value(&self, reader: &mut ByteReader, current_depth: u8) -> CoreResult<FieldValue> {
     if current_depth == self.escape_depth as u8 {
-      let value = T::decode(reader)?.to_value();
+      let value = P::decode(reader)?.to_value();
       Ok(FieldValue {
         value: Some(value),
         ..Default::default()
@@ -290,11 +290,14 @@ pub fn decode_string_like<T>(reader: &mut ByteReader) -> CoreResult<T> where T: 
 
 #[cfg(test)]
 mod tests {
-  use pancake_db_idl::dml::FieldValue;
   use pancake_db_idl::dml::field_value::Value;
-  use crate::errors::CoreResult;
-  use super::*;
+  use pancake_db_idl::dml::FieldValue;
   use protobuf::ProtobufEnumOrUnknown;
+
+  use crate::errors::CoreResult;
+
+  use super::*;
+  use pancake_db_idl::schema::ColumnMeta;
 
   fn build_list_val(l: Vec<Value>) -> Value {
     Value::list_val(RepeatedFieldValue {
@@ -304,6 +307,16 @@ mod tests {
       }).collect(),
       ..Default::default()
     })
+  }
+
+  fn encode<P: Primitive>(fvs: &[FieldValue], escape_depth: u8) -> CoreResult<Vec<u8>> {
+    let encoder = EncoderDecoderImpl::<P>::new(escape_depth);
+    encoder.encode(fvs)
+  }
+
+  fn decode<P: Primitive>(encoded: &[u8], meta: &ColumnMeta, n: usize) -> CoreResult<Vec<FieldValue>> {
+    let decoder = EncoderDecoderImpl::<P>::new(meta.nested_list_depth as u8);
+    decoder.decode_limited(encoded, n)
   }
 
   #[test]
@@ -327,8 +340,8 @@ mod tests {
       })
       .collect::<Vec<FieldValue>>();
 
-    let encoded = encode(&values, 0)?;
-    let decoded = decode(&encoded, &column_meta)?;
+    let encoded = encode::<String>(&values, 0)?;
+    let decoded = decode::<String>(&encoded, &column_meta, strings.len())?;
     let recovered = decoded.iter()
       .map(|fv| if fv.has_string_val() {Some(fv.get_string_val().to_string())} else {None})
       .collect::<Vec<Option<String>>>();
@@ -360,8 +373,8 @@ mod tests {
       })
       .collect::<Vec<FieldValue>>();
 
-    let encoded = encode(&values, 0)?;
-    let decoded = decode(&encoded, &column_meta)?;
+    let encoded = encode::<i64>(&values, 0)?;
+    let decoded = decode::<i64>(&encoded, &column_meta, ints.len())?;
     let recovered = decoded.iter()
       .map(|fv| if fv.has_int64_val() {Some(fv.get_int64_val())} else {None})
       .collect::<Vec<Option<i64>>>();
@@ -404,8 +417,8 @@ mod tests {
       })
       .collect::<Vec<FieldValue>>();
 
-    let encoded = encode(&values, 2)?;
-    let decoded = decode(&encoded, &column_meta)?;
+    let encoded = encode::<String>(&values, 2)?;
+    let decoded = decode::<String>(&encoded, &column_meta, strings.len())?;
     let recovered = decoded.iter()
       .map(|fv| if fv.has_list_val() {
         Some(fv.get_list_val()

@@ -1,17 +1,20 @@
+use std::convert::Infallible;
+use std::string::FromUtf8Error;
+
 use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dtype::DataType;
 
 use crate::compression::Codec;
 use crate::compression::ZSTD;
-use crate::compression::zstd_codec::{BytesZstdCodec, StringZstdCodec};
+use crate::compression::zstd_codec::ZstdCodec;
 use crate::encoding;
 use crate::encoding::ByteReader;
 use crate::errors::{CoreError, CoreResult};
-use crate::primitives::Primitive;
+use crate::primitives::{Atom, Primitive};
 
 use super::StringLike;
-use std::string::FromUtf8Error;
-use std::convert::Infallible;
-use pancake_db_idl::dtype::DataType;
+
+impl Atom for u8 {}
 
 impl StringLike for String {
   type Error = FromUtf8Error;
@@ -36,6 +39,10 @@ impl StringLike for Vec<u8> {
 
 impl Primitive for String {
   const DTYPE: DataType = DataType::STRING;
+  const IS_ATOMIC: bool = false;
+
+  type A = u8;
+
   fn try_from_value(v: &Value) -> CoreResult<String> {
     match v {
       Value::string_val(res) => Ok(res.clone()),
@@ -47,9 +54,17 @@ impl Primitive for String {
     Value::string_val(self.clone())
   }
 
-  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+  fn to_atoms(&self) -> Vec<u8> {
+    self.into_bytes()
+  }
+
+  fn try_from_atoms(atoms: &[u8]) -> CoreResult<Self> {
+    Ok(String::try_from_bytes(atoms.to_vec())?)
+  }
+
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<P=Self>>> {
     if codec == ZSTD {
-      Some(Box::new(StringZstdCodec {}))
+      Some(Box::new(ZstdCodec::<String>::default()))
     } else {
       None
     }
@@ -66,6 +81,10 @@ impl Primitive for String {
 
 impl Primitive for Vec<u8> {
   const DTYPE: DataType = DataType::BYTES;
+  const IS_ATOMIC: bool = false;
+
+  type A = u8;
+
   fn try_from_value(v: &Value) -> CoreResult<Vec<u8>> {
     match v {
       Value::bytes_val(res) => Ok(res.clone()),
@@ -77,9 +96,17 @@ impl Primitive for Vec<u8> {
     Value::bytes_val(self.clone())
   }
 
-  fn new_codec(codec: &str) -> Option<Box<dyn Codec<T=Self>>> {
+  fn to_atoms(&self) -> Vec<u8> {
+    self.to_vec()
+  }
+
+  fn try_from_atoms(atoms: &[u8]) -> CoreResult<Self> {
+    Ok(atoms.to_vec())
+  }
+
+  fn new_codec(codec: &str) -> Option<Box<dyn Codec<P=Self>>> {
     if codec == ZSTD {
-      Some(Box::new(BytesZstdCodec {}))
+      Some(Box::new(ZstdCodec::<Vec<u8>>::default()))
     } else {
       None
     }
@@ -97,32 +124,26 @@ impl Primitive for Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-  use pancake_db_idl::dtype::DataType;
-  use protobuf::ProtobufEnumOrUnknown;
-
   use super::*;
+  use pancake_db_idl::dml::FieldValue;
 
   #[test]
   fn test_serde() -> CoreResult<()> {
     let strs = vec!["orange", "banana", "grapefruit", "ÿ\\'\""];
-    let strings = strs.iter()
-      .map(|s| s.to_string())
-      .collect::<Vec<String>>();
-
-    let compressor = ZstdCompressor {};
-    let bytes = compressor.compress_primitives(&strings)?;
-
-    let decompressor = ZstdDecompressor {};
-    let recovered_strings = decompressor.decompress_primitives(
-      &bytes,
-      &ColumnMeta {
-        dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
+    let fvs = strs.iter()
+      .map(|s| FieldValue {
+        value: Some(Value::string_val(s.to_string())),
         ..Default::default()
-      }
-    )?;
+      })
+      .collect::<Vec<FieldValue>>();
+
+    let value_codec = String::new_value_codec(ZSTD).unwrap();
+
+    let bytes = value_codec.compress(&fvs, 0)?;
+    let recovered_values = value_codec.decompress(bytes, 0)?;
     assert_eq!(
-      strings,
-      recovered_strings,
+      fvs,
+      recovered_values,
     );
     Ok(())
   }
