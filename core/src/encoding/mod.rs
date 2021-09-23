@@ -56,6 +56,7 @@ mod tests {
   use crate::primitives::Primitive;
 
   use super::*;
+  use crate::rep_levels::RepLevelsAndAtoms;
 
   fn build_list_val(l: Vec<Value>) -> Value {
     Value::list_val(RepeatedFieldValue {
@@ -136,7 +137,7 @@ mod tests {
       Some(vec![
         vec!["azAZ09﹝ﾂﾂﾂ﹞ꗽꗼ".to_string(), "abc".to_string()],
         vec!["/\\''!@#$%^&*()".to_string()],
-      ]),  // characters that use bytes 0xff, 0xfe, 0xfd, 0xfc
+      ]),
       None,
       Some(vec![
         vec!["".to_string()],
@@ -178,6 +179,55 @@ mod tests {
       .collect::<Vec<Option<Vec<Vec<String>>>>>();
 
     assert_eq!(recovered, strings);
+    Ok(())
+  }
+
+  #[test]
+  fn test_decode_rep_levels() -> CoreResult<()> {
+    let strings = vec![
+      Some(vec![
+        "abc".to_string(),
+        "de".to_string(),
+      ]),
+      None,
+      Some(vec![
+        "f".to_string(),
+      ]),
+      Some(vec!["".to_string()]),
+      Some(vec![])
+    ];
+
+    let values = strings.iter()
+      .map(|maybe_x| FieldValue {
+        value: maybe_x.as_ref().map(|x0| build_list_val(
+          x0.iter().map(|x1| Value::string_val(x1.to_string())).collect()
+        )),
+        ..Default::default()
+      })
+      .collect::<Vec<FieldValue>>();
+
+    let encoded = encode::<String>(&values, 1)?;
+    let decoder = DecoderImpl::<String, RepLevelsAndAtoms<u8>>::new(1);
+    let decoded = decoder.decode(&encoded)?;
+    let mut combined = RepLevelsAndAtoms::default();
+    for x in &decoded {
+      combined.extend(x);
+    }
+    assert_eq!(
+      combined.levels,
+      vec![
+        3, 3, 3, 2,
+        3, 3, 2, 1,
+        0,
+        3, 2, 1,
+        2, 1,
+        1,
+      ]
+    );
+    assert_eq!(
+      combined.atoms,
+      vec![97_u8, 98, 99, 100, 101, 102] // a through f
+    );
     Ok(())
   }
 }

@@ -8,15 +8,16 @@ use crate::errors::{CoreError, CoreResult};
 use crate::primitives::{Atom, Primitive};
 use crate::utils;
 use super::{NULL_BYTE, COUNT_BYTE};
+use crate::rep_levels::RepLevelsAndAtoms;
 
 pub trait Decodable<P: Primitive> {
-  fn handle_atoms(atoms: &[P::A]) -> CoreResult<Self> where Self: Sized;
+  fn handle_atoms(atoms: Vec<P::A>, depth: u8) -> CoreResult<Self> where Self: Sized;
   fn handle_null() -> Self where Self: Sized;
-  fn combine(outputs: Vec<Self>) -> Self where Self: Sized;
+  fn combine(outputs: Vec<Self>, depth: u8) -> Self where Self: Sized;
 }
 
 impl<P: Primitive> Decodable<P> for FieldValue {
-  fn handle_atoms(atoms: &[P::A]) -> CoreResult<FieldValue> {
+  fn handle_atoms(atoms: Vec<P::A>, _: u8) -> CoreResult<FieldValue> {
     let value = P::try_from_atoms(&atoms)?.to_value();
     Ok(FieldValue {
       value: Some(value),
@@ -28,7 +29,7 @@ impl<P: Primitive> Decodable<P> for FieldValue {
     FieldValue::new()
   }
 
-  fn combine(outputs: Vec<FieldValue>) -> FieldValue {
+  fn combine(outputs: Vec<FieldValue>, _: u8) -> FieldValue {
     let repeated = RepeatedFieldValue {
       vals: outputs,
       ..Default::default()
@@ -37,6 +38,38 @@ impl<P: Primitive> Decodable<P> for FieldValue {
       value: Some(Value::list_val(repeated)),
       ..Default::default()
     }
+  }
+}
+
+impl<P: Primitive> Decodable<P> for RepLevelsAndAtoms<P::A> {
+  fn handle_atoms(atoms: Vec<P::A>, depth: u8) -> CoreResult<RepLevelsAndAtoms<P::A>> {
+    let levels = if P::IS_ATOMIC {
+      vec![depth + 1]
+    } else {
+      let mut res = vec![depth + 2; atoms.len()];
+      res.push(depth + 1);
+      res
+    };
+    Ok(RepLevelsAndAtoms {
+      atoms,
+      levels,
+    })
+  }
+
+  fn handle_null() -> RepLevelsAndAtoms<P::A> {
+    RepLevelsAndAtoms {
+      levels: vec![0],
+      atoms: vec![],
+    }
+  }
+
+  fn combine(outputs: Vec<RepLevelsAndAtoms<P::A>>, depth: u8) -> RepLevelsAndAtoms<P::A> {
+    let mut res = RepLevelsAndAtoms::<P::A>::default();
+    for output in &outputs {
+      res.extend(output);
+    }
+    res.levels.push(depth + 1);
+    res
   }
 }
 
@@ -95,7 +128,7 @@ impl<P: Primitive, H> DecoderImpl<P, H> where H: Decodable<P> {
   }
 
   fn decode_value(&self, reader: &mut ByteReader, current_depth: u8) -> CoreResult<H> {
-    if current_depth == self.nested_list_depth as u8 {
+    if current_depth == self.nested_list_depth {
       let atoms = if P::IS_ATOMIC {
         let bytes = reader.unescaped_read_n(P::A::BYTE_SIZE)?;
         vec![P::A::try_from_bytes(&bytes)?]
@@ -108,7 +141,7 @@ impl<P: Primitive, H> DecoderImpl<P, H> where H: Decodable<P> {
         }
         atoms
       };
-      H::handle_atoms(&atoms)
+      H::handle_atoms(atoms, current_depth)
     } else {
       let len = reader.unescaped_read_u16()? as usize;
       let mut outputs = Vec::with_capacity(len);
@@ -116,7 +149,7 @@ impl<P: Primitive, H> DecoderImpl<P, H> where H: Decodable<P> {
         let child = self.decode_value(reader, current_depth + 1)?;
         outputs.push(child);
       }
-      Ok(H::combine(outputs))
+      Ok(H::combine(outputs, current_depth))
     }
   }
 }
