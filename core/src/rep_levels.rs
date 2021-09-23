@@ -103,77 +103,6 @@ pub fn extract_single_levels_and_atoms<P: Primitive>(
   }
 }
 
-// fn get_repetition_levels(
-//   value: &FieldValue,
-//   traverse_depth: u8,
-//   schema_depth: u8
-// ) -> CoreResult<Vec<u8>> {
-//   match &value.value {
-//     None => {
-//       if traverse_depth != 0 {
-//         return Err(CoreError::invalid("null value found in nested position"));
-//       }
-//
-//       Ok(vec![0])
-//     },
-//     Some(Value::list_val(repeated)) => {
-//       if traverse_depth >= schema_depth {
-//         return Err(CoreError::invalid("traversed to deeper than schema depth"));
-//       }
-//
-//       let mut res = Vec::new();
-//       for fv in &repeated.vals {
-//         res.extend(get_repetition_levels(fv, traverse_depth + 1, schema_depth)?)
-//       }
-//       res.push(traverse_depth + 1);
-//       Ok(res)
-//     },
-//     Some(v) => {
-//       if traverse_depth != schema_depth {
-//         return Err(CoreError::invalid(
-//           &format!(
-//             "traverse depth of {} does not match schema depth of {}",
-//             traverse_depth,
-//             schema_depth
-//           )
-//         ))
-//       }
-//
-//       Ok(match v {
-//         // handle inherently nested types
-//         Value::string_val(x) => {
-//           let mut res = vec![traverse_depth + 2].repeat(x.len());
-//           res.push(traverse_depth + 1);
-//           res
-//         },
-//         Value::bytes_val(x) => {
-//           let mut res = vec![traverse_depth + 2].repeat(x.len());
-//           res.push(traverse_depth + 1);
-//           res
-//         },
-//         // all others are inherently atomic types
-//         Value::int64_val(_) => vec![schema_depth + 1],
-//         Value::bool_val(_) => vec![schema_depth + 1],
-//         Value::float64_val(_) => vec![schema_depth + 1],
-//         Value::timestamp_val(_) => vec![schema_depth + 1],
-//       })
-//     }
-//   }
-// }
-//
-// // 0 for null,
-// // 1..n+1 for "next field value", "next field value in list", "... in sublist", ..., "next atom"
-// fn get_multi_repetition_levels(values: &[FieldValue], schema_depth: u8) -> CoreResult<Vec<u32>> {
-//   let mut res = Vec::new();
-//   for fv in values {
-//     res.extend(
-//       get_repetition_levels(fv, 0, schema_depth)?.iter()
-//         .map(|&l| l as u32)
-//     )
-//   }
-//   Ok(res)
-// }
-
 pub fn compress_rep_levels(rep_levels: Vec<u8>) -> CoreResult<Vec<u8>> {
   let rep_levels = rep_levels.iter().map(|&l| l as u32).collect::<Vec<u32>>();
   let compressor = U32Compressor::train(
@@ -182,24 +111,6 @@ pub fn compress_rep_levels(rep_levels: Vec<u8>) -> CoreResult<Vec<u8>> {
   )?;
   Ok(compressor.compress(&rep_levels)?)
 }
-
-// fn get_values(fv: &FieldValue) -> Vec<Value> {
-//   match &fv.value {
-//     None => Vec::new(),
-//     Some(Value::list_val(repeated)) => {
-//       repeated.vals.iter()
-//         .flat_map(get_values)
-//         .collect()
-//     },
-//     _ => vec![fv.value.clone().unwrap()]
-//   }
-// }
-//
-// fn get_multi_values(values: &[FieldValue]) -> Vec<Value> {
-//   values.iter()
-//     .flat_map(get_values)
-//     .collect()
-// }
 
 pub struct AtomNester<P: Primitive> {
   rep_levels: Vec<u8>,

@@ -119,7 +119,7 @@ impl Server {
       old_compression_params,
       metadata.n,
     ).await?;
-    let bytes = compressor.compress(&values, col)?;
+    let bytes = compressor.compress(&values, col.nested_list_depth as u8)?;
     utils::append_to_file(
       &dirs::compact_col_file(&self.opts.dir, &segment_key.compaction_key(new_version), &col.name),
       bytes.as_slice(),

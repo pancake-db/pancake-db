@@ -18,7 +18,7 @@ impl Server {
       None => Err(ServerError::invalid("missing table schema")),
     }?.as_ref();
 
-    utils::validate_entity_name_for_write("table name", table_name)?;
+    utils::validate_entity_name_for_write("table name", &req.table_name)?;
     for meta in &schema.partitioning {
       utils::validate_entity_name_for_write("partition name", &meta.name)?;
     }

@@ -117,7 +117,7 @@ impl Server {
       Ok(Vec::new())
     } else {
       let decompressor = compression::new_codec(col.dtype.unwrap(), codec)?;
-      let decoded = decompressor.decompress(bytes, col)?;
+      let decoded = decompressor.decompress(bytes, col.nested_list_depth as u8)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])
       } else {
@@ -141,7 +141,7 @@ impl Server {
       Ok(Vec::new())
     } else {
       let dtype = utils::unwrap_dtype(col.dtype)?;
-      let decoder = encoding::new_encoder_decoder(dtype, col.nested_list_depth as u8);
+      let decoder = encoding::new_field_value_decoder(dtype, col.nested_list_depth as u8);
       Ok(decoder.decode_limited(&bytes, limit)?)
     }
   }
