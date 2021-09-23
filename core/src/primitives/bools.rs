@@ -1,14 +1,30 @@
 use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dtype::DataType;
 
 use crate::compression::Codec;
 use crate::compression::q_codec::BoolQCodec;
 use crate::compression::Q_COMPRESS;
 use crate::errors::{CoreError, CoreResult};
-use crate::primitives::{Primitive, Atom};
-use crate::encoding::ByteReader;
-use pancake_db_idl::dtype::DataType;
+use crate::primitives::{Atom, Primitive};
 
-impl Atom for bool {}
+impl Atom for bool {
+  const BYTE_SIZE: usize = 1;
+
+  fn to_bytes(&self) -> Vec<u8> {
+    vec![*self as u8]
+  }
+
+  fn try_from_bytes(bytes: &[u8]) -> CoreResult<bool> {
+    let byte = bytes[0];
+    if byte == 0 {
+      Ok(false)
+    } else if byte == 1 {
+      Ok(true)
+    } else {
+      Err(CoreError::corrupt(&format!("unable to decode bit from byte {}", byte)))
+    }
+  }
+}
 
 impl Primitive for bool {
   const DTYPE: DataType = DataType::BOOL;
@@ -40,21 +56,6 @@ impl Primitive for bool {
       Some(Box::new(BoolQCodec {}))
     } else {
       None
-    }
-  }
-
-  fn encode(&self) -> Vec<u8> {
-    vec![*self as u8]
-  }
-
-  fn decode(reader: &mut ByteReader) -> CoreResult<bool> {
-    let byte = reader.unescaped_read_one()?;
-    if byte == 0 {
-      Ok(false)
-    } else if byte == 1 {
-      Ok(true)
-    } else {
-      Err(CoreError::corrupt(&format!("unable to decode bit from byte {}", byte)))
     }
   }
 }

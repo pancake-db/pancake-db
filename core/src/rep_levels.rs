@@ -37,7 +37,7 @@ pub fn extract_levels_and_atoms<P: Primitive>(
   Ok(res)
 }
 
-fn extract_single_levels_and_atoms<P: Primitive>(
+pub fn extract_single_levels_and_atoms<P: Primitive>(
   fv: &FieldValue,
   schema_depth: u8,
   traverse_depth: u8

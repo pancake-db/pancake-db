@@ -1,9 +1,9 @@
-pub use traits::{Atom, Primitive, StringLike};
+pub use traits::{Atom, Primitive};
 
 mod bools;
+mod bytess;
 mod floats;
 mod ints;
-mod string_likes;
+mod strings;
 mod timestamps;
 mod traits;
-

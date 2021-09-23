@@ -2,17 +2,15 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dtype::DataType;
 
 use crate::compression::{Codec, ValueCodec};
-use crate::encoding::ByteReader;
 use crate::errors::CoreResult;
 use std::fmt::Debug;
 
-pub trait StringLike {
-  type Error: std::error::Error;
-  fn into_bytes(&self) -> Vec<u8>;
-  fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> where Self: Sized;
-}
+pub trait Atom: 'static + Copy + Debug + Default {
+  const BYTE_SIZE: usize;
 
-pub trait Atom: 'static + Copy + Debug + Default {}
+  fn to_bytes(&self) -> Vec<u8>;
+  fn try_from_bytes(bytes: &[u8]) -> CoreResult<Self> where Self: Sized;
+}
 
 pub trait Primitive: 'static + Default {
   type A: Atom;
@@ -25,9 +23,6 @@ pub trait Primitive: 'static + Default {
 
   fn to_atoms(&self) -> Vec<Self::A>;
   fn try_from_atoms(atoms: &[Self::A]) -> CoreResult<Self> where Self: Sized;
-
-  fn encode(&self) -> Vec<u8>;
-  fn decode(reader: &mut ByteReader) -> CoreResult<Self> where Self: Sized;
 
   fn new_codec(codec: &str) -> Option<Box<dyn Codec<P=Self>>>;
   fn new_value_codec(codec: &str) -> Option<Box<dyn ValueCodec>> where Self: Sized {

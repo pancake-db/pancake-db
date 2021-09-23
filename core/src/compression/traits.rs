@@ -1,12 +1,12 @@
 use pancake_db_idl::dml::FieldValue;
 use q_compress::{BitReader, U32Decompressor};
 
-use crate::compression::rep_levels;
-use crate::compression::rep_levels::{RepLevelsAndAtoms, RepLevelsAndBytes};
+use crate::rep_levels;
+use crate::rep_levels::{RepLevelsAndAtoms, RepLevelsAndBytes};
 use crate::errors::CoreResult;
 use crate::primitives::Primitive;
 
-use super::rep_levels::AtomNester;
+use crate::rep_levels::AtomNester;
 
 pub trait Codec {
   type P: Primitive;

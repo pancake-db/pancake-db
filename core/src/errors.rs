@@ -78,6 +78,7 @@ impl From<QCompressError> for CoreError {
     let kind = match e {
       QCompressError::HeaderDtypeError {header_byte: _, decompressor_byte: _} => CoreErrorKind::Corrupt,
       QCompressError::MagicHeaderError {header: _} => CoreErrorKind::Corrupt,
+      QCompressError::InvalidTimestampError {nanos: _} => CoreErrorKind::Corrupt,
       _ => CoreErrorKind::Other,
     };
     CoreError {

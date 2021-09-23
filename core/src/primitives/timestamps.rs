@@ -7,11 +7,20 @@ use q_compress::types::NumberLike;
 use crate::compression::Codec;
 use crate::compression::q_codec::TimestampNsQCodec;
 use crate::compression::Q_COMPRESS;
-use crate::encoding::ByteReader;
 use crate::errors::{CoreError, CoreResult};
-use crate::primitives::{Primitive, Atom};
+use crate::primitives::{Atom, Primitive};
 
-impl Atom for TimestampNs {}
+impl Atom for TimestampNs {
+  const BYTE_SIZE: usize = 12;
+
+  fn to_bytes(&self) -> Vec<u8> {
+    TimestampNs::bytes_from(*self)
+  }
+
+  fn try_from_bytes(bytes: &[u8]) -> CoreResult<Self> {
+    Ok(TimestampNs::from_bytes_safe(bytes)?)
+  }
+}
 
 impl Primitive for TimestampNs {
   const DTYPE: DataType = DataType::TIMESTAMP_NS;
@@ -48,15 +57,6 @@ impl Primitive for TimestampNs {
     } else {
       None
     }
-  }
-
-  fn encode(&self) -> Vec<u8> {
-    TimestampNs::bytes_from(*self)
-  }
-
-  fn decode(reader: &mut ByteReader) -> CoreResult<Self> {
-    let bytes = reader.unescaped_read_n(12)?;
-    Ok(TimestampNs::from_bytes(bytes))
   }
 }
 

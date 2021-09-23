@@ -8,12 +8,31 @@ use crate::server::Server;
 use crate::utils;
 use hyper::body::Bytes;
 
+// no one should ever need deeper nesting than this
+const MAX_NESTED_LIST_DEPTH: u32 = 3;
+
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> ServerResult<CreateTableResponse> {
     let schema = match &req.schema.0 {
       Some(s) => Ok(s),
       None => Err(ServerError::invalid("missing table schema")),
     }?.as_ref();
+
+    utils::validate_entity_name_for_write("table name", table_name)?;
+    for meta in &schema.partitioning {
+      utils::validate_entity_name_for_write("partition name", &meta.name)?;
+    }
+    for meta in &schema.columns {
+      utils::validate_entity_name_for_write("column name", &meta.name)?;
+      if meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
+        return Err(ServerError::invalid(&format!(
+          "nested_list_depth may not exceed {} but was {} for {}",
+          MAX_NESTED_LIST_DEPTH,
+          meta.nested_list_depth,
+          meta.name,
+        )))
+      }
+    }
 
     utils::create_if_new(&self.opts.dir).await?;
 
