@@ -10,6 +10,7 @@ async-trait = "0.1.48"
 chrono = {version="0.4", features=["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
+log = "0.4.14"
 pancake-db-core = {path="../core", version="0.0.0"}
 pancake-db-idl = {path="../../pancake-idl/rust", version="0.0.0"}
 protobuf = {git="https://github.com/stepancheg/rust-protobuf"}

@@ -136,6 +136,12 @@ impl Server {
     compaction: &Compaction,
     new_version: u64,
   ) -> ServerResult<()> {
+    log::info!(
+      "starting compaction for {} version {} ({} rows)",
+      segment_key,
+      new_version,
+      metadata.n
+    );
     for col in &schema.columns {
       let old_compression_params = old_compaction.col_codecs
         .get(&col.name);
@@ -152,6 +158,7 @@ impl Server {
         new_version,
       ).await?;
     }
+    log::info!("finished compaction for {} version {}", segment_key, new_version);
     Ok(())
   }
 

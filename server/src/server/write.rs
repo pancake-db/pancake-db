@@ -91,6 +91,12 @@ impl Server {
     }
 
     let rows = maybe_rows.unwrap();
+    log::debug!(
+      "flushing {} rows for partition {} segment {}",
+      rows.len(),
+      partition_key,
+      segment_id
+    );
 
     let segment_key = SegmentKey {
       table_name: table_name.clone(),

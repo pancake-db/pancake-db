@@ -1,5 +1,6 @@
 use structopt::StructOpt;
 use std::path::PathBuf;
+use log::LevelFilter;
 
 #[derive(Clone, Debug, StructOpt)]
 #[structopt(name = "PancakeDB Server")]
@@ -10,6 +11,9 @@ pub struct Opt {
 
   #[structopt(long, default_value = "1337")]
   pub port: u16,
+
+  #[structopt(long, default_value = "INFO")]
+  pub log_level: LevelFilter,
 
   // a target number of rows for each segment of data
   // Segments should complete slightly after this row count

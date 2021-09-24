@@ -34,10 +34,9 @@ impl Server {
       }
     }
 
-    utils::create_if_new(&self.opts.dir).await?;
-
     let already_exists = self.schema_cache
       .create(&req.table_name, schema, req.mode.enum_value_or_default()).await?;
+
     Ok(CreateTableResponse {
       already_exists,
       ..Default::default()

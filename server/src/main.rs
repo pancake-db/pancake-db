@@ -8,8 +8,10 @@ use tower_http::add_extension::AddExtensionLayer;
 
 use crate::opt::Opt;
 use crate::server::Server;
+use crate::logging::Logger;
 
 mod dirs;
+mod logging;
 mod opt;
 mod server;
 mod types;
@@ -18,11 +20,18 @@ pub mod constants;
 pub mod errors;
 pub mod storage;
 
+static LOGGER: Logger = Logger;
+
 #[tokio::main]
 async fn main() {
   let opts: Opt = Opt::from_args();
+  log::set_max_level(opts.log_level);
+  log::set_logger(&LOGGER)
+    .expect("unable to initialize logging");
+
   let server = Server::new(opts.clone());
   let backgrounds = server.init().await;
+  log::info!("initialized server background processes in dir {:?}", opts.dir);
 
   let filter = server.warp_filter();
   let warp_service = warp::service(filter);
@@ -31,10 +40,13 @@ async fn main() {
     .service(warp_service);
   let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], opts.port)))
     .expect("port busy");
+  log::info!("bound TCP listener to port {}", opts.port);
+  let hyper_future = HyperServer::from_tcp(listener)
+    .unwrap()
+    .serve(Shared::new(tower_service));
+  log::info!("ready to serve requests");
   let outcomes = futures::future::join3(
-    HyperServer::from_tcp(listener)
-      .unwrap()
-      .serve(Shared::new(tower_service)),
+    hyper_future,
     backgrounds.0,
     backgrounds.1,
   )

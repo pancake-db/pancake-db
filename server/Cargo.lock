@@ -881,6 +881,7 @@ dependencies = [
  "chrono",
  "futures",
  "hyper",
+ "log",
  "pancake-db-core",
  "pancake-db-idl",
  "protobuf",

@@ -108,6 +108,9 @@ impl SchemaCache {
         }
       },
       None => {
+        log::info!("creating new table: {}", &table_name);
+
+        utils::create_if_new(&self.dir).await?;
         map.insert(table_name.to_string(), Some(schema.clone()));
         let table_dir = dirs::table_dir(&self.dir, &table_name);
         utils::create_if_new(table_dir).await?;

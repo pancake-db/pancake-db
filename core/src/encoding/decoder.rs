@@ -51,8 +51,8 @@ impl<P: Primitive> Decodable<P> for RepLevelsAndAtoms<P::A> {
       res
     };
     Ok(RepLevelsAndAtoms {
-      atoms,
       levels,
+      atoms,
     })
   }
 

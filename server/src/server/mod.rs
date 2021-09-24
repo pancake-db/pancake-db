@@ -87,11 +87,10 @@ impl Staged {
   pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    let res = state.compaction_candidates.clone();
-    res
+    state.compaction_candidates.clone()
   }
 
-  pub async fn remove_compaction_candidates(&self, keys: &[SegmentKey]) -> () {
+  pub async fn remove_compaction_candidates(&self, keys: &[SegmentKey]) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     for key in keys {

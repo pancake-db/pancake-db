@@ -1,15 +1,17 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use crate::errors::{ServerError, ServerResult};
 use pancake_db_idl::dml::partition_field::Value;
 use pancake_db_idl::dml::PartitionField;
 use pancake_db_idl::schema::Schema;
+use protobuf::well_known_types::Timestamp;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::{ServerError, ServerResult};
 use crate::utils;
-use std::convert::TryFrom;
-use protobuf::well_known_types::Timestamp;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct PartitionMinute {
@@ -54,15 +56,26 @@ pub struct NormalizedPartitionField {
   pub value: PartitionValue,
 }
 
-impl NormalizedPartitionField {
-  pub fn to_path_buf(&self) -> PathBuf {
+impl Display for NormalizedPartitionField {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     let value_str = match &self.value {
       PartitionValue::STRING(x) => x.clone(),
       PartitionValue::INT64(x) => x.to_string(),
       PartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string(),
       PartitionValue::MINUTE(x) => x.minutes.to_string(), // TODO
     };
-    PathBuf::from(format!("{}={}", self.name, value_str))
+    write!(
+      f,
+      "{}={}",
+      self.name,
+      value_str,
+    )
+  }
+}
+
+impl NormalizedPartitionField {
+  pub fn to_path_buf(&self) -> PathBuf {
+    PathBuf::from(self.to_string())
   }
 }
 
@@ -93,6 +106,15 @@ impl TryFrom<&PartitionField> for NormalizedPartitionField {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartition {
   pub fields: Vec<NormalizedPartitionField>
+}
+
+impl Display for NormalizedPartition {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    for field in &self.fields {
+      field.fmt(f)?;
+    }
+    Ok(())
+  }
 }
 
 impl NormalizedPartition {
@@ -151,6 +173,17 @@ pub struct PartitionKey {
   pub partition: NormalizedPartition,
 }
 
+impl Display for PartitionKey {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "{}/{}",
+      self.table_name,
+      self.partition,
+    )
+  }
+}
+
 impl PartitionKey {
   pub fn segment_key(&self, segment_id: String) -> SegmentKey {
     SegmentKey {
@@ -166,6 +199,18 @@ pub struct SegmentKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
   pub segment_id: String,
+}
+
+impl Display for SegmentKey {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "{}/{} segment {}",
+      self.table_name,
+      self.partition,
+      self.segment_id
+    )
+  }
 }
 
 impl SegmentKey {
