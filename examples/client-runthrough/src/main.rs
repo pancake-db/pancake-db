@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use pancake_db_core::compression;
-use pancake_db_idl::ddl::CreateTableRequest;
+use pancake_db_idl::ddl::{CreateTableRequest, DropTableRequest};
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta, Schema};
@@ -22,7 +22,6 @@ const TABLE_NAME: &str = "t";
 async fn main() -> ClientResult<()> {
   let client = Client::from_ip_port(
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-    // IpAddr::V4(Ipv4Addr::new(3, 129, 244, 179)),
     1337,
   );
 
@@ -122,7 +121,7 @@ async fn main() -> ClientResult<()> {
     rows,
     ..Default::default()
   };
-  for _ in 0..1000 as u32 {
+  for _ in 0..100 {
     client.write_to_partition(&write_to_partition_req).await?;
   }
   // let write_resp = client.write_to_partition(&write_to_partition_req).await?;
@@ -186,12 +185,15 @@ async fn main() -> ClientResult<()> {
         DataType::INT64,
         &codec
       )?;
-      let decompressed = decompressor.decompress(compressed_data, &i_meta)?;
+      let decompressed = decompressor.decompress(
+        compressed_data,
+        i_meta.nested_list_depth as u8
+      )?;
       count += decompressed.len();
     }
     if !uncompressed_data.is_empty() {
       println!("decoding {} uncompressed bytes", uncompressed_data.len());
-      let decoder = encoding::new_encoder_decoder(
+      let decoder = encoding::new_field_value_decoder(
         col.dtype.unwrap(),
         col.nested_list_depth as u8,
       );
@@ -201,6 +203,12 @@ async fn main() -> ClientResult<()> {
     total += count;
     println!("read segment {} with {} rows (total {})", segment_id, count, total);
   }
+
+  let drop_resp = client.drop_table(&DropTableRequest {
+    table_name: TABLE_NAME.to_string(),
+    ..Default::default()
+  }).await?;
+  println!("Dropped table: {:?}", drop_resp);
 
   Ok(())
 }
