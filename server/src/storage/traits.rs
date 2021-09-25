@@ -7,6 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::fs;
 use tokio::sync::RwLock;
+use std::io;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::utils;
@@ -31,18 +32,28 @@ macro_rules! impl_metadata_serde_json {
 }
 
 #[async_trait]
-pub trait Metadata<K: Sync>: MetadataJson + Clone + Sync {
+pub trait Metadata<K: Sync + MetadataKey>: MetadataJson + Clone + Sync {
   fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &Path, k: &K) -> PathBuf {
     dir.join(Self::relative_path(k))
   }
 
-  async fn load(dir: &Path, k: &K) -> Option<Self> {
-    // TODO real error handling here
+  async fn load(dir: &Path, k: &K) -> ServerResult<Option<Self>> {
     return match fs::read_to_string(Self::path(dir, k)).await {
-      Ok(json_string) => Some(Self::from_json_str(&json_string).expect("unable to parse metadata")),
-      Err(_) => None,
+      Ok(json_string) => {
+        Ok(Some(Self::from_json_str(&json_string)?))
+      },
+      Err(e) => {
+        match e.kind() {
+          io::ErrorKind::NotFound => Ok(None),
+          _ => Err(ServerError::internal(&format!(
+            "unable to read {}: {:?}",
+            K::ENTITY_NAME,
+            e,
+          )))
+        }
+      },
     }
   }
 
@@ -64,7 +75,7 @@ pub struct CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey {
 }
 
 impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
-  pub async fn get_option(&self, k: &K) -> Option<V> {
+  pub async fn get_option(&self, k: &K) -> ServerResult<Option<V>> {
     let mux_guard = self.data.read().await;
     let map = &*mux_guard;
 
@@ -72,21 +83,22 @@ impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
     drop(mux_guard);
 
     match maybe_metadata {
-      Some(metadata) => metadata,
+      Some(metadata) => Ok(metadata),
       None => {
-        let (res, mut mux_guard) = futures::future::join(
+        let (value_result, mut mux_guard) = futures::future::join(
           V::load(&self.dir, k),
           self.data.write()
         ).await;
+        let value = value_result?;
         let map = &mut *mux_guard;
-        map.insert(k.clone(), res.clone());
-        res
+        map.insert(k.clone(), value.clone());
+        Ok(value)
       },
     }
   }
 
-  pub async fn get_result(&self, k: &K) -> ServerResult<V> {
-    match self.get_option(k).await {
+  pub async fn get_or_err(&self, k: &K) -> ServerResult<V> {
+    match self.get_option(k).await? {
       Some(metadata) => Ok(metadata),
       None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
     }

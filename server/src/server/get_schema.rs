@@ -12,7 +12,7 @@ use crate::utils;
 
 impl Server {
   pub async fn get_schema(&self, req: GetSchemaRequest) -> ServerResult<GetSchemaResponse> {
-    self.schema_cache.get_result(&req.table_name)
+    self.schema_cache.get_or_err(&req.table_name)
       .await
       .map(|schema| GetSchemaResponse {
         schema: MessageField::some(schema),

@@ -224,7 +224,7 @@ impl Server {
     utils::validate_entity_name_for_read("table name", &req.table_name)?;
 
     let schema = self.schema_cache
-      .get_result(&req.table_name)
+      .get_or_err(&req.table_name)
       .await?;
 
     let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
@@ -253,7 +253,7 @@ impl Server {
         partition: normalized_partition,
       };
       let segments_meta = self.segments_metadata_cache
-        .get_result(&partition_key)
+        .get_or_err(&partition_key)
         .await?;
       for segment_id in &segments_meta.segment_ids {
         let count = if req.include_counts {
@@ -316,7 +316,7 @@ impl Server {
     let col_name = req.column_name;
     // TODO fix edge case where data in a new column is written between schema read and flush metadata read
     let schema = self.schema_cache
-      .get_result(&req.table_name)
+      .get_or_err(&req.table_name)
       .await?;
 
     let mut valid_col = false;

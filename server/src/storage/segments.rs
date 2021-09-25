@@ -57,7 +57,7 @@ impl SegmentsMetadataCache {
     let option = match maybe_option {
       Some(res) => res.clone(),
       None => {
-        let res = SegmentsMetadata::load(&self.dir, key).await;
+        let res = SegmentsMetadata::load(&self.dir, key).await?;
         map.insert(key.clone(), res.clone());
         res
       }
@@ -82,7 +82,7 @@ impl SegmentsMetadataCache {
     let option = match maybe_option {
       Some(res) => res.clone(),
       None => {
-        let res = SegmentsMetadata::load(&self.dir, key).await;
+        let res = SegmentsMetadata::load(&self.dir, key).await?;
         map.insert(key.clone(), res.clone());
         res
       }

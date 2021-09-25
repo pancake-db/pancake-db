@@ -35,10 +35,10 @@ impl Metadata<SegmentKey> for FlushMetadata {
 }
 
 impl FlushMetadata {
-  async fn load_or_default(dir: &Path, key: &SegmentKey) -> FlushMetadata {
-    FlushMetadata::load(dir, key)
-      .await
-      .unwrap_or_default()
+  async fn load_or_default(dir: &Path, key: &SegmentKey) -> ServerResult<FlushMetadata> {
+    Ok(FlushMetadata::load(dir, key)
+      .await?
+      .unwrap_or_default())
   }
 }
 
@@ -58,7 +58,7 @@ pub type FlushMetadataCache = CacheData<SegmentKey, FlushMetadata>;
 
 impl FlushMetadataCache {
   pub async fn get(&self, key: &SegmentKey) -> FlushMetadata {
-    self.get_result(key)
+    self.get_or_err(key)
       .await
       .unwrap_or_default()
   }
@@ -67,7 +67,7 @@ impl FlushMetadataCache {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) || map.get(key).unwrap().is_none() {
-      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await?));
     }
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
@@ -83,7 +83,7 @@ impl FlushMetadataCache {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) {
-      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await?));
     }
     let mut metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 
@@ -104,7 +104,7 @@ impl FlushMetadataCache {
     let mut mux_guard = self.data.write().await;
     let map = &mut *mux_guard;
     if !map.contains_key(key) {
-      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await));
+      map.insert(key.clone(), Some(FlushMetadata::load_or_default(&self.dir, key).await?));
     }
     let metadata = map.get_mut(key).unwrap().as_mut().unwrap();
 

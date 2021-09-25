@@ -27,7 +27,7 @@ impl Server {
       self.delete_old_versions(segment_key, metadata.read_version).await?;
     }
 
-    let schema = self.schema_cache.get_result(&table_name_string).await?;
+    let schema = self.schema_cache.get_or_err(&table_name_string).await?;
 
     if metadata.write_versions.len() > 1 || metadata.n < self.opts.min_rows_for_compaction {
       //already compacting or too few rows to warrant compaction

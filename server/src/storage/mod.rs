@@ -1,3 +1,5 @@
+pub use traits::{MetadataKey, Metadata};
+
 mod traits;
 pub mod flush;
 pub mod schema;

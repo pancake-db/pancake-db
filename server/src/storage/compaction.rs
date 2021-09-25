@@ -41,7 +41,7 @@ pub type CompactionCache = CacheData<CompactionKey, Compaction>;
 
 impl CompactionCache {
   pub async fn get(&self, key: CompactionKey) -> Compaction {
-    self.get_result(&key)
+    self.get_or_err(&key)
       .await
       .unwrap_or_default()
   }

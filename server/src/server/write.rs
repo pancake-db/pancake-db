@@ -18,7 +18,7 @@ impl Server {
     let table_name = &req.table_name;
     utils::validate_entity_name_for_read("table name", table_name)?;
     // validate data matches schema
-    let schema = self.schema_cache.get_result(table_name).await?;
+    let schema = self.schema_cache.get_or_err(table_name).await?;
 
     // normalize partition (order fields correctly)
     let partition = NormalizedPartition::full(&schema, &req.partition)?;
@@ -75,7 +75,7 @@ impl Server {
 
   pub async fn flush(&self, partition_key: &PartitionKey) -> ServerResult<()> {
     let table_name = &partition_key.table_name;
-    let schema = self.schema_cache.get_result(table_name)
+    let schema = self.schema_cache.get_or_err(table_name)
       .await?;
 
     utils::create_if_new(&dirs::partition_dir(&self.opts.dir, partition_key)).await?;

@@ -14,11 +14,12 @@ use crate::storage::segments::SegmentsMetadataCache;
 use crate::types::{PartitionKey, SegmentKey};
 use crate::opt::Opt;
 
-mod create_table;
-mod write;
-mod read;
 mod compact;
+mod create_table;
+mod delete;
 mod get_schema;
+mod read;
+mod write;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
@@ -127,7 +128,7 @@ impl Server {
         for table_partition in &table_partitions {
           match self.flush(table_partition).await {
             Ok(()) => (),
-            Err(e) => println!("oh no why did flush fail {}", e),
+            Err(e) => log::error!("flushing {} failed: {}", table_partition, e),
           }
         }
 
@@ -156,7 +157,7 @@ impl Server {
         for segment_key in &compaction_candidates {
           let remove = self.compact_if_needed(segment_key).await
             .unwrap_or_else(|e| {
-              println!("oh no why did compact fail {}", e);
+              log::error!("compacting {} failed: {}", segment_key, e);
               false
             });
           if remove {
@@ -206,6 +207,7 @@ impl Server {
           .or(Self::read_segment_column_filter())
           .or(Self::list_segments_filter())
           .or(Self::get_schema_filter())
+          .or(Self::drop_table_filter())
       )
   }
 }

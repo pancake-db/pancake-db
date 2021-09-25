@@ -87,7 +87,7 @@ impl SchemaCache {
     if !map.contains_key(&table_name_string) {
       map.insert(
         table_name.to_string(),
-        Schema::load(&self.dir, &table_name_string).await
+        Schema::load(&self.dir, &table_name_string).await?
       );
     }
 

@@ -25,6 +25,7 @@ static LOGGER: Logger = Logger;
 #[tokio::main]
 async fn main() {
   let opts: Opt = Opt::from_args();
+  opts.validate();
   log::set_max_level(opts.log_level);
   log::set_logger(&LOGGER)
     .expect("unable to initialize logging");

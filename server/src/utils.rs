@@ -358,7 +358,7 @@ pub fn validate_entity_name_for_write(entity: &str, name: &str) -> ServerResult<
 }
 
 fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResult<()> {
-  let first_char = match name.chars().next(0) {
+  let first_char = match name.chars().next() {
     Some(c) => Ok(c),
     None => Err(ServerError::invalid(&format!("{} name may not be empty", entity)))
   }?;

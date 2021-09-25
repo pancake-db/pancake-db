@@ -2,6 +2,8 @@ use structopt::StructOpt;
 use std::path::PathBuf;
 use log::LevelFilter;
 
+const MIN_DIR_LEN: usize = 10;
+
 #[derive(Clone, Debug, StructOpt)]
 #[structopt(name = "PancakeDB Server")]
 pub struct Opt {
@@ -48,4 +50,18 @@ pub struct Opt {
 
   #[structopt(long, default_value = "1048576")]
   pub read_page_byte_size: usize,
+}
+
+impl Opt {
+  pub fn validate(&self) {
+    let dir_maybe_str = self.dir
+      .canonicalize()
+      .expect("unable to canonicalize dir");
+    let dir_str = dir_maybe_str
+      .to_str()
+      .expect("dir was not a valid string");
+    if dir_str.len() < MIN_DIR_LEN {
+      panic!("suspiciously short length for dir; please choose a more specific path")
+    }
+  }
 }
