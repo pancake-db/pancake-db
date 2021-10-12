@@ -1,18 +1,20 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::{ErrorKind, SeekFrom};
 use std::path::Path;
 use std::str::FromStr;
 
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter};
+use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter, Row};
 use pancake_db_idl::dml::{Field, PartitionField};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
+use pancake_db_idl::schema::{PartitionMeta, Schema};
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use protobuf::well_known_types::Timestamp;
 use serde::Serialize;
@@ -23,7 +25,7 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::LIST_LENGTH_BYTES;
+use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
 use crate::errors::{ServerError, ServerResult};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
@@ -379,4 +381,111 @@ fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResul
   }
 
   Ok(())
+}
+
+pub async fn list_subpartitions(
+  dir: &Path,
+  meta: &PartitionMeta,
+) -> ServerResult<Vec<PartitionField>> {
+  let mut res = Vec::new();
+  let mut read_dir = fs::read_dir(&dir).await?;
+  while let Ok(Some(entry)) = read_dir.next_entry().await {
+    if !entry.file_type().await.unwrap().is_dir() {
+      continue;
+    }
+
+    let fname = entry.file_name();
+    let parts = fname
+      .to_str()
+      .unwrap()
+      .split('=')
+      .collect::<Vec<&str>>();
+
+    if parts.len() != 2 {
+      continue;
+    }
+    if *parts[0] != meta.name {
+      continue;
+    }
+    let parsed = partition_field_from_string(
+      &meta.name,
+      parts[1],
+      meta.dtype.unwrap(),
+    )?;
+    res.push(parsed);
+  }
+  Ok(res)
+}
+
+pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
+  let mut col_map = HashMap::new();
+  for col in &schema.columns {
+    col_map.insert(&col.name, col);
+  }
+  for row in rows {
+    for field in &row.fields {
+      let mut err_msgs = Vec::new();
+      match col_map.get(&field.name) {
+        Some(col) => {
+          if !dtype_matches_field(&col.dtype.unwrap(), &field) {
+            err_msgs.push(format!(
+              "invalid field value for column {} with dtype {:?}: {:?}",
+              col.name,
+              col.dtype,
+              field,
+            ));
+          }
+        },
+        _ => {
+          err_msgs.push(format!("unknown column: {}", field.name));
+        },
+      };
+
+      if field.value.is_some() {
+        let byte_size = byte_size_of_field(field.value.as_ref().unwrap());
+        if byte_size > MAX_FIELD_BYTE_SIZE {
+          err_msgs.push(format!(
+            "field for {} exceeds max byte size of {}",
+            field.name,
+            MAX_FIELD_BYTE_SIZE
+          ))
+        }
+      }
+
+      if !err_msgs.is_empty() {
+        return Err(ServerError::invalid(&err_msgs.join("; ")));
+      }
+    }
+  }
+  Ok(())
+}
+
+pub fn rows_to_staged_bytes(rows: &[Row]) -> ServerResult<Vec<u8>> {
+  let mut res = Vec::new();
+  for row in rows {
+    let nondescript_bytes = row.write_to_bytes()?;
+    res.extend((nondescript_bytes.len() as u32).to_be_bytes());
+    res.extend(nondescript_bytes);
+  }
+  Ok(res)
+}
+
+pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
+  let mut res = Vec::new();
+  let mut i = 0;
+  while i < bytes.len() {
+    if bytes.len() < i + 4 {
+      return Err(ServerError::internal("corrupt staged bytes; cannot read byte count"));
+    }
+
+    let len = u32::from_be_bytes((&bytes[i..i+4]).try_into().unwrap()) as usize;
+    i += 4;
+
+    if bytes.len() < i + len {
+      return Err(ServerError::internal("corrupt staged bytes; cannot read proto bytes"));
+    }
+    res.push(Row::parse_from_bytes(&bytes[i..i+len])?);
+    i += len;
+  }
+  Ok(res)
 }

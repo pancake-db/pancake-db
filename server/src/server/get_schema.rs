@@ -2,22 +2,18 @@ use std::convert::Infallible;
 
 use hyper::body::Bytes;
 use pancake_db_idl::ddl::{GetSchemaRequest, GetSchemaResponse};
-use protobuf::MessageField;
 use warp::{Filter, Rejection, Reply};
 
 use crate::errors::ServerResult;
 
 use crate::server::Server;
 use crate::utils;
+use crate::ops::get_schema::GetSchemaOp;
+use crate::ops::traits::ServerOp;
 
 impl Server {
   pub async fn get_schema(&self, req: GetSchemaRequest) -> ServerResult<GetSchemaResponse> {
-    self.schema_cache.get_or_err(&req.table_name)
-      .await
-      .map(|schema| GetSchemaResponse {
-        schema: MessageField::some(schema),
-        ..Default::default()
-      })
+    GetSchemaOp { req }.execute(self).await
   }
 
   pub fn get_schema_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

@@ -1,18 +1,22 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::Future;
-use pancake_db_idl::dml::Row;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
 use crate::storage::compaction::CompactionCache;
-use crate::storage::flush::FlushMetadataCache;
+use crate::storage::segment::SegmentMetadataCache;
 use crate::storage::schema::SchemaCache;
-use crate::storage::segments::SegmentsMetadataCache;
-use crate::types::{PartitionKey, SegmentKey};
+use crate::storage::partition::PartitionMetadataCache;
+use crate::types::SegmentKey;
 use crate::opt::Opt;
+use crate::errors::ServerError;
+use crate::storage::staged::StagedMetadataCache;
+use crate::locks::segment::SegmentLockKey;
+use crate::ops::compact::CompactionOp;
+use crate::ops::traits::ServerOp;
 
 mod compact;
 mod create_table;
@@ -55,34 +59,35 @@ pub struct Staged {
 
 #[derive(Default)]
 pub struct StagedState {
-  rows: HashMap<PartitionKey, Vec<Row>>,
+  // rows: HashMap<PartitionKey, Vec<Row>>,
+  flush_candidates: HashSet<SegmentLockKey>,
   compaction_candidates: HashSet<SegmentKey>,
 }
 
 impl Staged {
-  pub async fn add_rows(&self, table_partition: PartitionKey, rows: &[Row]) {
+  pub async fn add_flush_candidate(&self, key: SegmentLockKey) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    state.rows.entry(table_partition)
-      .or_insert_with(Vec::new)
-      .extend_from_slice(rows);
+    state.flush_candidates.insert(key);
   }
 
-  pub async fn pop_rows_for_flush(
-    &self,
-    table_partition: &PartitionKey,
-    segment_id: &str
-  ) -> Option<Vec<Row>> {
-    let mut mux_guard = self.mutex.lock().await;
-    let state = &mut *mux_guard;
-    state.compaction_candidates.insert(table_partition.segment_key(segment_id.to_string()));
-    state.rows.remove(table_partition)
-  }
+  // pub async fn pop_rows_for_flush(
+  //   &self,
+  //   table_partition: &PartitionKey,
+  //   segment_id: &str
+  // ) -> Option<Vec<Row>> {
+  //   let mut mux_guard = self.mutex.lock().await;
+  //   let state = &mut *mux_guard;
+  //   state.compaction_candidates.insert(table_partition.segment_key(segment_id.to_string()));
+  //   state.rows.remove(table_partition)
+  // }
 
-  pub async fn get_table_partitions(&self) -> Vec<PartitionKey> {
+  pub async fn pop_flush_candidates(&self) -> HashSet<SegmentLockKey> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
-    state.rows.keys().cloned().collect()
+    let res = state.flush_candidates.clone();
+    state.flush_candidates = HashSet::new();
+    res
   }
 
   pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
@@ -105,10 +110,10 @@ pub struct Server {
   pub opts: Opt,
   staged: Staged,
   activity: Activity,
-  schema_cache: SchemaCache,
-  segments_metadata_cache: SegmentsMetadataCache,
-  flush_metadata_cache: FlushMetadataCache,
-  compaction_cache: CompactionCache,
+  pub schema_cache: SchemaCache,
+  pub partition_metadata_cache: PartitionMetadataCache,
+  pub segment_metadata_cache: SegmentMetadataCache,
+  pub compaction_cache: CompactionCache,
 }
 
 impl Server {
@@ -124,11 +129,13 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let table_partitions = flush_clone.staged.get_table_partitions().await;
-        for table_partition in &table_partitions {
-          match self.flush(table_partition).await {
+        let candidates = flush_clone.staged.pop_flush_candidates().await;
+        for candidate in &candidates {
+          match self.flush(candidate.to_segment_lock_key()).await {
             Ok(()) => (),
-            Err(e) => log::error!("flushing {} failed: {}", table_partition, e),
+            Err(e) => {
+              log::error!("flushing {} failed: {}", candidate, e)
+            },
           }
         }
 
@@ -155,7 +162,7 @@ impl Server {
           .await;
         let mut segment_keys_to_remove = Vec::new();
         for segment_key in &compaction_candidates {
-          let remove = self.compact_if_needed(segment_key).await
+          let remove = CompactionOp { key: segment_key.clone() }.execute(&self).await
             .unwrap_or_else(|e| {
               log::error!("compacting {} failed: {}", segment_key, e);
               false
@@ -185,14 +192,14 @@ impl Server {
   pub fn new(opts: Opt) -> Server {
     let dir = &opts.dir;
     let schema_cache = SchemaCache::new(dir);
-    let segments_metadata_cache = SegmentsMetadataCache::new(dir);
-    let flush_metadata_cache = FlushMetadataCache::new(dir);
+    let partition_metadata_cache = PartitionMetadataCache::new(dir);
+    let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
       opts,
       schema_cache,
-      segments_metadata_cache,
-      flush_metadata_cache,
+      partition_metadata_cache,
+      segment_metadata_cache,
       compaction_cache,
       staged: Staged::default(),
       activity: Activity::default(),
@@ -209,5 +216,9 @@ impl Server {
           .or(Self::get_schema_filter())
           .or(Self::drop_table_filter())
       )
+  }
+
+  pub async fn add_flush_candidate(&self, key: SegmentLockKey) {
+    self.staged.add_flush_candidate(key).await;
   }
 }

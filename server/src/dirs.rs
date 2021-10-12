@@ -53,3 +53,7 @@ pub fn relative_version_dir(compaction_key: &CompactionKey) -> PathBuf {
 pub fn version_dir(dir: &Path, compaction_key: &CompactionKey) -> PathBuf {
   dir.join(relative_version_dir(compaction_key))
 }
+
+pub fn staged_rows_path(dir: &Path, segment_key: &SegmentKey) -> PathBuf {
+  segment_dir(dir, segment_key).join("staged_rows")
+}

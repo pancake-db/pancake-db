@@ -1,46 +1,22 @@
 use std::convert::Infallible;
 
-use crate::errors::{ServerError, ServerResult};
+use async_trait::async_trait;
+use hyper::body::Bytes;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use warp::{Filter, Rejection, Reply};
 
+use crate::errors::ServerResult;
+use crate::ops::create_table::CreateTableOp;
+use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
-use hyper::body::Bytes;
 
 // no one should ever need deeper nesting than this
 const MAX_NESTED_LIST_DEPTH: u32 = 3;
 
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> ServerResult<CreateTableResponse> {
-    let schema = match &req.schema.0 {
-      Some(s) => Ok(s),
-      None => Err(ServerError::invalid("missing table schema")),
-    }?.as_ref();
-
-    utils::validate_entity_name_for_write("table name", &req.table_name)?;
-    for meta in &schema.partitioning {
-      utils::validate_entity_name_for_write("partition name", &meta.name)?;
-    }
-    for meta in &schema.columns {
-      utils::validate_entity_name_for_write("column name", &meta.name)?;
-      if meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
-        return Err(ServerError::invalid(&format!(
-          "nested_list_depth may not exceed {} but was {} for {}",
-          MAX_NESTED_LIST_DEPTH,
-          meta.nested_list_depth,
-          meta.name,
-        )))
-      }
-    }
-
-    let already_exists = self.schema_cache
-      .create(&req.table_name, schema, req.mode.enum_value_or_default()).await?;
-
-    Ok(CreateTableResponse {
-      already_exists,
-      ..Default::default()
-    })
+    CreateTableOp { req }.execute(self).await
   }
 
   pub fn create_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

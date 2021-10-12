@@ -11,8 +11,9 @@ use std::io;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::utils;
+use crate::storage::shared_hash_map::SharedHashMap;
 
-pub trait MetadataJson {
+pub trait MetadataJson: Clone + Send + Sync {
   fn to_json_string(&self) -> ServerResult<String>;
   fn from_json_str(s: &str) -> ServerResult<Self> where Self: Sized;
 }
@@ -32,7 +33,7 @@ macro_rules! impl_metadata_serde_json {
 }
 
 #[async_trait]
-pub trait Metadata<K: Sync + MetadataKey>: MetadataJson + Clone + Sync {
+pub trait Metadata<K: MetadataKey>: MetadataJson {
   fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &Path, k: &K) -> PathBuf {
@@ -64,50 +65,34 @@ pub trait Metadata<K: Sync + MetadataKey>: MetadataJson + Clone + Sync {
   }
 }
 
-pub trait MetadataKey: Clone + Debug + Eq + Hash + Sync {
+pub trait MetadataKey: Clone + Debug + Eq + Hash + Send + Sync {
   const ENTITY_NAME: &'static str;
 }
 
 #[derive(Clone)]
-pub struct CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey {
+pub struct CacheData<K, M> where M: Metadata<K>, K: MetadataKey {
   pub dir: PathBuf,
-  pub data: Arc<RwLock<HashMap<K, Option<V>>>>
+  pub data: Arc<SharedHashMap<K, Option<M>>>,
 }
 
-impl<K, V> CacheData<K, V> where V: Metadata<K> + Send, K: MetadataKey  {
-  pub async fn get_option(&self, k: &K) -> ServerResult<Option<V>> {
-    let mux_guard = self.data.read().await;
-    let map = &*mux_guard;
-
-    let maybe_metadata = map.get(k).cloned();
-    drop(mux_guard);
-
-    match maybe_metadata {
-      Some(metadata) => Ok(metadata),
-      None => {
-        let (value_result, mut mux_guard) = futures::future::join(
-          V::load(&self.dir, k),
-          self.data.write()
-        ).await;
-        let value = value_result?;
-        let map = &mut *mux_guard;
-        map.insert(k.clone(), value.clone());
-        Ok(value)
-      },
-    }
+impl<K, M> CacheData<K, M> where M: Metadata<K>, K: MetadataKey  {
+  pub async fn get_lock(&self, k: &K) -> ServerResult<Arc<RwLock<Option<M>>>> {
+    self.data.get_lock_or(k, || {
+      M::load(&self.dir, k)
+    }).await
   }
-
-  pub async fn get_or_err(&self, k: &K) -> ServerResult<V> {
-    match self.get_option(k).await? {
-      Some(metadata) => Ok(metadata),
-      None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
-    }
-  }
+  //
+  // pub async fn get_or_err(&self, k: &K) -> ServerResult<Arc<RwLock<M>>> {
+  //   match self.get_option(k).await? {
+  //     Some(metadata) => Ok(metadata),
+  //     None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
+  //   }
+  // }
 
   pub fn new(dir: &Path) -> Self {
     CacheData {
       dir: dir.to_path_buf(),
-      data: Arc::new(RwLock::new(HashMap::new()))
+      data: Arc::new(SharedHashMap::new()),
     }
   }
 }
