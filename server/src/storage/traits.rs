@@ -71,21 +71,26 @@ pub trait MetadataKey: Clone + Debug + Eq + Hash + Send + Sync {
 
 #[derive(Clone)]
 pub struct CacheData<K, M> where M: Metadata<K>, K: MetadataKey {
-  pub dir: PathBuf,
-  pub data: Arc<SharedHashMap<K, Option<M>>>,
+  dir: PathBuf,
+  data: Arc<SharedHashMap<K, Option<M>>>,
 }
 
 impl<K, M> CacheData<K, M> where M: Metadata<K>, K: MetadataKey  {
+  pub fn new(dir: &Path) -> Self {
+    CacheData {
+      dir: dir.to_path_buf(),
+      data: Arc::new(SharedHashMap::new()),
+    }
+  }
+
   pub async fn get_lock(&self, k: &K) -> ServerResult<Arc<RwLock<Option<M>>>> {
     self.data.get_lock_or(k, || {
       M::load(&self.dir, k)
     }).await
   }
 
-  pub fn new(dir: &Path) -> Self {
-    CacheData {
-      dir: dir.to_path_buf(),
-      data: Arc::new(SharedHashMap::new()),
-    }
+  pub async fn prune<F>(&self, f: F)
+  where F: Fn(&K) -> bool {
+    self.data.prune(f).await
   }
 }

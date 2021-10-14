@@ -2,36 +2,17 @@ use std::convert::Infallible;
 
 use hyper::body::Bytes;
 use pancake_db_idl::ddl::{DropTableRequest, DropTableResponse};
-
-
 use warp::{Filter, Rejection, Reply};
 
-
-use crate::errors::{ServerResult};
+use crate::errors::ServerResult;
+use crate::ops::drop_table::DropTableOp;
+use crate::ops::traits::ServerOp;
 use crate::server::Server;
-
 use crate::utils;
 
 impl Server {
-  pub async fn drop_table(&self, _req: DropTableRequest) -> ServerResult<DropTableResponse> {
-    // // clear schema cache and keep it locked until we finish up here
-    // let mut schema_mux_guard = self.schema_cache.data.write().await;
-    // let schema_map = &mut *schema_mux_guard;
-    //
-    // // verify table exists
-    // if !schema_map.contains_key(&req.table_name) {
-    //   let maybe_schema = Schema::load(&self.opts.dir, &req.table_name).await?;
-    //   if maybe_schema.is_none() {
-    //     return Err(ServerError::does_not_exist("table", &req.table_name));
-    //   }
-    // }
-    //
-    // // clear metadata
-    // schema_map.insert(req.table_name.to_string(), None);
-    //
-    // fs::remove_dir_all(dirs::table_dir(&self.opts.dir, &req.table_name)).await?;
-    //
-    Ok(DropTableResponse {..Default::default()})
+  pub async fn drop_table(&self, req: DropTableRequest) -> ServerResult<DropTableResponse> {
+    DropTableOp { req }.execute(&self).await
   }
 
   pub fn drop_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

@@ -1,13 +1,13 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::Hasher;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::storage::MetadataKey;
 use crate::errors::ServerResult;
-use std::future::Future;
+use crate::storage::MetadataKey;
 
 const HASH_BUCKETS: usize = 16;
 
@@ -68,5 +68,20 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
     map.insert(k.clone(), entry.clone());
 
     Ok(entry)
+  }
+
+  pub async fn prune<F>(&self, f: F)
+  where F: Fn(&K) -> bool {
+    for map_lock in &self.0 {
+      let mut map_guard = map_lock.write().await;
+      let map = &mut *map_guard;
+      let mut to_remove = Vec::new();
+      map.keys().for_each(|k| if f(k) {
+        to_remove.push(k.clone())
+      });
+      for k in &to_remove {
+        map.remove(k);
+      }
+    }
   }
 }

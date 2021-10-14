@@ -16,6 +16,7 @@ use crate::opt::Opt;
 use crate::ops::compact::CompactionOp;
 use crate::ops::traits::ServerOp;
 use crate::ops::flush::FlushOp;
+use crate::errors::ServerErrorKind;
 
 mod create_table;
 mod delete;
@@ -127,14 +128,18 @@ impl Server {
           let flush_result = FlushOp { segment_key: candidate.clone() }
             .execute(&self)
             .await;
-          match flush_result {
-            Ok(()) => (),
-            Err(e) => {
-              log::error!("flushing {} failed: {}", candidate, e)
-            },
+          if flush_result.is_ok() {
+            self.staged.add_compaction_candidate(candidate.clone()).await;
+          } else {
+            let err = flush_result.unwrap_err();
+            let remove = if matches!(err.kind, ServerErrorKind::Internal) {
+              self.staged.add_compaction_candidate(candidate.clone()).await;
+              false
+            } else {
+              true
+            };
+            log::error!("flushing {} failed (will give up? {}): {}", candidate, remove, err);
           }
-          // now that flush is done, make sure it's a candidate for compaction
-          self.staged.add_compaction_candidate(candidate.clone()).await;
         }
 
         let is_active = self.activity.is_active().await;
@@ -162,8 +167,9 @@ impl Server {
         for segment_key in &compaction_candidates {
           let remove = CompactionOp { key: segment_key.clone() }.execute(&self).await
             .unwrap_or_else(|e| {
-              log::error!("compacting {} failed: {}", segment_key, e);
-              false
+              let remove = !matches!(e.kind, ServerErrorKind::Internal);
+              log::error!("compacting {} failed (will give up? {}): {}", segment_key, remove, e);
+              remove
             });
           if remove {
             segment_keys_to_remove.push(segment_key.clone());
