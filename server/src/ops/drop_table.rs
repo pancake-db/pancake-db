@@ -8,6 +8,7 @@ use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
+use pancake_db_idl::schema::Schema;
 
 pub struct DropTableOp {
   pub req: DropTableRequest,

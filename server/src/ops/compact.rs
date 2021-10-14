@@ -78,8 +78,8 @@ impl CompactionOp {
       self.delete_old_versions(&opts.dir, segment_meta.read_version).await?;
     }
 
-    let n_flushed_rows = segment_meta.all_time_n as usize - segment_meta.currently_staged_n -
-      (segment_meta.all_time_n_deleted as usize - segment_meta.current_staged_n_deleted);
+    let n_flushed_rows = segment_meta.all_time_n as usize - segment_meta.staged_n -
+      (segment_meta.all_time_n_deleted as usize - segment_meta.staged_n_deleted);
     let new_version = segment_meta.read_version + 1;
     let mut res = CompactionAssessment {
       remove_from_candidates: false,

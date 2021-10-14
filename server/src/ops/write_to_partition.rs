@@ -44,14 +44,15 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     let segment_key = if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_n_deleted {
       let new_segment_id = Uuid::new_v4().to_string();
-      partition_meta.write_segment_id = new_segment_id.clone();
-      partition_meta.segment_ids.push(new_segment_id.clone());
       let key = SegmentKey {
         table_name: segment_key.table_name.clone(),
         partition: segment_key.partition.clone(),
         segment_id: new_segment_id,
       };
       utils::create_segment_dirs(&dirs::segment_dir(dir, &key)).await?;
+      partition_meta.write_segment_id = new_segment_id.clone();
+      partition_meta.segment_ids.push(new_segment_id.clone());
+      partition_meta.overwrite(dir, &segment_key.partition_key()).await?;
       key
     } else {
       segment_key
@@ -65,7 +66,7 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     let n_rows = self.req.rows.len();
     segment_meta.all_time_n += n_rows as u64;
-    segment_meta.currently_staged_n += n_rows;
+    segment_meta.staged_n += n_rows;
     segment_meta.overwrite(dir, &segment_key).await?;
 
     server.add_flush_candidate(segment_key).await;

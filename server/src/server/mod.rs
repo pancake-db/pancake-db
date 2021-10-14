@@ -17,6 +17,7 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::traits::ServerOp;
 use crate::ops::flush::FlushOp;
 use crate::errors::ServerErrorKind;
+use crate::ops::drop_table::DropTableOp;
 
 mod create_table;
 mod delete;
@@ -225,4 +226,19 @@ impl Server {
   pub async fn add_flush_candidate(&self, key: SegmentKey) {
     self.staged.add_flush_candidate(key).await;
   }
+
+  // pub async fn list_tables(&self) -> Vec<String> {
+  //
+  // }
+  //
+  // pub async fn recover(&self) {
+  //   log::info!("recovering to clean state");
+  //   for table_name in self.list_tables().await {
+  //     let schema_lock = self.schema_cache.get_lock(&table_name).await?;
+  //     let mut schema_guard = schema_lock.write().await;
+  //     let maybe_schema = &mut *schema_guard;
+  //
+  //     DropTableOp::recover(maybe_schema)
+  //   }
+  // }
 }

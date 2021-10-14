@@ -37,7 +37,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     } = locks;
     let segment_meta = definitely_segment_guard.as_mut().unwrap();
 
-    let n_rows = segment_meta.currently_staged_n;
+    let n_rows = segment_meta.staged_n;
     log::debug!(
       "flushing {} rows for segment {}",
       n_rows,
@@ -71,8 +71,8 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     }
 
     segment_meta.last_flush_at = Utc::now();
-    segment_meta.currently_staged_n = 0;
-    segment_meta.current_staged_n_deleted = 0;
+    segment_meta.staged_n = 0;
+    segment_meta.staged_n_deleted = 0;
     segment_meta.overwrite(&dir, &segment_key).await?;
 
     log::debug!("truncating staged rows path {:?}", staged_rows_path);

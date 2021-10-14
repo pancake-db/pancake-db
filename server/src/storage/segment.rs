@@ -19,13 +19,14 @@ impl MetadataKey for SegmentKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentMetadata {
   pub all_time_n: u64, // only increases, includes deleted
-  pub currently_staged_n: usize, // includes deleted
+  pub staged_n: usize, // includes deleted
   pub all_time_n_deleted: u64, // only increases
-  pub current_staged_n_deleted: usize,
+  pub staged_n_deleted: usize,
   pub write_versions: Vec<u64>,
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
+  pub flushing: bool, // used for recovery purposes
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -42,8 +43,8 @@ impl Default for SegmentMetadata {
     SegmentMetadata {
       all_time_n: 0,
       all_time_n_deleted: 0,
-      currently_staged_n: 0,
-      current_staged_n_deleted: 0,
+      staged_n: 0,
+      staged_n_deleted: 0,
       read_version: 0,
       write_versions: vec![0],
       read_version_since: Utc::now(),
