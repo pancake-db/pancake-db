@@ -10,6 +10,10 @@ pub fn table_dir(dir: &Path, table_name: &str) -> PathBuf {
   dir.join(table_subdir(table_name))
 }
 
+pub fn table_data_dir(dir: &Path, table_name: &str) -> PathBuf {
+  table_dir(dir, table_name).join("data")
+}
+
 pub fn flush_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
   version_dir(dir, compaction_key).join(format!("f_{}", col_name))
 }
@@ -26,7 +30,7 @@ pub fn partition_subdir(partition: &NormalizedPartition) -> PathBuf {
 }
 
 pub fn partition_dir(dir: &Path, table_partition: &PartitionKey) -> PathBuf {
-  table_dir(dir, &table_partition.table_name).join(
+  table_data_dir(dir, &table_partition.table_name).join(
     partition_subdir(&table_partition.partition)
   )
 }

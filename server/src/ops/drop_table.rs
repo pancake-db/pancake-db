@@ -3,11 +3,12 @@ use pancake_db_idl::ddl::{DropTableRequest, DropTableResponse};
 use tokio::fs;
 
 use crate::dirs;
-use crate::errors::ServerResult;
+use crate::errors::{ServerResult, ServerError};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
+use crate::storage::Metadata;
 
 pub struct DropTableOp {
   pub req: DropTableRequest,
@@ -27,6 +28,7 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
     locks: TableWriteLocks
   ) -> ServerResult<Self::Response> where TableWriteLocks: 'async_trait {
     let opts = &server.opts;
+    let dir = &opts.dir;
     let table_name = &self.req.table_name;
     utils::validate_entity_name_for_write("table name", table_name)?;
     let TableWriteLocks {
@@ -34,10 +36,17 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
     } = locks;
     let maybe_table = &mut *maybe_table_guard;
 
+    if maybe_table.is_none() {
+      return Err(ServerError::does_not_exist("table", table_name));
+    }
+
     log::info!("dropping table: {}", table_name);
 
-    // TODO make this recoverable by adding drop flag, deleting non-
-    // drop files in directory, and then the whole directory
+    // first mark table as dropped so we can ensure recovery
+    let table_meta = maybe_table.as_mut().unwrap();
+    table_meta.dropped = true;
+    table_meta.overwrite(dir, table_name).await?;
+
     *maybe_table = None;
     server.partition_metadata_cache.prune(|key| &key.table_name == table_name)
       .await;
@@ -45,6 +54,9 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
       .await;
     // don't really need to prune compaction metadata because nothing will try to use it
     // without the segment metadata
+    // we need to delete data directory first, or else we might delete the `dropped`
+    // flag in the metadata, crash, and leave all the data on disk, unable to resume
+    fs::remove_dir_all(dirs::table_data_dir(&opts.dir, table_name)).await?;
     fs::remove_dir_all(dirs::table_dir(&opts.dir, table_name)).await?;
 
     Ok(DropTableResponse {..Default::default()})

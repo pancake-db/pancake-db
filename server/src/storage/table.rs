@@ -17,11 +17,13 @@ type TableKey = String;
 #[derive(Serialize, Deserialize)]
 struct TableMetadataSerde {
   pub schema_string: String,
+  pub dropped: bool,
 }
 
 #[derive(Clone)]
 pub struct TableMetadata {
   pub schema: Schema,
+  pub dropped: bool,
 }
 
 impl TryFrom<TableMetadata> for TableMetadataSerde {
@@ -31,6 +33,7 @@ impl TryFrom<TableMetadata> for TableMetadataSerde {
     let schema_string = json::print_to_string(&value.schema)?;
     Ok(TableMetadataSerde {
       schema_string,
+      dropped: value.dropped,
     })
   }
 }
@@ -42,6 +45,7 @@ impl TryFrom<TableMetadataSerde> for TableMetadata {
     let schema = json::parse_from_str(&value.schema_string)?;
     Ok(TableMetadata {
       schema,
+      dropped: value.dropped,
     })
   }
 }
@@ -54,6 +58,7 @@ impl TableMetadata {
   pub fn new(schema: Schema) -> Self {
     TableMetadata {
       schema,
+      dropped: false,
     }
   }
 }

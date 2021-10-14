@@ -53,6 +53,11 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
       field_maps.push(row.field_map());
     }
 
+    // before we do anything destructive, mark this segment as flushing
+    // for recovery purposes
+    segment_meta.flushing = true;
+    segment_meta.overwrite(&dir, &segment_key).await?;
+
     for version in &segment_meta.write_versions {
       let compaction_key = segment_key.compaction_key(*version);
       for col in &table_meta.schema.columns {
@@ -82,6 +87,9 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
       .truncate(true)
       .open(staged_rows_path)
       .await?;
+
+    segment_meta.flushing = false;
+    segment_meta.overwrite(&dir, &segment_key).await?;
 
     Ok(())
   }

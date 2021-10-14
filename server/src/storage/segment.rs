@@ -26,7 +26,7 @@ pub struct SegmentMetadata {
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
-  // pub flushing: bool, // used for recovery purposes
+  pub flushing: bool, // used for recovery purposes
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -49,6 +49,7 @@ impl Default for SegmentMetadata {
       write_versions: vec![0],
       read_version_since: Utc::now(),
       last_flush_at: Utc::now(),
+      flushing: false,
     }
   }
 }

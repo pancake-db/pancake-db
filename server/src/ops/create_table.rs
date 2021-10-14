@@ -136,6 +136,8 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         utils::create_if_new(dir).await?;
         let table_dir = dirs::table_dir(dir, table_name);
         utils::create_if_new(table_dir).await?;
+        let table_data_dir = dirs::table_data_dir(dir, table_name);
+        utils::create_if_new(table_data_dir).await?;
 
         let table_meta = TableMetadata::new(schema.clone());
         *maybe_table = Some(table_meta.clone());
