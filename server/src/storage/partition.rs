@@ -26,7 +26,7 @@ impl_metadata_serde_json!(PartitionMetadata);
 impl Metadata<PartitionKey> for PartitionMetadata {
   fn relative_path(key: &PartitionKey) -> PathBuf {
     dirs::relative_partition_dir(key)
-      .join("segmenting_metadata.json")
+      .join("partition_metadata.json")
   }
 }
 

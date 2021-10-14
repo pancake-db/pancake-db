@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use pancake_db_idl::schema::Schema;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::traits::ServerOpLocks;
@@ -8,15 +7,16 @@ use crate::server::Server;
 use crate::storage::segment::SegmentMetadata;
 use crate::types::SegmentKey;
 use tokio::sync::OwnedRwLockWriteGuard;
+use crate::storage::table::TableMetadata;
 
 pub struct SegmentWriteLocks {
-  pub schema: Schema,
+  pub table_meta: TableMetadata,
   pub definitely_segment_guard: OwnedRwLockWriteGuard<Option<SegmentMetadata>>,
   pub segment_key: SegmentKey,
 }
 
 pub struct SegmentReadLocks {
-  pub schema: Schema,
+  pub table_meta: TableMetadata,
   pub segment_meta: SegmentMetadata,
   pub segment_key: SegmentKey,
 }
@@ -31,15 +31,15 @@ impl ServerOpLocks for SegmentWriteLocks {
   ) -> ServerResult<Op::Response> {
     let key: SegmentKey = op.get_key()?;
     let table_name = &key.table_name;
-    let schema_lock = server.schema_cache.get_lock(table_name).await?;
-    let schema_guard = schema_lock.read().await;
-    let maybe_schema = schema_guard.clone();
-    if maybe_schema.is_none() {
-      return Err(ServerError::does_not_exist("schema", table_name));
+    let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
+    let table_guard = table_lock.read().await;
+    let maybe_table = table_guard.clone();
+    if maybe_table.is_none() {
+      return Err(ServerError::does_not_exist("table", table_name));
     }
 
-    let schema = maybe_schema.unwrap();
-    key.partition.check_against_schema(&schema)?;
+    let table_meta = maybe_table.unwrap();
+    key.partition.check_against_schema(&table_meta.schema)?;
 
     let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
     let mut segment_guard = segment_meta_lock.write_owned().await;
@@ -49,7 +49,7 @@ impl ServerOpLocks for SegmentWriteLocks {
     }
 
     let locks = SegmentWriteLocks {
-      schema,
+      table_meta,
       definitely_segment_guard: segment_guard,
       segment_key: key,
     };
@@ -68,15 +68,15 @@ impl ServerOpLocks for SegmentReadLocks {
   ) -> ServerResult<Op::Response> {
     let key: SegmentKey = op.get_key()?;
     let table_name = &key.table_name;
-    let schema_lock = server.schema_cache.get_lock(table_name).await?;
-    let schema_guard = schema_lock.read().await;
-    let maybe_schema = schema_guard.clone();
-    if maybe_schema.is_none() {
-      return Err(ServerError::does_not_exist("schema", table_name));
+    let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
+    let table_guard = table_lock.read().await;
+    let maybe_table = table_guard.clone();
+    if maybe_table.is_none() {
+      return Err(ServerError::does_not_exist("table", table_name));
     }
 
-    let schema = maybe_schema.unwrap();
-    key.partition.check_against_schema(&schema)?;
+    let table_meta = maybe_table.unwrap();
+    key.partition.check_against_schema(&table_meta.schema)?;
 
     let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
     let segment_guard = segment_meta_lock.read().await;
@@ -88,7 +88,7 @@ impl ServerOpLocks for SegmentReadLocks {
 
     let segment_meta = maybe_segment_meta.unwrap();
     let locks = SegmentReadLocks {
-      schema,
+      table_meta,
       segment_meta,
       segment_key: key,
     };

@@ -235,7 +235,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
   // Return whether to remove this segment key from the set of compaction candidates
   async fn execute_with_locks(&self, server: &Server, locks: TableReadLocks) -> ServerResult<Self::Response> {
     let TableReadLocks {
-      schema
+      table_meta,
     } = locks;
     let opts = &server.opts;
 
@@ -255,7 +255,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
     if assessment.do_compaction {
       // important that segment meta is not locked during compaction
       // otherwise writes would be blocked
-      self.compact(server, &schema, &assessment).await?;
+      self.compact(server, &table_meta.schema, &assessment).await?;
 
       let mut segment_guard = segment_lock.write().await;
       let maybe_segment_meta = &mut *segment_guard;

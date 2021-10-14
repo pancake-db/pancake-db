@@ -26,7 +26,7 @@ pub struct SegmentMetadata {
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
-  pub flushing: bool, // used for recovery purposes
+  // pub flushing: bool, // used for recovery purposes
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -34,7 +34,7 @@ impl_metadata_serde_json!(SegmentMetadata);
 impl Metadata<SegmentKey> for SegmentMetadata {
   fn relative_path(key: &SegmentKey) -> PathBuf {
     dirs::relative_segment_dir(key)
-      .join("flush_metadata.json")
+      .join("segment_metadata.json")
   }
 }
 

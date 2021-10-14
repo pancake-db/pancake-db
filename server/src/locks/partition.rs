@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use pancake_db_idl::schema::Schema;
+use tokio::sync::OwnedRwLockWriteGuard;
 use uuid::Uuid;
 
 use crate::{dirs, utils};
@@ -10,11 +10,11 @@ use crate::server::Server;
 use crate::storage::Metadata;
 use crate::storage::partition::PartitionMetadata;
 use crate::storage::segment::SegmentMetadata;
+use crate::storage::table::TableMetadata;
 use crate::types::{PartitionKey, SegmentKey};
-use tokio::sync::OwnedRwLockWriteGuard;
 
 pub struct PartitionWriteLocks {
-  pub schema: Schema,
+  pub table_meta: TableMetadata,
   pub definitely_partition_guard: OwnedRwLockWriteGuard<Option<PartitionMetadata>>,
   pub definitely_segment_guard: OwnedRwLockWriteGuard<Option<SegmentMetadata>>,
   pub segment_key: SegmentKey,
@@ -30,15 +30,15 @@ impl ServerOpLocks for PartitionWriteLocks {
   ) -> ServerResult<Op::Response> {
     let key: PartitionKey = op.get_key()?;
     let table_name = &key.table_name;
-    let schema_lock = server.schema_cache.get_lock(table_name).await?;
-    let schema_guard = schema_lock.read().await;
-    let maybe_schema = schema_guard.clone();
-    if maybe_schema.is_none() {
-      return Err(ServerError::does_not_exist("schema", table_name));
+    let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
+    let table_guard = table_lock.read().await;
+    let maybe_table = table_guard.clone();
+    if maybe_table.is_none() {
+      return Err(ServerError::does_not_exist("table", table_name));
     }
 
-    let schema = maybe_schema.unwrap();
-    key.partition.check_against_schema(&schema)?;
+    let table_meta = maybe_table.unwrap();
+    key.partition.check_against_schema(&table_meta.schema)?;
     let partition_lock = server.partition_metadata_cache.get_lock(&key)
       .await?;
     let mut partition_guard = partition_lock.write_owned().await;
@@ -66,7 +66,7 @@ impl ServerOpLocks for PartitionWriteLocks {
     }
 
     let locks = PartitionWriteLocks {
-      schema,
+      table_meta,
       definitely_partition_guard: partition_guard,
       definitely_segment_guard: segment_guard,
       segment_key,

@@ -12,6 +12,7 @@ use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::Metadata;
 use crate::utils;
+use crate::storage::table::TableMetadata;
 
 const MAX_NESTED_LIST_DEPTH: u32 = 3;
 const MAX_PARTITIONING_DEPTH: usize = 4;
@@ -109,26 +110,26 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
     }
 
     let TableWriteLocks {
-      mut maybe_schema_guard
+      mut maybe_table_guard
     } = locks;
-    let maybe_schema = &mut *maybe_schema_guard;
+    let maybe_table = &mut *maybe_table_guard;
 
-    let already_exists = match maybe_schema {
-      Some(existing_schema) => {
-        if !partitioning_matches(schema, existing_schema) {
+    let already_exists = match maybe_table {
+      Some(table_meta) => {
+        if !partitioning_matches(schema, &table_meta.schema) {
           return Err(ServerError::invalid("existing schema has different partitioning"))
         }
         match schema_mode {
           SchemaMode::FAIL_IF_EXISTS => Err(ServerError::invalid("table already exists")),
           SchemaMode::OK_IF_EXACT => {
-            if is_subset(existing_schema, schema) && is_subset(schema, existing_schema) {
+            if is_subset(&table_meta.schema, schema) && is_subset(schema, &table_meta.schema) {
               Ok(true)
             } else {
               Err(ServerError::invalid("existing schema columns are not identical"))
             }
           },
         }
-      },
+      }
       None => {
         log::info!("creating new table: {}", table_name);
 
@@ -136,8 +137,9 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         let table_dir = dirs::table_dir(dir, table_name);
         utils::create_if_new(table_dir).await?;
 
-        *maybe_schema = Some(schema.clone());
-        schema.overwrite(dir, table_name).await?;
+        let table_meta = TableMetadata::new(schema.clone());
+        *maybe_table = Some(table_meta.clone());
+        table_meta.overwrite(dir, table_name).await?;
         Ok(false)
       }
     }?;

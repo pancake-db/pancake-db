@@ -8,7 +8,6 @@ use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
-use pancake_db_idl::schema::Schema;
 
 pub struct DropTableOp {
   pub req: DropTableRequest,
@@ -31,15 +30,15 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
     let table_name = &self.req.table_name;
     utils::validate_entity_name_for_write("table name", table_name)?;
     let TableWriteLocks {
-      mut maybe_schema_guard
+      mut maybe_table_guard
     } = locks;
-    let maybe_schema = &mut *maybe_schema_guard;
+    let maybe_table = &mut *maybe_table_guard;
 
     log::info!("dropping table: {}", table_name);
 
-    // TODO make this recoverable by adding drop file, deleting non-
+    // TODO make this recoverable by adding drop flag, deleting non-
     // drop files in directory, and then the whole directory
-    *maybe_schema = None;
+    *maybe_table = None;
     server.partition_metadata_cache.prune(|key| &key.table_name == table_name)
       .await;
     server.segment_metadata_cache.prune(|key| &key.table_name == table_name)

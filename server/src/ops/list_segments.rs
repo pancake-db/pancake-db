@@ -1,4 +1,3 @@
-
 use async_trait::async_trait;
 use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionField, Segment};
 
@@ -27,10 +26,10 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
     let table_name = req.table_name.clone();
     utils::validate_entity_name_for_read("table name", &table_name)?;
 
-    let TableReadLocks { schema } = locks;
+    let TableReadLocks { table_meta } = locks;
 
     let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
-    let mut partitioning = schema.partitioning.clone();
+    let mut partitioning = table_meta.schema.partitioning.clone();
     partitioning.sort_by_key(|meta| meta.name.clone());
     for meta in &partitioning {
       let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();

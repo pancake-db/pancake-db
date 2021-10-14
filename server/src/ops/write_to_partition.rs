@@ -32,7 +32,7 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     let dir = &server.opts.dir;
     let PartitionWriteLocks {
-      schema,
+      table_meta,
       mut definitely_partition_guard,
       mut definitely_segment_guard,
       segment_key,
@@ -40,18 +40,18 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
     let partition_meta = definitely_partition_guard.as_mut().unwrap();
     let segment_meta = definitely_segment_guard.as_mut().unwrap();
 
-    utils::validate_rows(&schema, &self.req.rows)?;
+    utils::validate_rows(&table_meta.schema, &self.req.rows)?;
 
     let segment_key = if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_n_deleted {
       let new_segment_id = Uuid::new_v4().to_string();
       let key = SegmentKey {
         table_name: segment_key.table_name.clone(),
         partition: segment_key.partition.clone(),
-        segment_id: new_segment_id,
+        segment_id: new_segment_id.clone(),
       };
       utils::create_segment_dirs(&dirs::segment_dir(dir, &key)).await?;
       partition_meta.write_segment_id = new_segment_id.clone();
-      partition_meta.segment_ids.push(new_segment_id.clone());
+      partition_meta.segment_ids.push(new_segment_id);
       partition_meta.overwrite(dir, &segment_key.partition_key()).await?;
       key
     } else {

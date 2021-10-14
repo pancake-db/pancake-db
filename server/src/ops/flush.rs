@@ -31,7 +31,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 
     let dir = &server.opts.dir;
     let SegmentWriteLocks {
-      schema,
+      table_meta,
       mut definitely_segment_guard,
       segment_key,
     } = locks;
@@ -55,7 +55,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 
     for version in &segment_meta.write_versions {
       let compaction_key = segment_key.compaction_key(*version);
-      for col in &schema.columns {
+      for col in &table_meta.schema.columns {
         let field_values = field_maps
           .iter()
           .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or_default())

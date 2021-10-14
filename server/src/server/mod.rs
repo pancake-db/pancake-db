@@ -8,7 +8,7 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::storage::compaction::CompactionCache;
 use crate::storage::segment::SegmentMetadataCache;
-use crate::storage::schema::SchemaCache;
+use crate::storage::table::TableMetadataCache;
 use crate::storage::partition::PartitionMetadataCache;
 use crate::types::SegmentKey;
 use crate::opt::Opt;
@@ -17,7 +17,6 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::traits::ServerOp;
 use crate::ops::flush::FlushOp;
 use crate::errors::ServerErrorKind;
-use crate::ops::drop_table::DropTableOp;
 
 mod create_table;
 mod delete;
@@ -105,7 +104,7 @@ pub struct Server {
   pub opts: Opt,
   staged: Staged,
   activity: Activity,
-  pub schema_cache: SchemaCache,
+  pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
   pub segment_metadata_cache: SegmentMetadataCache,
   pub compaction_cache: CompactionCache,
@@ -196,13 +195,13 @@ impl Server {
 
   pub fn new(opts: Opt) -> Server {
     let dir = &opts.dir;
-    let schema_cache = SchemaCache::new(dir);
+    let table_metadata_cache = TableMetadataCache::new(dir);
     let partition_metadata_cache = PartitionMetadataCache::new(dir);
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
       opts,
-      schema_cache,
+      table_metadata_cache,
       partition_metadata_cache,
       segment_metadata_cache,
       compaction_cache,

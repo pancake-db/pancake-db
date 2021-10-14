@@ -117,14 +117,14 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     utils::validate_entity_name_for_read("column name", &req.column_name)?;
 
     let SegmentReadLocks {
-      schema,
+      table_meta,
       segment_meta,
       segment_key,
     } = locks;
     let col_name = req.column_name.clone();
 
     let mut valid_col = false;
-    for col_meta_item in &schema.columns {
+    for col_meta_item in &table_meta.schema.columns {
       if col_meta_item.name == col_name {
         valid_col = true;
       }
