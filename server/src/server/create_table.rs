@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 
-use async_trait::async_trait;
+
 use hyper::body::Bytes;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use warp::{Filter, Rejection, Reply};
@@ -10,9 +10,6 @@ use crate::ops::create_table::CreateTableOp;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
-
-// no one should ever need deeper nesting than this
-const MAX_NESTED_LIST_DEPTH: u32 = 3;
 
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> ServerResult<CreateTableResponse> {

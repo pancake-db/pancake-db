@@ -43,7 +43,7 @@ impl TryFrom<&Timestamp> for PartitionMinute {
 // we use our own type instead of idl partition_field.Value so we can
 // have Hash, among other things
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub enum PartitionValue {
+pub enum NormalizedPartitionValue {
   STRING(String),
   INT64(i64),
   BOOL(bool),
@@ -53,16 +53,16 @@ pub enum PartitionValue {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartitionField {
   pub name: String,
-  pub value: PartitionValue,
+  pub value: NormalizedPartitionValue,
 }
 
 impl Display for NormalizedPartitionField {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     let value_str = match &self.value {
-      PartitionValue::STRING(x) => x.clone(),
-      PartitionValue::INT64(x) => x.to_string(),
-      PartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string(),
-      PartitionValue::MINUTE(x) => x.minutes.to_string(), // TODO
+      NormalizedPartitionValue::STRING(x) => x.clone(),
+      NormalizedPartitionValue::INT64(x) => x.to_string(),
+      NormalizedPartitionValue::BOOL(x) => if *x {"true"} else {"false"}.to_string(),
+      NormalizedPartitionValue::MINUTE(x) => x.minutes.to_string(), // TODO
     };
     write!(
       f,
@@ -83,17 +83,18 @@ impl TryFrom<&PartitionField> for NormalizedPartitionField {
   type Error = ServerError;
 
   fn try_from(raw_field: &PartitionField) -> ServerResult<NormalizedPartitionField> {
-    let value_result: ServerResult<PartitionValue> = match raw_field.value.as_ref().expect("raw partition field is missing value") {
-      Value::string_val(x) => {
+    let value_result: ServerResult<NormalizedPartitionValue> = match raw_field.value.as_ref() {
+      Some(Value::string_val(x)) => {
         utils::validate_partition_string(x)?;
-        Ok(PartitionValue::STRING(x.clone()))
+        Ok(NormalizedPartitionValue::STRING(x.clone()))
       },
-      Value::int64_val(x) => Ok(PartitionValue::INT64(*x)),
-      Value::bool_val(x) => Ok(PartitionValue::BOOL(*x)),
-      Value::timestamp_val(x) => {
+      Some(Value::int64_val(x)) => Ok(NormalizedPartitionValue::INT64(*x)),
+      Some(Value::bool_val(x)) => Ok(NormalizedPartitionValue::BOOL(*x)),
+      Some(Value::timestamp_val(x)) => {
         let minute = PartitionMinute::try_from(x)?;
-        Ok(PartitionValue::MINUTE(minute))
-      }
+        Ok(NormalizedPartitionValue::MINUTE(minute))
+      },
+      None => Err(ServerError::invalid(&format!("partition field value for {} is empty", raw_field.name))),
     };
     let value = value_result?;
     Ok(NormalizedPartitionField {
@@ -122,48 +123,46 @@ impl NormalizedPartition {
     self.fields.iter().map(|f| f.to_path_buf()).collect()
   }
 
-  pub fn partial(raw_fields: &[PartitionField]) -> ServerResult<NormalizedPartition> {
-    let mut fields = Vec::new();
-    for raw_field in raw_fields {
-      if raw_field.value.is_none() {
-        return Err(ServerError::invalid("partition field has no value"));
-      }
-      fields.push(NormalizedPartitionField::try_from(raw_field)?);
-    }
-    Ok(NormalizedPartition { fields })
-  }
-
-  pub fn full(
-    schema: &Schema,
-    raw_fields: &[PartitionField]
-  ) -> ServerResult<NormalizedPartition> {
-    if schema.partitioning.len() != raw_fields.len() {
+  pub fn check_against_schema(&self, schema: &Schema) -> ServerResult<()> {
+    if schema.partitioning.len() != self.fields.len() {
       return Err(ServerError::invalid("number of partition fields does not match schema"));
     }
-
-    let mut raw_field_map = HashMap::new();
-    for raw_field in raw_fields {
-      raw_field_map.insert(&raw_field.name, raw_field);
+    let mut field_map = HashMap::new();
+    for field in &self.fields {
+      field_map.insert(&field.name, field);
     }
-    let mut fields = Vec::new();
     for meta in &schema.partitioning {
-      let maybe_raw_field = raw_field_map.get(&meta.name);
-      if maybe_raw_field.is_none() {
-        return Err(ServerError::invalid("partition field is missing"));
+      let maybe_field = field_map.get(&meta.name);
+      if maybe_field.is_none() {
+        return Err(ServerError::invalid(&format!("partition field {} is missing", meta.name)));
       }
-      let raw_field = *maybe_raw_field.unwrap();
+      let field = *maybe_field.unwrap();
       if !utils::partition_dtype_matches_field(
         &meta.dtype.unwrap(),
-        &raw_field
+        &field
       ) {
         return Err(ServerError::invalid("partition field dtype does not match schema"));
       }
-      fields.push(NormalizedPartitionField::try_from(raw_field)?);
     }
+    Ok(())
+  }
 
-    Ok(NormalizedPartition {
+  pub fn from_normalized_fields(fields: &[NormalizedPartitionField]) -> NormalizedPartition {
+    let mut fields = fields.to_vec();
+    fields.sort_by_key(|f| f.name.clone());
+    NormalizedPartition {
       fields
-    })
+    }
+  }
+
+  pub fn from_raw_fields(
+    raw_fields: &[PartitionField]
+  ) -> ServerResult<NormalizedPartition> {
+    let mut normalized_fields = Vec::new();
+    for field in raw_fields {
+      normalized_fields.push(NormalizedPartitionField::try_from(field)?);
+    }
+    Ok(NormalizedPartition::from_normalized_fields(&normalized_fields))
   }
 }
 

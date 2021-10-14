@@ -1,57 +1,35 @@
-use std::fmt::{Display, Formatter};
-
 use async_trait::async_trait;
-use pancake_db_idl::dml::PartitionField;
 use pancake_db_idl::schema::Schema;
 
 use crate::errors::{ServerError, ServerResult};
-use crate::locks::traits::{ServerOpLocks, ServerWriteOpLocks};
+use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::segment::SegmentMetadata;
-use crate::storage::staged::StagedMetadata;
-use crate::types::{NormalizedPartition, SegmentKey};
+use crate::types::SegmentKey;
+use tokio::sync::OwnedRwLockWriteGuard;
 
-#[derive(Clone, Hash)]
-pub struct SegmentLockKey {
-  pub table_name: String,
-  pub partition: Vec<PartitionField>,
-  pub segment_id: String,
-}
-
-impl Display for SegmentLockKey {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    write!(
-      f,
-      "{}/{:?} segment {}",
-      self.table_name,
-      self.partition,
-      self.segment_id
-    )
-  }
-}
-
-pub struct SegmentWriteLocks<'a> {
-  segment_key: SegmentKey,
+pub struct SegmentWriteLocks {
   pub schema: Schema,
-  pub segment_meta: &'a mut SegmentMetadata,
+  pub definitely_segment_guard: OwnedRwLockWriteGuard<Option<SegmentMetadata>>,
+  pub segment_key: SegmentKey,
 }
 
 pub struct SegmentReadLocks {
-  segment_key: SegmentKey,
   pub schema: Schema,
   pub segment_meta: SegmentMetadata,
+  pub segment_key: SegmentKey,
 }
 
 #[async_trait]
-impl<'a> ServerOpLocks for SegmentWriteLocks<'a> {
-  type Key = SegmentLockKey;
+impl ServerOpLocks for SegmentWriteLocks {
+  type Key = SegmentKey;
 
   async fn execute<Op: ServerOp<Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
-    let key: SegmentLockKey = op.get_key();
+    let key: SegmentKey = op.get_key()?;
     let table_name = &key.table_name;
     let schema_lock = server.schema_cache.get_lock(table_name).await?;
     let schema_guard = schema_lock.read().await;
@@ -61,14 +39,10 @@ impl<'a> ServerOpLocks for SegmentWriteLocks<'a> {
     }
 
     let schema = maybe_schema.unwrap();
-    let segment_key = SegmentKey {
-      table_name: table_name.to_string(),
-      partition: NormalizedPartition::full(&schema, &key.partition)?,
-      segment_id: key.segment_id.clone()
-    };
+    key.partition.check_against_schema(&schema)?;
 
-    let segment_meta_lock = server.segment_metadata_cache.get_lock(&segment_key).await?;
-    let mut segment_guard = segment_meta_lock.write().await;
+    let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
+    let mut segment_guard = segment_meta_lock.write_owned().await;
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
       *maybe_segment_meta = Some(SegmentMetadata::default());
@@ -76,8 +50,8 @@ impl<'a> ServerOpLocks for SegmentWriteLocks<'a> {
 
     let locks = SegmentWriteLocks {
       schema,
-      segment_meta: maybe_segment_meta.as_mut().unwrap(),
-      segment_key,
+      definitely_segment_guard: segment_guard,
+      segment_key: key,
     };
 
     op.execute_with_locks(server, locks).await
@@ -86,13 +60,13 @@ impl<'a> ServerOpLocks for SegmentWriteLocks<'a> {
 
 #[async_trait]
 impl ServerOpLocks for SegmentReadLocks {
-  type Key = SegmentLockKey;
+  type Key = SegmentKey;
 
   async fn execute<Op: ServerOp<Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
-    let key: SegmentLockKey = op.get_key();
+    let key: SegmentKey = op.get_key()?;
     let table_name = &key.table_name;
     let schema_lock = server.schema_cache.get_lock(table_name).await?;
     let schema_guard = schema_lock.read().await;
@@ -102,14 +76,10 @@ impl ServerOpLocks for SegmentReadLocks {
     }
 
     let schema = maybe_schema.unwrap();
-    let segment_key = SegmentKey {
-      table_name: table_name.to_string(),
-      partition: NormalizedPartition::full(&schema, &key.partition)?,
-      segment_id: key.segment_id.clone()
-    };
+    key.partition.check_against_schema(&schema)?;
 
-    let segment_meta_lock = server.segment_metadata_cache.get_lock(&segment_key).await?;
-    let mut segment_guard = segment_meta_lock.read().await;
+    let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
+    let segment_guard = segment_meta_lock.read().await;
     let maybe_segment_meta = segment_guard.clone();
 
     if maybe_segment_meta.is_none() {
@@ -120,7 +90,7 @@ impl ServerOpLocks for SegmentReadLocks {
     let locks = SegmentReadLocks {
       schema,
       segment_meta,
-      segment_key,
+      segment_key: key,
     };
 
     op.execute_with_locks(server, locks).await

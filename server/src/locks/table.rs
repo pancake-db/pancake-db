@@ -1,18 +1,18 @@
 use async_trait::async_trait;
 use pancake_db_idl::schema::Schema;
-use tokio::sync::RwLockReadGuard;
-
-use crate::errors::{ServerResult, ServerError};
-use crate::locks::traits::{ServerOpLocks, ServerWriteOpLocks};
-use crate::server::Server;
+use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
+use crate::server::Server;
+use crate::errors::{ServerResult, ServerError};
+use tokio::sync::OwnedRwLockWriteGuard;
+
 
 pub struct TableReadLocks {
   pub schema: Schema,
 }
 
-pub struct TableWriteLocks<'a> {
-  pub maybe_schema: &'a mut Option<Schema>,
+pub struct TableWriteLocks {
+  pub maybe_schema_guard: OwnedRwLockWriteGuard<Option<Schema>>,
 }
 
 #[async_trait]
@@ -23,7 +23,7 @@ impl ServerOpLocks for TableReadLocks {
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> where Self: Sized {
-    let table_name = op.get_key();
+    let table_name = op.get_key()?;
     let schema_lock = server.schema_cache.get_lock(&table_name).await?;
     let guard = schema_lock.read().await;
     let maybe_schema = guard.clone();
@@ -39,18 +39,18 @@ impl ServerOpLocks for TableReadLocks {
 }
 
 #[async_trait]
-impl<'a> ServerOpLocks for TableWriteLocks<'a> {
+impl ServerOpLocks for TableWriteLocks {
   type Key = String;
 
   async fn execute<Op: ServerOp<Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
-    let table_name = op.get_key();
+    let table_name = op.get_key()?;
     let schema_lock = server.schema_cache.get_lock(&table_name).await?;
-    let mut guard = schema_lock.write().await;
+    let guard = schema_lock.write_owned().await;
     let locks = TableWriteLocks {
-      maybe_schema: &mut *guard,
+      maybe_schema_guard: guard,
     };
     op.execute_with_locks(server, locks).await
   }

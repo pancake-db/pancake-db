@@ -5,19 +5,19 @@ use protobuf::MessageField;
 use crate::errors::ServerResult;
 use crate::locks::table::TableReadLocks;
 use crate::ops::traits::ServerOp;
-use crate::opt::Opt;
+
 use crate::server::Server;
 
 pub struct GetSchemaOp {
-  req: GetSchemaRequest,
+  pub req: GetSchemaRequest,
 }
 
 #[async_trait]
 impl ServerOp<TableReadLocks> for GetSchemaOp {
   type Response = GetSchemaResponse;
 
-  fn get_key(&self) -> String {
-    self.req.table_name.clone()
+  fn get_key(&self) -> ServerResult<String> {
+    Ok(self.req.table_name.clone())
   }
 
   async fn execute_with_locks(&self, _server: &Server, locks: TableReadLocks) -> ServerResult<GetSchemaResponse> {

@@ -56,7 +56,7 @@ impl Opt {
   pub fn validate(&self) {
     let dir_maybe_str = self.dir
       .canonicalize()
-      .expect("unable to canonicalize dir");
+      .expect("unable to canonicalize dir - make sure it exists");
     let dir_str = dir_maybe_str
       .to_str()
       .expect("dir was not a valid string");

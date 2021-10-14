@@ -7,7 +7,7 @@ use crate::errors::{CoreResult, CoreError};
 use crate::primitives::{Atom, Primitive};
 use super::{NULL_BYTE, ESCAPE_BYTE};
 
-pub trait Encoder {
+pub trait Encoder: Send + Sync {
   fn encode(&self, values: &[FieldValue]) -> CoreResult<Vec<u8>>;
 }
 

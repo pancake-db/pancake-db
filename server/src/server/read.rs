@@ -2,22 +2,22 @@ use std::convert::Infallible;
 
 use hyper::body::Bytes;
 use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
-use pancake_db_idl::schema::{ColumnMeta};
+use pancake_db_idl::schema::ColumnMeta;
 use warp::{Filter, Rejection, Reply};
+use warp::http::Response;
 
 use pancake_db_core::compression;
 use pancake_db_core::encoding;
-use crate::errors::ServerResult;
 
 use crate::dirs;
-use crate::types::{SegmentKey, CompactionKey};
+use crate::errors::ServerResult;
+use crate::ops::list_segments::ListSegmentsOp;
+use crate::ops::read_segment_column::ReadSegmentColumnOp;
+use crate::ops::traits::ServerOp;
+use crate::types::SegmentKey;
 use crate::utils;
 
 use super::Server;
-use warp::http::Response;
-use crate::ops::list_segments::ListSegmentsOp;
-use crate::ops::traits::ServerOp;
-use crate::ops::read_segment_column::ReadSegmentColumnOp;
 
 impl Server {
   pub async fn read_compact_col(
@@ -126,10 +126,6 @@ impl Server {
 
   async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
     ReadSegmentColumnOp { req }.execute(&self).await
-  }
-
-  async fn has_uncompressed_data(&self, compaction_key: &CompactionKey, column_name: &str) -> ServerResult<bool> {
-    Ok(utils::file_exists(dirs::flush_col_file(&self.opts.dir, compaction_key, column_name)).await?)
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {

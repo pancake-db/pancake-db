@@ -1,7 +1,7 @@
 use pancake_db_idl::dml::{ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 use crate::ops::traits::ServerOp;
-use crate::locks::segment::{SegmentReadLocks, SegmentLockKey};
-use crate::locks::traits::ServerOpLocks;
+use crate::locks::segment::SegmentReadLocks;
+
 use crate::server::Server;
 use crate::errors::{ServerResult, ServerError};
 use crate::utils;
@@ -9,6 +9,7 @@ use crate::dirs;
 use std::fmt::{Display, Formatter};
 use std::convert::TryFrom;
 use async_trait::async_trait;
+use crate::types::{NormalizedPartition, SegmentKey};
 
 #[derive(Clone, Debug)]
 enum FileType {
@@ -93,19 +94,20 @@ impl TryFrom<String> for SegmentColumnContinuation {
 }
 
 pub struct ReadSegmentColumnOp {
-  req: ReadSegmentColumnRequest,
+  pub req: ReadSegmentColumnRequest,
 }
 
 #[async_trait]
 impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
   type Response = ReadSegmentColumnResponse;
 
-  fn get_key(&self) -> SegmentLockKey {
-    SegmentLockKey {
+  fn get_key(&self) -> ServerResult<SegmentKey> {
+    let partition = NormalizedPartition::from_raw_fields(&self.req.partition)?;
+    Ok(SegmentKey {
       table_name: self.req.table_name.clone(),
-      partition: self.req.partition.clone(),
+      partition,
       segment_id: self.req.segment_id.clone(),
-    }
+    })
   }
 
   async fn execute_with_locks(&self, server: &Server, locks: SegmentReadLocks) -> ServerResult<ReadSegmentColumnResponse> {
@@ -173,7 +175,12 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
         ).await?;
 
         let next_token = if compressed_data.len() < opts.read_page_byte_size {
-          if self.has_uncompressed_data(&compaction_key, &col_name).await? {
+          let has_uncompressed_data = utils::file_exists(dirs::flush_col_file(
+            &opts.dir,
+            &compaction_key,
+            &col_name
+          )).await?;
+          if has_uncompressed_data {
             SegmentColumnContinuation {
               version: continuation.version,
               file_type: FileType::Flush,

@@ -11,15 +11,15 @@ use crate::types::{NormalizedPartition, PartitionKey};
 use crate::utils;
 
 pub struct ListSegmentsOp {
-  req: ListSegmentsRequest,
+  pub req: ListSegmentsRequest,
 }
 
 #[async_trait]
 impl ServerOp<TableReadLocks> for ListSegmentsOp {
   type Response = ListSegmentsResponse;
 
-  fn get_key(&self) -> String {
-    self.req.table_name.clone()
+  fn get_key(&self) -> ServerResult<String> {
+    Ok(self.req.table_name.clone())
   }
 
   async fn execute_with_locks(&self, server: &Server, locks: TableReadLocks) -> ServerResult<ListSegmentsResponse> {
@@ -30,14 +30,16 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
     let TableReadLocks { schema } = locks;
 
     let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
-    for meta in &schema.partitioning {
+    let mut partitioning = schema.partitioning.clone();
+    partitioning.sort_by_key(|meta| meta.name.clone());
+    for meta in &partitioning {
       let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();
       for partition in &partitions {
         let subdir = dirs::partition_dir(
           &server.opts.dir,
           &PartitionKey {
             table_name: table_name.clone(),
-            partition: NormalizedPartition::partial(partition)?
+            partition: NormalizedPartition::from_raw_fields(partition)?
           }
         );
         let subpartitions = utils::list_subpartitions(&subdir, meta)
@@ -56,10 +58,10 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
 
     let mut segments = Vec::new();
     for partition in &partitions {
-      let normalized_partition = NormalizedPartition::partial(partition)?;
+      let normalized_partition = NormalizedPartition::from_raw_fields(partition)?;
       let partition_key = PartitionKey {
         table_name: table_name.clone(),
-        partition: normalized_partition,
+        partition: normalized_partition.clone(),
       };
 
       let partition_meta_lock = server.partition_metadata_cache
@@ -73,7 +75,7 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
         continue;
       }
 
-      let partition_meta = maybe_partition_meta.unwrap();
+      let partition_meta = maybe_partition_meta.as_ref().unwrap();
       for segment_id in &partition_meta.segment_ids {
         let count = if req.include_counts {
           let segment_key = partition_key.segment_key(segment_id.clone());
@@ -81,7 +83,8 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
             .get_lock(&segment_key)
             .await?;
           let segment_guard = segment_lock.read().await;
-          segment_guard.map(|meta| (meta.all_time_n - meta.all_time_n_deleted) as u32).unwrap_or(0)
+          let maybe_segment_meta = segment_guard.clone();
+          maybe_segment_meta.map(|meta| (meta.all_time_n - meta.all_time_n_deleted) as u32).unwrap_or(0)
         } else {
           0_u32
         };

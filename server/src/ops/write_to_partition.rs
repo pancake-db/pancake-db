@@ -1,43 +1,44 @@
 use async_trait::async_trait;
 use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
+use uuid::Uuid;
 
 use crate::dirs;
 use crate::errors::ServerResult;
-use crate::locks::partition::{PartitionWriteLocks, PartitionLockKey, PartitionReadLocks};
-use crate::locks::segment::SegmentLockKey;
+use crate::locks::partition::PartitionWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::Metadata;
+use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils;
-use uuid::Uuid;
-use tokio::fs;
-use crate::types::SegmentKey;
 
 pub struct WriteToPartitionOp {
-  req: WriteToPartitionRequest,
+  pub req: WriteToPartitionRequest,
 }
 
 #[async_trait]
-impl<'a> ServerOp<PartitionWriteLocks<'a>> for WriteToPartitionOp {
+impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
   type Response = WriteToPartitionResponse;
 
-  fn get_key(&self) -> PartitionLockKey {
-    PartitionLockKey {
+  fn get_key(&self) -> ServerResult<PartitionKey> {
+    let partition = NormalizedPartition::from_raw_fields(&self.req.partition)?;
+    Ok(PartitionKey {
       table_name: self.req.table_name.clone(),
-      partition: self.req.partition.clone(),
-    }
+      partition,
+    })
   }
 
-  async fn execute_with_locks(&self, server: &Server, locks: PartitionWriteLocks<'a>) -> ServerResult<WriteToPartitionResponse> {
+  async fn execute_with_locks(&self, server: &Server, locks: PartitionWriteLocks) -> ServerResult<WriteToPartitionResponse> {
     utils::validate_entity_name_for_read("table name", &self.req.table_name)?;
 
     let dir = &server.opts.dir;
     let PartitionWriteLocks {
       schema,
-      partition_meta,
-      segment_meta,
+      mut definitely_partition_guard,
+      mut definitely_segment_guard,
       segment_key,
     } = locks;
+    let partition_meta = definitely_partition_guard.as_mut().unwrap();
+    let segment_meta = definitely_segment_guard.as_mut().unwrap();
 
     utils::validate_rows(&schema, &self.req.rows)?;
 
@@ -50,7 +51,7 @@ impl<'a> ServerOp<PartitionWriteLocks<'a>> for WriteToPartitionOp {
         partition: segment_key.partition.clone(),
         segment_id: new_segment_id,
       };
-      fs::create_dir(dirs::segment_dir(dir, &key)).await?;
+      utils::create_segment_dirs(&dirs::segment_dir(dir, &key)).await?;
       key
     } else {
       segment_key
@@ -67,11 +68,7 @@ impl<'a> ServerOp<PartitionWriteLocks<'a>> for WriteToPartitionOp {
     segment_meta.currently_staged_n += n_rows;
     segment_meta.overwrite(dir, &segment_key).await?;
 
-    server.add_flush_candidate(SegmentLockKey {
-      table_name: self.req.table_name.clone(),
-      partition: self.req.partition.clone(),
-      segment_id: segment_key.segment_id.clone(),
-    }).await;
+    server.add_flush_candidate(segment_key).await;
 
     Ok(WriteToPartitionResponse {..Default::default()})
   }

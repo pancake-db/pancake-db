@@ -5,14 +5,14 @@ use crate::compression::{Codec, ValueCodec};
 use crate::errors::CoreResult;
 use std::fmt::Debug;
 
-pub trait Atom: 'static + Copy + Debug + Default {
+pub trait Atom: 'static + Copy + Debug + Default + Send + Sync {
   const BYTE_SIZE: usize;
 
   fn to_bytes(&self) -> Vec<u8>;
   fn try_from_bytes(bytes: &[u8]) -> CoreResult<Self> where Self: Sized;
 }
 
-pub trait Primitive: 'static + Default {
+pub trait Primitive: 'static + Default + Send + Sync {
   type A: Atom;
 
   const DTYPE: DataType;

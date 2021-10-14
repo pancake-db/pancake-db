@@ -10,7 +10,7 @@ use crate::utils;
 use super::{NULL_BYTE, COUNT_BYTE};
 use crate::rep_levels::RepLevelsAndAtoms;
 
-pub trait Decodable<P: Primitive> {
+pub trait Decodable<P: Primitive>: Send + Sync {
   fn handle_atoms(atoms: Vec<P::A>, depth: u8) -> CoreResult<Self> where Self: Sized;
   fn handle_null() -> Self where Self: Sized;
   fn combine(outputs: Vec<Self>, depth: u8) -> Self where Self: Sized;

@@ -8,14 +8,14 @@ use crate::primitives::Primitive;
 
 use crate::rep_levels::AtomNester;
 
-pub trait Codec {
+pub trait Codec: Send + Sync {
   type P: Primitive;
 
   fn compress_atoms(&self, atoms: &[<<Self as Codec>::P as Primitive>::A]) -> CoreResult<Vec<u8>>;
   fn decompress_atoms(&self, bytes: &[u8]) -> CoreResult<Vec<<<Self as Codec>::P as Primitive>::A>>;
 }
 
-pub trait ValueCodec {
+pub trait ValueCodec: Send + Sync {
   fn compress(&self, values: &[FieldValue], nested_list_depth: u8) -> CoreResult<Vec<u8>>;
 
   fn decompress_rep_levels(&self, bytes: Vec<u8>) -> CoreResult<RepLevelsAndBytes>;

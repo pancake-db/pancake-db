@@ -2,18 +2,18 @@ use std::convert::Infallible;
 
 use hyper::body::Bytes;
 use pancake_db_idl::ddl::{DropTableRequest, DropTableResponse};
-use pancake_db_idl::schema::Schema;
-use tokio::fs;
+
+
 use warp::{Filter, Rejection, Reply};
 
-use crate::dirs;
-use crate::errors::{ServerResult, ServerError};
+
+use crate::errors::{ServerResult};
 use crate::server::Server;
-use crate::storage::Metadata;
+
 use crate::utils;
 
 impl Server {
-  pub async fn drop_table(&self, req: DropTableRequest) -> ServerResult<DropTableResponse> {
+  pub async fn drop_table(&self, _req: DropTableRequest) -> ServerResult<DropTableResponse> {
     // // clear schema cache and keep it locked until we finish up here
     // let mut schema_mux_guard = self.schema_cache.data.write().await;
     // let schema_map = &mut *schema_mux_guard;

@@ -27,6 +27,7 @@ use warp::Reply;
 
 use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
 use crate::errors::{ServerError, ServerResult};
+use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -129,12 +130,13 @@ fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> 
   }
 }
 
-pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &PartitionField) -> bool {
+pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &NormalizedPartitionField) -> bool {
+  let value = field.value.clone();
   match dtype {
-    PartitionDataType::STRING => field.has_string_val(),
-    PartitionDataType::INT64 => field.has_int64_val(),
-    PartitionDataType::BOOL => field.has_bool_val(),
-    PartitionDataType::TIMESTAMP_MINUTE => field.has_timestamp_val(),
+    PartitionDataType::STRING => matches!(value, NormalizedPartitionValue::STRING(_)),
+    PartitionDataType::INT64 => matches!(value, NormalizedPartitionValue::INT64(_)),
+    PartitionDataType::BOOL => matches!(value, NormalizedPartitionValue::BOOL(_)),
+    PartitionDataType::TIMESTAMP_MINUTE => matches!(value, NormalizedPartitionValue::MINUTE(_)),
   }
 }
 
@@ -488,4 +490,10 @@ pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
     i += len;
   }
   Ok(res)
+}
+
+pub async fn create_segment_dirs(segment_dir: &Path) -> io::Result<()> {
+  fs::create_dir(segment_dir).await?;
+  fs::create_dir(segment_dir.join("v0")).await?;
+  Ok(())
 }

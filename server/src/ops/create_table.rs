@@ -14,6 +14,7 @@ use crate::storage::Metadata;
 use crate::utils;
 
 const MAX_NESTED_LIST_DEPTH: u32 = 3;
+const MAX_PARTITIONING_DEPTH: usize = 4;
 
 fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {
   if schema0.partitioning.len() != schema1.partitioning.len() {
@@ -57,18 +58,22 @@ fn is_subset(sub_schema: &Schema, schema: &Schema) -> bool {
 }
 
 pub struct CreateTableOp {
-  req: CreateTableRequest,
+  pub req: CreateTableRequest,
 }
 
 #[async_trait]
-impl<'a> ServerOp<TableWriteLocks<'a>> for CreateTableOp {
+impl ServerOp<TableWriteLocks> for CreateTableOp {
   type Response = CreateTableResponse;
 
-  fn get_key(&self) -> String {
-    self.req.table_name.clone()
+  fn get_key(&self) -> ServerResult<String> {
+    Ok(self.req.table_name.clone())
   }
 
-  async fn execute_with_locks(&self, server: &Server, locks: TableWriteLocks<'a>) -> ServerResult<CreateTableResponse> {
+  async fn execute_with_locks(
+    &self,
+    server: &Server,
+    locks: TableWriteLocks,
+  ) -> ServerResult<CreateTableResponse> {
     let req = &self.req;
     let table_name = &req.table_name;
     let dir = &server.opts.dir;
@@ -81,6 +86,13 @@ impl<'a> ServerOp<TableWriteLocks<'a>> for CreateTableOp {
     }?.as_ref();
 
     utils::validate_entity_name_for_write("table name", &req.table_name)?;
+    if schema.partitioning.len() > MAX_PARTITIONING_DEPTH {
+      return Err(ServerError::invalid(&format!(
+        "number of partition fields may not exceed {} but was {}",
+        MAX_PARTITIONING_DEPTH,
+        schema.partitioning.len(),
+      )))
+    }
     for meta in &schema.partitioning {
       utils::validate_entity_name_for_write("partition name", &meta.name)?;
     }
@@ -96,7 +108,10 @@ impl<'a> ServerOp<TableWriteLocks<'a>> for CreateTableOp {
       }
     }
 
-    let TableWriteLocks { maybe_schema } = locks;
+    let TableWriteLocks {
+      mut maybe_schema_guard
+    } = locks;
+    let maybe_schema = &mut *maybe_schema_guard;
 
     let already_exists = match maybe_schema {
       Some(existing_schema) => {

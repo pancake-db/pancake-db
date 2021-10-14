@@ -1,24 +1,24 @@
-use crate::locks::segment::SegmentLockKey;
-use async_trait::async_trait;
-use crate::ops::traits::{ServerOp, ServerWriteOp};
-use crate::server::Server;
-use crate::errors::{ServerResult, ServerError};
-use crate::locks::table::TableReadLocks;
-use crate::locks::traits::ServerOpLocks;
-use crate::types::SegmentKey;
-use chrono::{Utc, Duration};
-use pancake_db_core::compression;
-use tokio::fs;
-use crate::dirs;
-use std::path::Path;
-use crate::storage::Metadata;
-use pancake_db_idl::schema::{Schema, ColumnMeta};
-use crate::opt::Opt;
-use crate::utils;
-use crate::storage::segment::SegmentMetadata;
 use std::collections::HashMap;
-use crate::storage::compaction::Compaction;
+use std::path::Path;
+
+use async_trait::async_trait;
+use chrono::{Duration, Utc};
+use pancake_db_idl::schema::{ColumnMeta, Schema};
+use tokio::fs;
+
+use pancake_db_core::compression;
 use pancake_db_core::compression::ValueCodec;
+
+use crate::dirs;
+use crate::errors::{ServerError, ServerResult};
+use crate::locks::table::TableReadLocks;
+use crate::ops::traits::ServerOp;
+use crate::server::Server;
+use crate::storage::compaction::Compaction;
+use crate::storage::Metadata;
+use crate::storage::segment::SegmentMetadata;
+use crate::types::SegmentKey;
+use crate::utils;
 
 struct CompactionAssessment {
   pub remove_from_candidates: bool,
@@ -69,9 +69,10 @@ impl CompactionOp {
 
   async fn assess_compaction<'a>(
     &self,
-    opts: &Opt,
+    server: &Server,
     segment_meta: &'a mut SegmentMetadata,
   ) -> ServerResult<CompactionAssessment> {
+    let opts = &server.opts;
     let current_time = Utc::now();
     if current_time - segment_meta.read_version_since > Duration::seconds(opts.delete_stale_compaction_seconds) {
       self.delete_old_versions(&opts.dir, segment_meta.read_version).await?;
@@ -97,9 +98,14 @@ impl CompactionOp {
       return Ok(res);
     }
 
+    // compaction meta never changes, so it's fine to drop the lock immediately
     let existing_compaction = server.compaction_cache
       .get_lock(&self.key.compaction_key(segment_meta.read_version))
-      .await;
+      .await?
+      .read()
+      .await
+      .clone()
+      .unwrap_or_default();
 
     let n_rows_has_increased = n_flushed_rows > existing_compaction.compacted_n;
     let n_rows_has_doubled = n_flushed_rows >= 2 * existing_compaction.compacted_n;
@@ -152,8 +158,9 @@ impl CompactionOp {
       assessment.n_to_compact,
     ).await?;
     let bytes = compressor.compress(&values, col.nested_list_depth as u8)?;
+    let compaction_key = self.key.compaction_key(assessment.new_version);
     utils::append_to_file(
-      &dirs::compact_col_file(&server.opts.dir, &segment_key.compaction_key(new_version), &col.name),
+      &dirs::compact_col_file(&server.opts.dir, &compaction_key, &col.name),
       bytes.as_slice(),
     ).await?;
     Ok(())
@@ -216,8 +223,8 @@ impl CompactionOp {
 impl ServerOp<TableReadLocks> for CompactionOp {
   type Response = bool;
 
-  fn get_key(&self) -> String {
-    self.key.table_name.clone()
+  fn get_key(&self) -> ServerResult<String> {
+    Ok(self.key.table_name.clone())
   }
 
   // 1. obtain write lock on segment meta, check if we need compaction
@@ -242,7 +249,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
       }
       let segment_meta = maybe_segment_meta.as_mut().unwrap();
 
-      self.assess_compaction(opts, segment_meta).await?
+      self.assess_compaction(server, segment_meta).await?
     };
 
     if assessment.do_compaction {
@@ -256,8 +263,8 @@ impl ServerOp<TableReadLocks> for CompactionOp {
         return Err(ServerError::does_not_exist("segment", &self.key.to_string()));
       }
       let segment_meta = maybe_segment_meta.as_mut().unwrap();
-      segment_meta.read_version = new_version;
-      segment_meta.write_versions = vec![new_version];
+      segment_meta.read_version = assessment.new_version;
+      segment_meta.write_versions = vec![assessment.new_version];
       segment_meta.read_version_since = Utc::now();
       segment_meta.overwrite(&opts.dir, &self.key).await?;
     }

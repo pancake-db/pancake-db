@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
@@ -81,13 +81,6 @@ impl<K, M> CacheData<K, M> where M: Metadata<K>, K: MetadataKey  {
       M::load(&self.dir, k)
     }).await
   }
-  //
-  // pub async fn get_or_err(&self, k: &K) -> ServerResult<Arc<RwLock<M>>> {
-  //   match self.get_option(k).await? {
-  //     Some(metadata) => Ok(metadata),
-  //     None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", k)))
-  //   }
-  // }
 
   pub fn new(dir: &Path) -> Self {
     CacheData {

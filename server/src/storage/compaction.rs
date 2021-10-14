@@ -38,19 +38,3 @@ impl Metadata<CompactionKey> for Compaction {
 }
 
 pub type CompactionCache = CacheData<CompactionKey, Compaction>;
-
-// impl CompactionCache {
-//   pub async fn get(&self, key: CompactionKey) -> Compaction {
-//     self.get_or_err(&key)
-//       .await
-//       .unwrap_or_default()
-//   }
-//
-//   pub async fn save(&self, key: CompactionKey, compaction: Compaction) -> ServerResult<()> {
-//     let mut mux_guard = self.data.write().await;
-//     let map = &mut *mux_guard;
-//     compaction.overwrite(&self.dir, &key).await?;
-//     map.insert(key, Some(compaction));
-//     Ok(())
-//   }
-// }

@@ -12,13 +12,11 @@ use crate::storage::schema::SchemaCache;
 use crate::storage::partition::PartitionMetadataCache;
 use crate::types::SegmentKey;
 use crate::opt::Opt;
-use crate::errors::ServerError;
-use crate::storage::staged::StagedMetadataCache;
-use crate::locks::segment::SegmentLockKey;
+
 use crate::ops::compact::CompactionOp;
 use crate::ops::traits::ServerOp;
+use crate::ops::flush::FlushOp;
 
-mod compact;
 mod create_table;
 mod delete;
 mod get_schema;
@@ -60,34 +58,29 @@ pub struct Staged {
 #[derive(Default)]
 pub struct StagedState {
   // rows: HashMap<PartitionKey, Vec<Row>>,
-  flush_candidates: HashSet<SegmentLockKey>,
+  flush_candidates: HashSet<SegmentKey>,
   compaction_candidates: HashSet<SegmentKey>,
 }
 
 impl Staged {
-  pub async fn add_flush_candidate(&self, key: SegmentLockKey) {
+  pub async fn add_flush_candidate(&self, key: SegmentKey) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     state.flush_candidates.insert(key);
   }
 
-  // pub async fn pop_rows_for_flush(
-  //   &self,
-  //   table_partition: &PartitionKey,
-  //   segment_id: &str
-  // ) -> Option<Vec<Row>> {
-  //   let mut mux_guard = self.mutex.lock().await;
-  //   let state = &mut *mux_guard;
-  //   state.compaction_candidates.insert(table_partition.segment_key(segment_id.to_string()));
-  //   state.rows.remove(table_partition)
-  // }
-
-  pub async fn pop_flush_candidates(&self) -> HashSet<SegmentLockKey> {
+  pub async fn pop_flush_candidates(&self) -> HashSet<SegmentKey> {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
     let res = state.flush_candidates.clone();
     state.flush_candidates = HashSet::new();
     res
+  }
+
+  pub async fn add_compaction_candidate(&self, segment_key: SegmentKey) {
+    let mut mux_guard = self.mutex.lock().await;
+    let state = &mut *mux_guard;
+    state.compaction_candidates.insert(segment_key);
   }
 
   pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
@@ -131,12 +124,17 @@ impl Server {
         last_t = cur_t;
         let candidates = flush_clone.staged.pop_flush_candidates().await;
         for candidate in &candidates {
-          match self.flush(candidate.to_segment_lock_key()).await {
+          let flush_result = FlushOp { segment_key: candidate.clone() }
+            .execute(&self)
+            .await;
+          match flush_result {
             Ok(()) => (),
             Err(e) => {
               log::error!("flushing {} failed: {}", candidate, e)
             },
           }
+          // now that flush is done, make sure it's a candidate for compaction
+          self.staged.add_compaction_candidate(candidate.clone()).await;
         }
 
         let is_active = self.activity.is_active().await;
@@ -218,7 +216,7 @@ impl Server {
       )
   }
 
-  pub async fn add_flush_candidate(&self, key: SegmentLockKey) {
+  pub async fn add_flush_candidate(&self, key: SegmentKey) {
     self.staged.add_flush_candidate(key).await;
   }
 }
