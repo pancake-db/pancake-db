@@ -23,6 +23,7 @@ mod delete;
 mod get_schema;
 mod read;
 mod write;
+mod recovery;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
@@ -225,19 +226,4 @@ impl Server {
   pub async fn add_flush_candidate(&self, key: SegmentKey) {
     self.staged.add_flush_candidate(key).await;
   }
-
-  // pub async fn list_tables(&self) -> Vec<String> {
-  //
-  // }
-  //
-  // pub async fn recover(&self) {
-  //   log::info!("recovering to clean state");
-  //   for table_name in self.list_tables().await {
-  //     let schema_lock = self.schema_cache.get_lock(&table_name).await?;
-  //     let mut schema_guard = schema_lock.write().await;
-  //     let maybe_schema = &mut *schema_guard;
-  //
-  //     DropTableOp::recover(maybe_schema)
-  //   }
-  // }
 }

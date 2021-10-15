@@ -33,6 +33,10 @@ async fn main() {
     .expect("unable to initialize logging");
 
   let server = Server::new(opts.clone());
+  server.recover()
+    .await
+    .expect("unable to recover server state");
+
   let backgrounds = server.init().await;
   log::info!("initialized server background processes in dir {:?}", opts.dir);
 

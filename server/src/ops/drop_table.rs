@@ -9,6 +9,8 @@ use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils;
 use crate::storage::Metadata;
+use crate::storage::table::TableMetadata;
+use std::path::Path;
 
 pub struct DropTableOp {
   pub req: DropTableRequest,
@@ -56,9 +58,31 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
     // without the segment metadata
     // we need to delete data directory first, or else we might delete the `dropped`
     // flag in the metadata, crash, and leave all the data on disk, unable to resume
-    fs::remove_dir_all(dirs::table_data_dir(&opts.dir, table_name)).await?;
-    fs::remove_dir_all(dirs::table_dir(&opts.dir, table_name)).await?;
+    Self::remove_data(dir, table_name).await?;
 
     Ok(DropTableResponse {..Default::default()})
+  }
+}
+
+impl DropTableOp {
+  async fn remove_data(dir: &Path, table_name: &str) -> ServerResult<()> {
+    fs::remove_dir_all(dirs::table_data_dir(dir, table_name)).await?;
+    fs::remove_dir_all(dirs::table_dir(dir, table_name)).await?;
+    Ok(())
+  }
+
+  pub async fn recover(
+    server: &Server,
+    table_name: &str,
+    table_meta: &TableMetadata
+  ) -> ServerResult<()> {
+    if table_meta.dropped {
+      log::debug!(
+        "identified interrupted drop for table {}; removing files",
+        table_name
+      );
+      Self::remove_data(&server.opts.dir, table_name).await?;
+    }
+    Ok(())
   }
 }

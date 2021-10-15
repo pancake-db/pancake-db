@@ -204,11 +204,11 @@ async fn main() -> ClientResult<()> {
     println!("read segment {} with {} rows (total {})", segment_id, count, total);
   }
 
-  let drop_resp = client.drop_table(&DropTableRequest {
-    table_name: TABLE_NAME.to_string(),
-    ..Default::default()
-  }).await?;
-  println!("Dropped table: {:?}", drop_resp);
+  // let drop_resp = client.drop_table(&DropTableRequest {
+  //   table_name: TABLE_NAME.to_string(),
+  //   ..Default::default()
+  // }).await?;
+  // println!("Dropped table: {:?}", drop_resp);
 
   Ok(())
 }

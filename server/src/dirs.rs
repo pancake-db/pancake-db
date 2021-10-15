@@ -1,17 +1,22 @@
 use std::path::{Path, PathBuf};
 
-use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
+use crate::types::{CompactionKey, PartitionKey, SegmentKey};
+use crate::constants::DATA_SUBDIR;
 
-pub fn table_subdir(table_name: &str) -> PathBuf {
+pub fn relative_table_dir(table_name: &str) -> PathBuf {
   PathBuf::from(table_name)
 }
 
 pub fn table_dir(dir: &Path, table_name: &str) -> PathBuf {
-  dir.join(table_subdir(table_name))
+  dir.join(relative_table_dir(table_name))
+}
+
+pub fn relative_table_data_dir(table_name: &str) -> PathBuf {
+  relative_table_dir(table_name).join(DATA_SUBDIR)
 }
 
 pub fn table_data_dir(dir: &Path, table_name: &str) -> PathBuf {
-  table_dir(dir, table_name).join("data")
+  dir.join(relative_table_data_dir(table_name))
 }
 
 pub fn flush_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
@@ -22,21 +27,12 @@ pub fn compact_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &s
   version_dir(dir, compaction_key).join(format!("c_{}", col_name))
 }
 
-pub fn partition_subdir(partition: &NormalizedPartition) -> PathBuf {
-  partition.fields
-    .iter()
-    .map(|f| f.to_path_buf())
-    .collect()
-}
-
 pub fn partition_dir(dir: &Path, table_partition: &PartitionKey) -> PathBuf {
-  table_data_dir(dir, &table_partition.table_name).join(
-    partition_subdir(&table_partition.partition)
-  )
+  dir.join(relative_partition_dir(table_partition))
 }
 
 pub fn relative_partition_dir(table_partition: &PartitionKey) -> PathBuf {
-  PathBuf::from(&table_partition.table_name)
+  relative_table_data_dir(&table_partition.table_name)
     .join(&table_partition.partition.to_path_buf())
 }
 

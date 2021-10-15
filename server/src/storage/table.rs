@@ -11,6 +11,7 @@ use crate::errors::{ServerError, ServerResult};
 use crate::storage::traits::{MetadataJson, MetadataKey};
 
 use super::traits::{CacheData, Metadata};
+use crate::constants::TABLE_METADATA_FILENAME;
 
 type TableKey = String;
 
@@ -78,8 +79,8 @@ impl MetadataJson for TableMetadata {
 
 impl Metadata<TableKey> for TableMetadata {
   fn relative_path(table_name: &TableKey) -> PathBuf {
-    dirs::table_subdir(table_name)
-      .join("table_metadata.json")
+    dirs::relative_table_dir(table_name)
+      .join(TABLE_METADATA_FILENAME)
   }
 }
 
