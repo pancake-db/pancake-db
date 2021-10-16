@@ -116,14 +116,11 @@ impl FlushOp {
     // make sure there are exactly the right number of fields in each
     // column; if there are more, trim them off
     let dir = &server.opts.dir;
-    let compaction_meta = Compaction::load(dir, compaction_key)
+    let compaction = Compaction::load(dir, compaction_key)
       .await?
       .unwrap_or_default();
-    let all_time_flushed_n = segment_meta.all_time_n - segment_meta.staged_n as u64;
-    let all_time_compacted_n = compaction_meta.compacted_n as u64 + compaction_meta.omitted_n;
-    // the number of rows we need to trim down to
-    let all_time_flush_file_only_n = (all_time_flushed_n - all_time_compacted_n) as usize;
 
+    let trim_idx = common::flush_only_n(&segment_meta, &compaction);
     for col_meta in &table_meta.schema.columns {
       let flush_file = dirs::flush_col_file(dir, compaction_key, &col_meta.name);
       let bytes = fs::read(&flush_file).await?;
@@ -131,7 +128,7 @@ impl FlushOp {
         col_meta.dtype.enum_value_or_default(),
         col_meta.nested_list_depth as u8,
         &bytes,
-        all_time_flush_file_only_n,
+        trim_idx,
       )?;
 
       if trim_byte_idx != bytes.len() {

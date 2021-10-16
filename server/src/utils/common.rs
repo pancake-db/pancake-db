@@ -28,6 +28,8 @@ use warp::Reply;
 use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
 use crate::errors::{ServerError, ServerResult};
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
+use crate::storage::segment::SegmentMetadata;
+use crate::storage::compaction::Compaction;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -496,4 +498,11 @@ pub async fn create_segment_dirs(segment_dir: &Path) -> io::Result<()> {
   fs::create_dir(segment_dir).await?;
   fs::create_dir(segment_dir.join("v0")).await?;
   Ok(())
+}
+
+// number of rows (deleted or otherwise) in flush files (not compaction or staged)
+pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> usize {
+  let all_time_flushed_n = segment_meta.all_time_n - segment_meta.staged_n as u64;
+  let all_time_compacted_n = compaction.compacted_n as u64 + compaction.omitted_n;
+  (all_time_flushed_n - all_time_compacted_n) as usize
 }

@@ -13,6 +13,7 @@ use crate::storage::segment::SegmentMetadata;
 use crate::ops::compact::CompactionOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
 use crate::ops::flush::FlushOp;
+use crate::storage::compaction::Compaction;
 
 struct TableInfo {
   pub name: String,
@@ -108,8 +109,24 @@ impl Server {
           // 4. Writes
           WriteToPartitionOp::recover(&self, &segment_key, segment_meta).await?;
         }
-      }
 
+        // 5. background state
+        // 5a. flush candidates
+        if segment_meta.staged_n > 0 {
+          log::debug!("adding segment {} as flush candidate", segment_key);
+          self.background.add_flush_candidate(segment_key.clone()).await;
+        }
+        // 5b. compaction candidates
+        let compaction_key = segment_key.compaction_key(segment_meta.read_version);
+        let compaction = Compaction::load(dir, &compaction_key)
+          .await?
+          .unwrap_or_default();
+        let flush_only_n = common::flush_only_n(&segment_meta, &compaction);
+        if flush_only_n > 0 {
+          log::debug!("adding segment {} as compaction candidate", segment_key);
+          self.background.add_compaction_candidate(segment_key).await;
+        }
+      }
     }
 
     Ok(())

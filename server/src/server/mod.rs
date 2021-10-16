@@ -53,18 +53,18 @@ impl Activity {
 }
 
 #[derive(Default, Clone)]
-pub struct Staged {
-  mutex: Arc<Mutex<StagedState>>
+pub struct Background {
+  mutex: Arc<Mutex<BackgroundState>>
 }
 
 #[derive(Default)]
-pub struct StagedState {
+pub struct BackgroundState {
   // rows: HashMap<PartitionKey, Vec<Row>>,
   flush_candidates: HashSet<SegmentKey>,
   compaction_candidates: HashSet<SegmentKey>,
 }
 
-impl Staged {
+impl Background {
   pub async fn add_flush_candidate(&self, key: SegmentKey) {
     let mut mux_guard = self.mutex.lock().await;
     let state = &mut *mux_guard;
@@ -103,7 +103,7 @@ impl Staged {
 #[derive(Clone)]
 pub struct Server {
   pub opts: Opt,
-  staged: Staged,
+  background: Background,
   activity: Activity,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
@@ -124,17 +124,17 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let candidates = flush_clone.staged.pop_flush_candidates().await;
+        let candidates = flush_clone.background.pop_flush_candidates().await;
         for candidate in &candidates {
           let flush_result = FlushOp { segment_key: candidate.clone() }
             .execute(&self)
             .await;
           if flush_result.is_ok() {
-            self.staged.add_compaction_candidate(candidate.clone()).await;
+            self.background.add_compaction_candidate(candidate.clone()).await;
           } else {
             let err = flush_result.unwrap_err();
             let remove = if matches!(err.kind, ServerErrorKind::Internal) {
-              self.staged.add_compaction_candidate(candidate.clone()).await;
+              self.background.add_compaction_candidate(candidate.clone()).await;
               false
             } else {
               true
@@ -161,7 +161,7 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let compaction_candidates = compact_clone.staged
+        let compaction_candidates = compact_clone.background
           .get_compaction_candidates()
           .await;
         let mut segment_keys_to_remove = Vec::new();
@@ -176,7 +176,7 @@ impl Server {
             segment_keys_to_remove.push(segment_key.clone());
           }
         }
-        compact_clone.staged
+        compact_clone.background
           .remove_compaction_candidates(&segment_keys_to_remove)
           .await;
 
@@ -206,7 +206,7 @@ impl Server {
       partition_metadata_cache,
       segment_metadata_cache,
       compaction_cache,
-      staged: Staged::default(),
+      background: Background::default(),
       activity: Activity::default(),
     }
   }
@@ -224,6 +224,6 @@ impl Server {
   }
 
   pub async fn add_flush_candidate(&self, key: SegmentKey) {
-    self.staged.add_flush_candidate(key).await;
+    self.background.add_flush_candidate(key).await;
   }
 }
