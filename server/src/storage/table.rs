@@ -6,7 +6,7 @@ use protobuf::json;
 use protobuf::json::{ParseError, PrintError};
 use serde::{Deserialize, Serialize};
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::storage::traits::{MetadataJson, MetadataKey};
 

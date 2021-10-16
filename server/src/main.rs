@@ -6,11 +6,10 @@ use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
+use crate::logging::Logger;
 use crate::opt::Opt;
 use crate::server::Server;
-use crate::logging::Logger;
 
-mod dirs;
 mod logging;
 mod opt;
 mod server;

@@ -2,12 +2,12 @@ use async_trait::async_trait;
 use pancake_db_idl::ddl::{DropTableRequest, DropTableResponse};
 use tokio::fs;
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::errors::{ServerResult, ServerError};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::utils;
+use crate::utils::common;
 use crate::storage::Metadata;
 use crate::storage::table::TableMetadata;
 use std::path::Path;
@@ -32,7 +32,7 @@ impl ServerOp<TableWriteLocks> for DropTableOp {
     let opts = &server.opts;
     let dir = &opts.dir;
     let table_name = &self.req.table_name;
-    utils::validate_entity_name_for_write("table name", table_name)?;
+    common::validate_entity_name_for_write("table name", table_name)?;
     let TableWriteLocks {
       mut maybe_table_guard
     } = locks;

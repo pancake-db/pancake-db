@@ -4,8 +4,8 @@ use crate::locks::segment::SegmentReadLocks;
 
 use crate::server::Server;
 use crate::errors::{ServerResult, ServerError};
-use crate::utils;
-use crate::dirs;
+use crate::utils::common;
+use crate::utils::dirs;
 use std::fmt::{Display, Formatter};
 use std::convert::TryFrom;
 use async_trait::async_trait;
@@ -112,9 +112,9 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
 
   async fn execute_with_locks(&self, server: &Server, locks: SegmentReadLocks) -> ServerResult<ReadSegmentColumnResponse> {
     let req = &self.req;
-    utils::validate_entity_name_for_read("table name", &req.table_name)?;
-    utils::validate_segment_id(&req.segment_id)?;
-    utils::validate_entity_name_for_read("column name", &req.column_name)?;
+    common::validate_entity_name_for_read("table name", &req.table_name)?;
+    common::validate_segment_id(&req.segment_id)?;
+    common::validate_entity_name_for_read("column name", &req.column_name)?;
 
     let SegmentReadLocks {
       table_meta,
@@ -151,7 +151,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
       .unwrap_or_default();
 
     let opts = &server.opts;
-    let row_count = (segment_meta.all_time_n - segment_meta.all_time_n_deleted) as u32;
+    let row_count = (segment_meta.all_time_n - segment_meta.all_time_deleted_n) as u32;
     let mut response = ReadSegmentColumnResponse {
       row_count,
       ..Default::default()
@@ -168,14 +168,14 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           .map(|c| c.clone() as String)
           .unwrap_or_default();
 
-        let compressed_data = utils::read_with_offset(
+        let compressed_data = common::read_with_offset(
           compressed_filename,
           continuation.offset,
           opts.read_page_byte_size,
         ).await?;
 
         let next_token = if compressed_data.len() < opts.read_page_byte_size {
-          let has_uncompressed_data = utils::file_exists(dirs::flush_col_file(
+          let has_uncompressed_data = common::file_exists(dirs::flush_col_file(
             &opts.dir,
             &compaction_key,
             &col_name
@@ -207,7 +207,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           &compaction_key,
           &col_name,
         );
-        let uncompressed_data = utils::read_with_offset(
+        let uncompressed_data = common::read_with_offset(
           uncompressed_filename,
           continuation.offset,
           opts.read_page_byte_size,

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::ServerResult;
 
 use crate::impl_metadata_serde_json;
-use crate::dirs;
+use crate::utils::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
 
@@ -20,8 +20,8 @@ impl MetadataKey for SegmentKey {
 pub struct SegmentMetadata {
   pub all_time_n: u64, // only increases, includes deleted
   pub staged_n: usize, // includes deleted
-  pub all_time_n_deleted: u64, // only increases
-  pub staged_n_deleted: usize,
+  pub all_time_deleted_n: u64, // only increases
+  pub staged_deleted_n: usize,
   pub write_versions: Vec<u64>,
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
@@ -42,9 +42,9 @@ impl Default for SegmentMetadata {
   fn default() -> SegmentMetadata {
     SegmentMetadata {
       all_time_n: 0,
-      all_time_n_deleted: 0,
+      all_time_deleted_n: 0,
       staged_n: 0,
-      staged_n_deleted: 0,
+      staged_deleted_n: 0,
       read_version: 0,
       write_versions: vec![0],
       read_version_since: Utc::now(),

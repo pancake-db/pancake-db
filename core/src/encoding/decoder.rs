@@ -11,13 +11,21 @@ use super::{NULL_BYTE, COUNT_BYTE};
 use crate::rep_levels::RepLevelsAndAtoms;
 
 pub trait Decodable<P: Primitive>: Send + Sync {
-  fn handle_atoms(atoms: Vec<P::A>, depth: u8) -> CoreResult<Self> where Self: Sized;
-  fn handle_null() -> Self where Self: Sized;
-  fn combine(outputs: Vec<Self>, depth: u8) -> Self where Self: Sized;
+  fn handle_atoms(
+    atoms: Vec<P::A>,
+    depth: u8,
+    byte_idx: usize,
+  ) -> CoreResult<Self> where Self: Sized;
+  fn handle_null(byte_idx: usize) -> Self where Self: Sized;
+  fn combine(
+    outputs: Vec<Self>,
+    depth: u8,
+    byte_idx: usize
+  ) -> Self where Self: Sized;
 }
 
 impl<P: Primitive> Decodable<P> for FieldValue {
-  fn handle_atoms(atoms: Vec<P::A>, _: u8) -> CoreResult<FieldValue> {
+  fn handle_atoms(atoms: Vec<P::A>, _: u8, _: usize) -> CoreResult<FieldValue> {
     let value = P::try_from_atoms(&atoms)?.to_value();
     Ok(FieldValue {
       value: Some(value),
@@ -25,11 +33,11 @@ impl<P: Primitive> Decodable<P> for FieldValue {
     })
   }
 
-  fn handle_null() -> FieldValue {
+  fn handle_null(_: usize) -> FieldValue {
     FieldValue::new()
   }
 
-  fn combine(outputs: Vec<FieldValue>, _: u8) -> FieldValue {
+  fn combine(outputs: Vec<FieldValue>, _: u8, _: usize) -> FieldValue {
     let repeated = RepeatedFieldValue {
       vals: outputs,
       ..Default::default()
@@ -42,7 +50,11 @@ impl<P: Primitive> Decodable<P> for FieldValue {
 }
 
 impl<P: Primitive> Decodable<P> for RepLevelsAndAtoms<P::A> {
-  fn handle_atoms(atoms: Vec<P::A>, depth: u8) -> CoreResult<RepLevelsAndAtoms<P::A>> {
+  fn handle_atoms(
+    atoms: Vec<P::A>,
+    depth: u8,
+    _: usize
+  ) -> CoreResult<RepLevelsAndAtoms<P::A>> {
     let levels = if P::IS_ATOMIC {
       vec![depth + 1]
     } else {
@@ -56,20 +68,41 @@ impl<P: Primitive> Decodable<P> for RepLevelsAndAtoms<P::A> {
     })
   }
 
-  fn handle_null() -> RepLevelsAndAtoms<P::A> {
+  fn handle_null(_: usize) -> RepLevelsAndAtoms<P::A> {
     RepLevelsAndAtoms {
       levels: vec![0],
       atoms: vec![],
     }
   }
 
-  fn combine(outputs: Vec<RepLevelsAndAtoms<P::A>>, depth: u8) -> RepLevelsAndAtoms<P::A> {
+  fn combine(
+    outputs: Vec<RepLevelsAndAtoms<P::A>>,
+    depth: u8,
+    _: usize,
+  ) -> RepLevelsAndAtoms<P::A> {
     let mut res = RepLevelsAndAtoms::<P::A>::default();
     for output in &outputs {
       res.extend(output);
     }
     res.levels.push(depth + 1);
     res
+  }
+}
+
+// used in server for "seeking" to a specific element
+pub type ByteIdx = usize;
+
+impl<P: Primitive> Decodable<P> for ByteIdx {
+  fn handle_atoms(_: Vec<P::A>, _: u8, byte_idx: usize) -> CoreResult<Self> where Self: Sized {
+    Ok(byte_idx)
+  }
+
+  fn handle_null(byte_idx: usize) -> Self where Self: Sized {
+    byte_idx
+  }
+
+  fn combine(_: Vec<Self>, _: u8, byte_idx: usize) -> Self where Self: Sized {
+    byte_idx
   }
 }
 
@@ -97,13 +130,13 @@ impl<P: Primitive, H> Decoder<H> for DecoderImpl<P, H> where H: Decodable<P> {
     while !reader.complete() && res.len() < limit {
       let b0 = reader.read_one()?;
       if b0 == NULL_BYTE {
-        res.push(H::handle_null());
+        res.push(H::handle_null(reader.get_byte_idx()));
       } else if b0 == COUNT_BYTE {
         let count_bytes = utils::try_byte_array::<4>(reader.read_n(4)?)?;
         let count = u32::from_be_bytes(count_bytes) as usize;
         if res.is_empty() {
           for _ in 0..count {
-            res.push(H::handle_null());
+            res.push(H::handle_null(reader.get_byte_idx()));
           }
         } else if res.len() != count {
           return Err(CoreError::corrupt("in-file count did not match number of decoded entries"));
@@ -141,7 +174,7 @@ impl<P: Primitive, H> DecoderImpl<P, H> where H: Decodable<P> {
         }
         atoms
       };
-      H::handle_atoms(atoms, current_depth)
+      H::handle_atoms(atoms, current_depth, reader.get_byte_idx())
     } else {
       let len = reader.unescaped_read_u16()? as usize;
       let mut outputs = Vec::with_capacity(len);
@@ -149,7 +182,7 @@ impl<P: Primitive, H> DecoderImpl<P, H> where H: Decodable<P> {
         let child = self.decode_value(reader, current_depth + 1)?;
         outputs.push(child);
       }
-      Ok(H::combine(outputs, current_depth))
+      Ok(H::combine(outputs, current_depth, reader.get_byte_idx()))
     }
   }
 }

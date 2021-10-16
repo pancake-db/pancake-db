@@ -4,7 +4,7 @@ use hyper::body::Bytes;
 use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
 use warp::{Filter, Rejection, Reply};
 
-use crate::utils;
+use crate::utils::common;
 use crate::errors::ServerResult;
 use crate::ops::traits::ServerOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
@@ -25,11 +25,11 @@ impl Server {
   }
 
   async fn write_to_partition_from_bytes(&self, body: Bytes) -> ServerResult<WriteToPartitionResponse> {
-    let req = utils::parse_pb::<WriteToPartitionRequest>(body)?;
+    let req = common::parse_pb::<WriteToPartitionRequest>(body)?;
     self.write_to_partition(req).await
   }
 
   async fn warp_write_to_partition(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.write_to_partition_from_bytes(body).await)
+    common::pancake_result_into_warp(server.write_to_partition_from_bytes(body).await)
   }
 }

@@ -6,7 +6,13 @@ use crate::ops::drop_table::DropTableOp;
 use crate::server::Server;
 use crate::storage::Metadata;
 use crate::storage::table::TableMetadata;
-use crate::utils;
+use crate::utils::common;
+use crate::types::{NormalizedPartition, PartitionKey};
+use crate::storage::partition::PartitionMetadata;
+use crate::storage::segment::SegmentMetadata;
+use crate::ops::compact::CompactionOp;
+use crate::ops::write_to_partition::WriteToPartitionOp;
+use crate::ops::flush::FlushOp;
 
 struct TableInfo {
   pub name: String,
@@ -23,7 +29,7 @@ impl Server {
       }
       let path = entry.path();
       let possible_meta_path = path.join(TABLE_METADATA_FILENAME);
-      if utils::file_exists(&possible_meta_path).await? {
+      if common::file_exists(&possible_meta_path).await? {
         for name in path
           .file_name()
           .and_then(|s| s.to_str()) {
@@ -44,23 +50,66 @@ impl Server {
 
   pub async fn recover(&self) -> ServerResult<()> {
     log::info!("recovering to clean state");
+
     for table_info in self.list_tables().await? {
-      log::debug!("recovering table {}", table_info.name);
-      // 1. Dropped tables
-      let TableInfo {
-        name: table_name,
-        meta: table_meta
-      } = table_info;
-      if table_meta.dropped {
-        DropTableOp::recover(&self, &table_name, &table_meta).await?;
+      self.recover_table(table_info).await?;
+    }
+    Ok(())
+  }
+
+  async fn recover_table(&self, table_info: TableInfo) -> ServerResult<()> {
+    log::debug!("recovering table {}", table_info.name);
+    // 1. Dropped tables
+    let TableInfo {
+      name: table_name,
+      meta: table_meta
+    } = table_info;
+
+    if table_meta.dropped {
+      DropTableOp::recover(&self, &table_name, &table_meta).await?;
+      return Ok(());
+    }
+
+    let dir = &self.opts.dir;
+    for partition in &self.list_partitions(
+      &table_name,
+      table_meta.schema.partitioning.clone(),
+      &Vec::new(),
+    ).await? {
+      let normalized = NormalizedPartition::from_raw_fields(partition)?;
+      let partition_key = PartitionKey {
+        table_name: table_name.clone(),
+        partition: normalized
+      };
+      let maybe_partition_meta = PartitionMetadata::load(dir, &partition_key)
+        .await?;
+
+      if maybe_partition_meta.is_none() {
         continue;
       }
+      let partition_meta = maybe_partition_meta.unwrap();
 
-      // 2. Compactions
+      for segment_id in &partition_meta.segment_ids {
+        let segment_key = partition_key.segment_key(segment_id.clone());
+        let mut maybe_segment_meta = SegmentMetadata::load(dir, &segment_key).await?;
 
-      // 3. Flushes
+        if maybe_segment_meta.is_none() {
+          continue;
+        }
+        let segment_meta = maybe_segment_meta.as_mut().unwrap();
 
-      // 4. Writes
+        // 2. Compactions
+        CompactionOp::recover(&self, &segment_key, segment_meta).await?;
+
+        // 3. Flushes
+        FlushOp::recover(&self, &table_meta, &segment_key, segment_meta).await?;
+
+        if segment_id == &partition_meta.write_segment_id {
+          // 4. Writes
+          WriteToPartitionOp::recover(&self, &segment_key, segment_meta).await?;
+        }
+      }
+
     }
 
     Ok(())

@@ -9,7 +9,7 @@ use crate::errors::ServerResult;
 use crate::ops::create_table::CreateTableOp;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::utils;
+use crate::utils::common;
 
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> ServerResult<CreateTableResponse> {
@@ -25,12 +25,12 @@ impl Server {
   }
 
   async fn create_table_from_bytes(&self, body: Bytes) -> ServerResult<CreateTableResponse> {
-    let req = utils::parse_pb::<CreateTableRequest>(body)?;
+    let req = common::parse_pb::<CreateTableRequest>(body)?;
     self.create_table(req).await
   }
 
   async fn create_table_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.create_table_from_bytes(body).await)
+    common::pancake_result_into_warp(server.create_table_from_bytes(body).await)
   }
 }
 

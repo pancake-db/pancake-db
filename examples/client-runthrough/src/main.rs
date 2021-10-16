@@ -121,7 +121,7 @@ async fn main() -> ClientResult<()> {
     rows,
     ..Default::default()
   };
-  for _ in 0..100 {
+  for _ in 0..1000 {
     client.write_to_partition(&write_to_partition_req).await?;
   }
   // let write_resp = client.write_to_partition(&write_to_partition_req).await?;
@@ -204,11 +204,11 @@ async fn main() -> ClientResult<()> {
     println!("read segment {} with {} rows (total {})", segment_id, count, total);
   }
 
-  // let drop_resp = client.drop_table(&DropTableRequest {
-  //   table_name: TABLE_NAME.to_string(),
-  //   ..Default::default()
-  // }).await?;
-  // println!("Dropped table: {:?}", drop_resp);
+  let drop_resp = client.drop_table(&DropTableRequest {
+    table_name: TABLE_NAME.to_string(),
+    ..Default::default()
+  }).await?;
+  println!("Dropped table: {:?}", drop_resp);
 
   Ok(())
 }

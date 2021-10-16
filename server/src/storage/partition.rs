@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 use crate::storage::traits::MetadataKey;

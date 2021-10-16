@@ -1,21 +1,21 @@
 use std::convert::Infallible;
 
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
-use pancake_db_idl::schema::ColumnMeta;
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, PartitionField, PartitionFilter};
+use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
 
 use pancake_db_core::compression;
 use pancake_db_core::encoding;
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::errors::ServerResult;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::read_segment_column::ReadSegmentColumnOp;
 use crate::ops::traits::ServerOp;
-use crate::types::SegmentKey;
-use crate::utils;
+use crate::types::{SegmentKey, PartitionKey, NormalizedPartition};
+use crate::utils::common;
 
 use super::Server;
 
@@ -30,7 +30,7 @@ impl Server {
   ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(read_version);
     let path = dirs::compact_col_file(&self.opts.dir, &compaction_key, &col.name);
-    let bytes = utils::read_or_empty(&path).await?;
+    let bytes = common::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
@@ -54,11 +54,11 @@ impl Server {
   ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(read_version);
     let path = dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name);
-    let bytes = utils::read_or_empty(&path).await?;
+    let bytes = common::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let dtype = utils::unwrap_dtype(col.dtype)?;
+      let dtype = common::unwrap_dtype(col.dtype)?;
       let decoder = encoding::new_field_value_decoder(dtype, col.nested_list_depth as u8);
       Ok(decoder.decode_limited(&bytes, limit)?)
     }
@@ -100,7 +100,7 @@ impl Server {
   }
 
   async fn list_segments_from_bytes(&self, body: Bytes) -> ServerResult<ListSegmentsResponse> {
-    let req = utils::parse_pb::<ListSegmentsRequest>(body)?;
+    let req = common::parse_pb::<ListSegmentsRequest>(body)?;
     self.list_segments(req).await
   }
 
@@ -113,7 +113,7 @@ impl Server {
   }
 
   async fn warp_list_segments(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.list_segments_from_bytes(body).await)
+    common::pancake_result_into_warp(server.list_segments_from_bytes(body).await)
   }
 
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -129,14 +129,14 @@ impl Server {
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {
-    let req = utils::parse_pb::<ReadSegmentColumnRequest>(body)?;
+    let req = common::parse_pb::<ReadSegmentColumnRequest>(body)?;
     self.read_segment_column(req).await
   }
 
   async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
     let pancake_res = server.read_segment_column_from_bytes(body).await;
     if pancake_res.is_err() {
-      return utils::pancake_result_into_warp(pancake_res);
+      return common::pancake_result_into_warp(pancake_res);
     }
 
     let resp = pancake_res.unwrap();
@@ -157,5 +157,39 @@ impl Server {
         .body(resp_bytes)
         .expect("unable to build response")
     ))
+  }
+
+  pub async fn list_partitions(
+    &self,
+    table_name: &str,
+    mut partitioning: Vec<PartitionMeta>,
+    filters: &[PartitionFilter],
+  ) -> ServerResult<Vec<Vec<PartitionField>>> {
+    let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
+    partitioning.sort_by_key(|meta| meta.name.clone());
+    for meta in &partitioning {
+      let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();
+      for partition in &partitions {
+        let subdir = dirs::partition_dir(
+          &self.opts.dir,
+          &PartitionKey {
+            table_name: table_name.to_string(),
+            partition: NormalizedPartition::from_raw_fields(partition)?
+          }
+        );
+        let subpartitions = common::list_subpartitions(&subdir, meta)
+          .await?;
+
+        for leaf in subpartitions {
+          let mut new_partition = partition.clone();
+          new_partition.push(leaf);
+          if common::satisfies_filters(&new_partition, filters)? {
+            new_partitions.push(new_partition);
+          }
+        }
+      }
+      partitions = new_partitions;
+    }
+    Ok(partitions)
   }
 }

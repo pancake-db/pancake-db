@@ -5,13 +5,13 @@ use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use pancake_db_idl::schema::Schema;
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::Metadata;
-use crate::utils;
+use crate::utils::common;
 use crate::storage::table::TableMetadata;
 
 const MAX_NESTED_LIST_DEPTH: u32 = 3;
@@ -86,7 +86,7 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
       None => Err(ServerError::invalid("missing table schema")),
     }?.as_ref();
 
-    utils::validate_entity_name_for_write("table name", &req.table_name)?;
+    common::validate_entity_name_for_write("table name", &req.table_name)?;
     if schema.partitioning.len() > MAX_PARTITIONING_DEPTH {
       return Err(ServerError::invalid(&format!(
         "number of partition fields may not exceed {} but was {}",
@@ -95,10 +95,10 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
       )))
     }
     for meta in &schema.partitioning {
-      utils::validate_entity_name_for_write("partition name", &meta.name)?;
+      common::validate_entity_name_for_write("partition name", &meta.name)?;
     }
     for meta in &schema.columns {
-      utils::validate_entity_name_for_write("column name", &meta.name)?;
+      common::validate_entity_name_for_write("column name", &meta.name)?;
       if meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
         return Err(ServerError::invalid(&format!(
           "nested_list_depth may not exceed {} but was {} for {}",
@@ -133,11 +133,11 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
       None => {
         log::info!("creating new table: {}", table_name);
 
-        utils::create_if_new(dir).await?;
+        common::create_if_new(dir).await?;
         let table_dir = dirs::table_dir(dir, table_name);
-        utils::create_if_new(table_dir).await?;
+        common::create_if_new(table_dir).await?;
         let table_data_dir = dirs::table_data_dir(dir, table_name);
-        utils::create_if_new(table_data_dir).await?;
+        common::create_if_new(table_data_dir).await?;
 
         let table_meta = TableMetadata::new(schema.clone());
         *maybe_table = Some(table_meta.clone());

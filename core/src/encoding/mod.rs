@@ -2,6 +2,8 @@ use pancake_db_idl::dml::FieldValue;
 use pancake_db_idl::dtype::DataType;
 use q_compress::TimestampNs;
 
+pub use decoder::ByteIdx;
+pub use decoder::Decodable;
 pub use decoder::Decoder;
 pub use decoder::DecoderImpl;
 pub use encoder::Encoder;
@@ -25,6 +27,10 @@ fn field_value_decoder_for<P: Primitive>(nested_list_depth: u8) -> Box<dyn Decod
   Box::new(DecoderImpl::<P, FieldValue>::new(nested_list_depth))
 }
 
+fn byte_idx_decoder_for<P: Primitive>(nested_list_depth: u8) -> Box<dyn Decoder<ByteIdx>> {
+  Box::new(DecoderImpl::<P, ByteIdx>::new(nested_list_depth))
+}
+
 pub fn new_encoder(dtype: DataType, nested_list_depth: u8) -> Box<dyn Encoder> {
   match dtype {
     DataType::INT64 => encoder_for::<i64>(nested_list_depth),
@@ -44,6 +50,17 @@ pub fn new_field_value_decoder(dtype: DataType, nested_list_depth: u8) -> Box<dy
     DataType::BYTES => field_value_decoder_for::<Vec<u8>>(nested_list_depth),
     DataType::BOOL => field_value_decoder_for::<bool>(nested_list_depth),
     DataType::TIMESTAMP_NS => field_value_decoder_for::<TimestampNs>(nested_list_depth),
+  }
+}
+
+pub fn new_byte_idx_decoder(dtype: DataType, nested_list_depth: u8) -> Box<dyn Decoder<ByteIdx>> {
+  match dtype {
+    DataType::INT64 => byte_idx_decoder_for::<i64>(nested_list_depth),
+    DataType::STRING => byte_idx_decoder_for::<String>(nested_list_depth),
+    DataType::FLOAT64 => byte_idx_decoder_for::<f64>(nested_list_depth),
+    DataType::BYTES => byte_idx_decoder_for::<Vec<u8>>(nested_list_depth),
+    DataType::BOOL => byte_idx_decoder_for::<bool>(nested_list_depth),
+    DataType::TIMESTAMP_NS => byte_idx_decoder_for::<TimestampNs>(nested_list_depth),
   }
 }
 

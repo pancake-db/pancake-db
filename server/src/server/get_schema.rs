@@ -7,7 +7,7 @@ use warp::{Filter, Rejection, Reply};
 use crate::errors::ServerResult;
 
 use crate::server::Server;
-use crate::utils;
+use crate::utils::common;
 use crate::ops::get_schema::GetSchemaOp;
 use crate::ops::traits::ServerOp;
 
@@ -25,12 +25,12 @@ impl Server {
   }
 
   async fn get_schema_from_bytes(&self, body: Bytes) -> ServerResult<GetSchemaResponse> {
-    let req = utils::parse_pb::<GetSchemaRequest>(body)?;
+    let req = common::parse_pb::<GetSchemaRequest>(body)?;
     self.get_schema(req).await
   }
 
   async fn get_schema_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    utils::pancake_result_into_warp(server.get_schema_from_bytes(body).await)
+    common::pancake_result_into_warp(server.get_schema_from_bytes(body).await)
   }
 }
 

@@ -11,7 +11,7 @@ use protobuf::well_known_types::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ServerError, ServerResult};
-use crate::utils;
+use crate::utils::common;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct PartitionMinute {
@@ -85,7 +85,7 @@ impl TryFrom<&PartitionField> for NormalizedPartitionField {
   fn try_from(raw_field: &PartitionField) -> ServerResult<NormalizedPartitionField> {
     let value_result: ServerResult<NormalizedPartitionValue> = match raw_field.value.as_ref() {
       Some(Value::string_val(x)) => {
-        utils::validate_partition_string(x)?;
+        common::validate_partition_string(x)?;
         Ok(NormalizedPartitionValue::STRING(x.clone()))
       },
       Some(Value::int64_val(x)) => Ok(NormalizedPartitionValue::INT64(*x)),
@@ -106,7 +106,7 @@ impl TryFrom<&PartitionField> for NormalizedPartitionField {
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartition {
-  pub fields: Vec<NormalizedPartitionField>
+  fields: Vec<NormalizedPartitionField>
 }
 
 impl Display for NormalizedPartition {
@@ -137,7 +137,7 @@ impl NormalizedPartition {
         return Err(ServerError::invalid(&format!("partition field {} is missing", meta.name)));
       }
       let field = *maybe_field.unwrap();
-      if !utils::partition_dtype_matches_field(
+      if !common::partition_dtype_matches_field(
         &meta.dtype.unwrap(),
         &field
       ) {

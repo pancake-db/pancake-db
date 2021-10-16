@@ -78,5 +78,9 @@ impl<'a> ByteReader<'a> {
     self.i += n;
     Ok(res)
   }
+
+  pub fn get_byte_idx(&self) -> usize {
+    self.i
+  }
 }
 

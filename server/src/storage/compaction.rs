@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::errors::ServerResult;
 use serde::{Deserialize, Serialize};
 
-use crate::dirs;
+use crate::utils::dirs;
 use crate::types::CompactionKey;
 use crate::impl_metadata_serde_json;
 
@@ -17,7 +17,8 @@ impl MetadataKey for CompactionKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
   pub compacted_n: usize,
-  pub col_codecs: HashMap<String, String>
+  pub omitted_n: u64, // all time # of rows deleted that don't show up in compaction
+  pub col_codecs: HashMap<String, String>,
 }
 
 impl_metadata_serde_json!(Compaction);
@@ -26,6 +27,7 @@ impl Default for Compaction {
   fn default() -> Compaction {
     Compaction {
       compacted_n: 0,
+      omitted_n: 0,
       col_codecs: HashMap::new(),
     }
   }

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use tokio::sync::OwnedRwLockWriteGuard;
 use uuid::Uuid;
 
-use crate::{dirs, utils};
+use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
@@ -12,6 +12,7 @@ use crate::storage::partition::PartitionMetadata;
 use crate::storage::segment::SegmentMetadata;
 use crate::storage::table::TableMetadata;
 use crate::types::{PartitionKey, SegmentKey};
+use crate::utils::common;
 
 pub struct PartitionWriteLocks {
   pub table_meta: TableMetadata,
@@ -47,7 +48,7 @@ impl ServerOpLocks for PartitionWriteLocks {
     if maybe_partition_meta.is_none() {
       let id = Uuid::new_v4().to_string();
       let partition_meta = PartitionMetadata::new(&id);
-      utils::create_if_new(&dirs::partition_dir(&server.opts.dir, &key)).await?;
+      common::create_if_new(&dirs::partition_dir(&server.opts.dir, &key)).await?;
       partition_meta.overwrite(&server.opts.dir, &key).await?;
       *maybe_partition_meta = Some(partition_meta.clone());
     };
@@ -60,7 +61,7 @@ impl ServerOpLocks for PartitionWriteLocks {
     let mut segment_guard = segment_lock.write_owned().await;
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
-      utils::create_segment_dirs(&dirs::segment_dir(&server.opts.dir, &segment_key)).await?;
+      common::create_segment_dirs(&dirs::segment_dir(&server.opts.dir, &segment_key)).await?;
       let segment_meta = SegmentMetadata::default();
       *maybe_segment_meta = Some(segment_meta);
     }
