@@ -1,15 +1,18 @@
-use pancake_db_idl::dml::{ReadSegmentColumnRequest, ReadSegmentColumnResponse};
-use crate::ops::traits::ServerOp;
-use crate::locks::segment::SegmentReadLocks;
+use std::convert::TryFrom;
+use std::fmt::{Display, Formatter};
 
+use async_trait::async_trait;
+use pancake_db_core::encoding;
+use pancake_db_idl::dml::{ReadSegmentColumnRequest, ReadSegmentColumnResponse, FieldValue};
+use tokio::fs;
+
+use crate::errors::{ServerError, ServerResult};
+use crate::locks::segment::SegmentReadLocks;
+use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::errors::{ServerResult, ServerError};
+use crate::types::{NormalizedPartition, SegmentKey};
 use crate::utils::common;
 use crate::utils::dirs;
-use std::fmt::{Display, Formatter};
-use std::convert::TryFrom;
-use async_trait::async_trait;
-use crate::types::{NormalizedPartition, SegmentKey};
 
 #[derive(Clone, Debug)]
 enum FileType {
@@ -123,16 +126,13 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     } = locks;
     let col_name = req.column_name.clone();
 
-    let mut valid_col = false;
-    for col_meta_item in &table_meta.schema.columns {
-      if col_meta_item.name == col_name {
-        valid_col = true;
-      }
-    }
-
-    if !valid_col {
+    let maybe_col_meta = table_meta.schema.columns
+      .iter()
+      .find(|&meta| meta.name == col_name);
+    if maybe_col_meta.is_none() {
       return Err(ServerError::does_not_exist("column", &col_name));
     }
+    let col_meta = maybe_col_meta.unwrap();
 
     let continuation = if req.continuation_token.is_empty() {
       SegmentColumnContinuation::new(segment_meta.read_version)
@@ -151,6 +151,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
       .unwrap_or_default();
 
     let opts = &server.opts;
+    let dir = &opts.dir;
     let row_count = (segment_meta.all_time_n - segment_meta.all_time_deleted_n) as u32;
     let mut response = ReadSegmentColumnResponse {
       row_count,
@@ -159,7 +160,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     match continuation.file_type {
       FileType::Compact => {
         let compressed_filename = dirs::compact_col_file(
-          &opts.dir,
+          &dir,
           &compaction_key,
           &col_name,
         );
@@ -176,7 +177,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
 
         let next_token = if compressed_data.len() < opts.read_page_byte_size {
           let has_uncompressed_data = common::file_exists(dirs::flush_col_file(
-            &opts.dir,
+            &dir,
             &compaction_key,
             &col_name
           )).await?;
@@ -203,27 +204,39 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
       },
       FileType::Flush => {
         let uncompressed_filename = dirs::flush_col_file(
-          &opts.dir,
+          &dir,
           &compaction_key,
           &col_name,
         );
-        let uncompressed_data = common::read_with_offset(
+        response.uncompressed_data = common::read_with_offset(
           uncompressed_filename,
           continuation.offset,
           opts.read_page_byte_size,
         ).await?;
-        let next_token = if uncompressed_data.len() < opts.read_page_byte_size {
-          "".to_string()
-        } else {
-          SegmentColumnContinuation {
-            version: continuation.version,
-            file_type: FileType::Flush,
-            offset: continuation.offset + uncompressed_data.len() as u64
-          }.to_string()
-        };
 
-        response.uncompressed_data = uncompressed_data;
-        response.continuation_token = next_token;
+        response.continuation_token = SegmentColumnContinuation {
+          version: continuation.version,
+          file_type: FileType::Flush,
+          offset: continuation.offset + response.uncompressed_data.len() as u64
+        }.to_string();
+        if response.uncompressed_data.len() < opts.read_page_byte_size {
+          // we have reached the end of flushed data
+          response.continuation_token = "".to_string();
+
+          // encode staged data on the fly and append it
+          let staged_rows_path = dirs::staged_rows_path(dir, &segment_key);
+          let staged_bytes = fs::read(&staged_rows_path).await?;
+          let staged_rows = common::staged_bytes_to_rows(&staged_bytes)?;
+          let staged_values = staged_rows.iter()
+            .map(|row| row.single_field(&col_name).value.unwrap_or_default())
+            .collect::<Vec<FieldValue>>();
+          let encoder = encoding::new_encoder(
+            col_meta.dtype.enum_value_or_default(),
+            col_meta.nested_list_depth as u8
+          );
+          let staged_bytes = encoder.encode(&staged_values)?;
+          response.uncompressed_data.extend(staged_bytes);
+        }
       }
     }
     Ok(response)
