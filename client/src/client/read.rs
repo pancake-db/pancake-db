@@ -1,67 +1,109 @@
-use hyper::{Body, Method, Request, StatusCode};
-use hyper::body::HttpBody;
+use pancake_db_idl::dml::{PartitionField, Row, ReadSegmentColumnRequest, FieldValue, Field};
+use pancake_db_core::compression;
+use pancake_db_core::encoding;
 
-use crate::errors::{ClientError, ClientResult};
+use crate::errors::{ClientResult, ClientError};
 
 use super::Client;
-use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
-
-fn parse_read_segment_response(bytes: Vec<u8>) -> ClientResult<ReadSegmentColumnResponse> {
-  let delim_bytes = "}\n".as_bytes();
-  let mut i = 0;
-  loop {
-    let end_idx = i + delim_bytes.len();
-    if end_idx > bytes.len() {
-      return Err(ClientError::other(format!("could not parse read segment column response")));
-    }
-    if &bytes[i..end_idx] == delim_bytes {
-      break;
-    }
-    i += 1;
-  }
-  let content_str = String::from_utf8(bytes[0..i + 1].to_vec())?;
-  let mut res = ReadSegmentColumnResponse::new();
-  protobuf::json::merge_from_str(&mut res, &content_str)?;
-  let rest = bytes[i + delim_bytes.len()..].to_vec();
-  if res.codec.is_empty() {
-    res.uncompressed_data = rest;
-  } else {
-    res.compressed_data = rest;
-  }
-  Ok(res)
-
-}
+use pancake_db_idl::schema::ColumnMeta;
+use protobuf::MessageField;
 
 impl Client {
-  pub async fn list_segments(&self, req: &ListSegmentsRequest) -> ClientResult<ListSegmentsResponse> {
-    self.simple_json_request::<ListSegmentsRequest, ListSegmentsResponse>(
-      "list_segments",
-      Method::GET,
-      req,
-    ).await
+  async fn decode_segment_column(
+    &self,
+    table_name: &str,
+    partition: &[PartitionField],
+    segment_id: &str,
+    column: &ColumnMeta,
+  ) -> ClientResult<Vec<FieldValue>> {
+    let mut initial_request = true;
+    let mut continuation_token = "".to_string();
+    let mut compressed_bytes = Vec::new();
+    let mut uncompressed_bytes = Vec::new();
+    let mut codec = "".to_string();
+    while initial_request || !continuation_token.is_empty() {
+      let req = ReadSegmentColumnRequest {
+        table_name: table_name.to_string(),
+        partition: partition.to_vec(),
+        segment_id: segment_id.to_string(),
+        column_name: column.name.clone(),
+        continuation_token,
+        ..Default::default()
+      };
+      let resp = self.api_read_segment_column(&req).await?;
+      if !resp.codec.is_empty() {
+        codec = resp.codec.clone();
+      }
+      compressed_bytes.extend(&resp.compressed_data);
+      uncompressed_bytes.extend(&resp.uncompressed_data);
+      continuation_token = resp.continuation_token;
+      initial_request = false;
+    }
+    println!("READ IN {} compressed {} uncompressed for {}", compressed_bytes.len(), uncompressed_bytes.len(), column.name);
+
+    let mut res = Vec::new();
+
+    let dtype = column.dtype.enum_value_or_default();
+    if !compressed_bytes.is_empty() {
+      let decompressor = compression::new_codec(
+        dtype,
+        &codec,
+      )?;
+      res.extend(decompressor.decompress(
+        compressed_bytes,
+        column.nested_list_depth as u8,
+      )?);
+    }
+
+    if !uncompressed_bytes.is_empty() {
+      let decoder = encoding::new_field_value_decoder(
+        dtype,
+        column.nested_list_depth as u8,
+      );
+      res.extend(decoder.decode(&uncompressed_bytes)?);
+    }
+
+    Ok(res)
   }
 
-  pub async fn read_segment_column(&self, req: &ReadSegmentColumnRequest) -> ClientResult<ReadSegmentColumnResponse> {
-    let uri = self.rest_endpoint("read_segment_column");
-    let pb_str = protobuf::json::print_to_string(req)?;
-
-    let http_req = Request::builder()
-      .method(Method::GET)
-      .uri(&uri)
-      .header("Content-Type", "application/json")
-      .body(Body::from(pb_str))?;
-    let mut resp = self.h_client.request(http_req).await?;
-    let status = resp.status();
-    let mut content = Vec::new();
-    while let Some(chunk) = resp.body_mut().data().await {
-      content.extend(chunk?);
+  pub async fn decode_segment(
+    &self,
+    table_name: &str,
+    partition: &[PartitionField],
+    segment_id: &str,
+    columns: &[ColumnMeta],
+  ) -> ClientResult<Vec<Row>> {
+    if columns.is_empty() {
+      return Err(ClientError::other(
+        "unable to decode segment with no columns specified".to_string()
+      ))
     }
 
-    if status != StatusCode::OK {
-      let content_str = String::from_utf8(content).unwrap_or("<unparseable bytes>".to_string());
-      return Err(ClientError::http(status, &content_str));
+    let mut n = usize::MAX;
+    let mut column_fvalues = Vec::new();
+    for column in columns {
+      let fvalues = self.decode_segment_column(
+        table_name,
+        partition,
+        segment_id,
+        column
+      ).await?;
+      n = n.min(fvalues.len());
+      column_fvalues.push(fvalues);
     }
 
-    parse_read_segment_response(content)
+    let mut rows = Vec::with_capacity(n);
+    for row_idx in 0..n {
+      let mut row = Row::new();
+      for col_idx in 0..column_fvalues.len() {
+        row.fields.push(Field {
+          name: columns[col_idx].name.clone(),
+          value: MessageField::some(column_fvalues[col_idx][row_idx].clone()),
+          ..Default::default()
+        });
+      }
+      rows.push(row);
+    }
+    Ok(rows)
   }
 }

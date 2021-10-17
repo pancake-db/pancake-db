@@ -1,7 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-use pancake_db_core::compression;
 use pancake_db_idl::ddl::{CreateTableRequest, DropTableRequest};
+use pancake_db_idl::dml::{Field, FieldValue, ListSegmentsRequest, PartitionField, PartitionFilter, RepeatedFieldValue, Row, WriteToPartitionRequest};
+use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dml::partition_field::Value as PartitionValue;
+use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta, Schema};
@@ -10,11 +13,6 @@ use tokio;
 
 use pancake_db_client::Client;
 use pancake_db_client::errors::ClientResult;
-use pancake_db_idl::dml::{WriteToPartitionRequest, PartitionField, Row, Field, FieldValue, RepeatedFieldValue, ListSegmentsRequest, PartitionFilter, ReadSegmentColumnRequest};
-use pancake_db_idl::dml::partition_field::Value as PartitionValue;
-use pancake_db_idl::dml::partition_filter::Value as PartitionFilterValue;
-use pancake_db_idl::dml::field_value::Value;
-use pancake_db_core::encoding;
 
 const TABLE_NAME: &str = "t";
 
@@ -59,7 +57,7 @@ async fn main() -> ClientResult<()> {
     }),
     ..Default::default()
   };
-  let create_resp = client.create_table(&create_table_req).await?;
+  let create_resp = client.api_create_table(&create_table_req).await?;
   println!("Created table: {:?}", create_resp);
 
   let mut rows = Vec::new();
@@ -122,7 +120,7 @@ async fn main() -> ClientResult<()> {
     ..Default::default()
   };
   for _ in 0..1000 {
-    client.write_to_partition(&write_to_partition_req).await?;
+    client.api_write_to_partition(&write_to_partition_req).await?;
   }
   // let write_resp = client.write_to_partition(&write_to_partition_req).await?;
   // println!("Wrote rows: {:?}", write_resp);
@@ -141,70 +139,33 @@ async fn main() -> ClientResult<()> {
     ],
     ..Default::default()
   };
-  let list_resp = client.list_segments(&list_segments_eq).await?;
+  let list_resp = client.api_list_segments(&list_segments_eq).await?;
   println!("Listed segments: {:?}", list_resp);
 
   let mut total = 0;
+  let partition = vec![
+    PartitionField {
+      name: "part".to_string(),
+      value: Some(PartitionValue::string_val("x0".to_string())),
+      ..Default::default()
+    }
+  ];
+  let columns_to_decode = vec![
+    i_meta.clone(),
+  ];
   for segment in &list_resp.segments {
-    let segment_id = &segment.segment_id;
-    let mut first = true;
-    let mut continuation_token = "".to_string();
-    let mut compressed_data = Vec::new();
-    let mut uncompressed_data = Vec::new();
-    let mut codec = "".to_string();
-    let col = i_meta.clone();
-    while first || !continuation_token.is_empty() {
-      let read_segment_column_req = ReadSegmentColumnRequest {
-        table_name: TABLE_NAME.to_string(),
-        partition: vec![
-          PartitionField {
-            name: "part".to_string(),
-            value: Some(PartitionValue::string_val("x0".to_string())),
-            ..Default::default()
-          }
-        ],
-        segment_id: segment_id.to_string(),
-        column_name: col.name.clone(),
-        continuation_token: continuation_token.clone(),
-        ..Default::default()
-      };
-      let read_resp = client.read_segment_column(&read_segment_column_req).await?;
-      println!("Read: {} {} with {} comp and {} uncomp", continuation_token, read_resp.codec, read_resp.compressed_data.len(), read_resp.uncompressed_data.len());
-      continuation_token = read_resp.continuation_token.clone();
-      first = false;
-      compressed_data.extend(&read_resp.compressed_data);
-      uncompressed_data.extend(&read_resp.uncompressed_data);
-      if !read_resp.codec.is_empty() {
-        codec = read_resp.codec.clone();
-      }
-    }
-    let mut count = 0;
-    if !codec.is_empty() {
-      println!("decompressing {} compressed bytes", compressed_data.len());
-      let decompressor = compression::new_codec(
-        DataType::INT64,
-        &codec
-      )?;
-      let decompressed = decompressor.decompress(
-        compressed_data,
-        i_meta.nested_list_depth as u8
-      )?;
-      count += decompressed.len();
-    }
-    if !uncompressed_data.is_empty() {
-      println!("decoding {} uncompressed bytes", uncompressed_data.len());
-      let decoder = encoding::new_field_value_decoder(
-        col.dtype.unwrap(),
-        col.nested_list_depth as u8,
-      );
-      let decoded = decoder.decode(&uncompressed_data)?;
-      count += decoded.len();
-    }
+    let rows = client.decode_segment(
+      TABLE_NAME,
+      &partition,
+      &segment.segment_id,
+      &columns_to_decode,
+    ).await?;
+    let count = rows.len();
     total += count;
-    println!("read segment {} with {} rows (total {})", segment_id, count, total);
+    println!("read segment {} with {} rows (total {})", segment.segment_id, count, total);
   }
 
-  let drop_resp = client.drop_table(&DropTableRequest {
+  let drop_resp = client.api_drop_table(&DropTableRequest {
     table_name: TABLE_NAME.to_string(),
     ..Default::default()
   }).await?;

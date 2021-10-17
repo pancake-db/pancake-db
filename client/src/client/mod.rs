@@ -7,11 +7,10 @@ use protobuf::Message;
 
 use crate::errors::{ClientError, ClientResult};
 
-mod create_table;
+mod api;
 mod read;
-mod write_to_partition;
-mod delete;
 
+#[derive(Clone, Debug)]
 pub struct Client {
   pub ip: IpAddr,
   pub port: u16,
@@ -28,7 +27,7 @@ impl Client {
     }
   }
 
-  pub fn rest_endpoint(&self, name: &str) -> String {
+  fn rest_endpoint(&self, name: &str) -> String {
     format!("http://{}:{}/rest/{}", self.ip, self.port, name)
   }
 

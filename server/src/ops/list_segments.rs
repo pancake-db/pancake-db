@@ -1,15 +1,31 @@
 use async_trait::async_trait;
 use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, Segment};
+use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
+use protobuf::MessageField;
 
 use crate::errors::ServerResult;
 use crate::locks::table::TableReadLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
+use crate::storage::segment::SegmentMetadata;
 use crate::types::{NormalizedPartition, PartitionKey};
 use crate::utils::common;
 
 pub struct ListSegmentsOp {
   pub req: ListSegmentsRequest,
+}
+
+impl ListSegmentsOp {
+  fn pb_segment_meta_from_option(maybe_segment_meta: Option<SegmentMetadata>) -> MessageField<PbSegmentMetadata> {
+    MessageField::from_option(maybe_segment_meta.map(|meta| {
+      let count = (meta.all_time_n - meta.all_time_deleted_n) as u32;
+      PbSegmentMetadata {
+        latest_version: meta.read_version,
+        count,
+        ..Default::default()
+      }
+    }))
+  }
 }
 
 #[async_trait]
@@ -55,21 +71,21 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
 
       let partition_meta = maybe_partition_meta.as_ref().unwrap();
       for segment_id in &partition_meta.segment_ids {
-        let count = if req.include_counts {
+        let metadata = if req.include_metadata {
           let segment_key = partition_key.segment_key(segment_id.clone());
           let segment_lock = server.segment_metadata_cache
             .get_lock(&segment_key)
             .await?;
           let segment_guard = segment_lock.read().await;
           let maybe_segment_meta = segment_guard.clone();
-          maybe_segment_meta.map(|meta| (meta.all_time_n - meta.all_time_deleted_n) as u32).unwrap_or(0)
+          Self::pb_segment_meta_from_option(maybe_segment_meta)
         } else {
-          0_u32
+          MessageField::none()
         };
         segments.push(Segment {
           partition: partition.clone(),
           segment_id: segment_id.clone(),
-          count,
+          metadata,
           ..Default::default()
         });
       }
@@ -77,7 +93,6 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
 
     Ok(ListSegmentsResponse {
       segments,
-      continuation_token: "".to_string(),
       ..Default::default()
     })
   }
