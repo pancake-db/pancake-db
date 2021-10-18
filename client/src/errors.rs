@@ -13,7 +13,6 @@ impl OtherUpcastable for FromUtf8Error {}
 impl OtherUpcastable for hyper::Error {}
 impl OtherUpcastable for InvalidUri {}
 impl OtherUpcastable for hyper::http::Error {}
-impl OtherUpcastable for serde_json::Error {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientError {

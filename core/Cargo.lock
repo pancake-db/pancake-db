@@ -91,12 +91,12 @@ checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 [[package]]
 name = "protobuf"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 
 [[package]]
 name = "protobuf-codegen"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "protobuf",
 ]
@@ -104,7 +104,7 @@ dependencies = [
 [[package]]
 name = "protoc"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "log",
  "which",
@@ -113,7 +113,7 @@ dependencies = [
 [[package]]
 name = "protoc-rust"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "protobuf",
  "protobuf-codegen",

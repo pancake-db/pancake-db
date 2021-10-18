@@ -272,7 +272,6 @@ dependencies = [
  "pancake-db-core",
  "pancake-db-idl",
  "protobuf",
- "serde_json",
  "tokio",
 ]
 
@@ -324,12 +323,12 @@ dependencies = [
 [[package]]
 name = "protobuf"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 
 [[package]]
 name = "protobuf-codegen"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "protobuf",
 ]
@@ -337,7 +336,7 @@ dependencies = [
 [[package]]
 name = "protoc"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "log",
  "which",
@@ -346,7 +345,7 @@ dependencies = [
 [[package]]
 name = "protoc-rust"
 version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf#681462cc2a7068a2ff4111bbf19861c005c38225"
+source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
@@ -423,29 +422,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "ryu"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
-
-[[package]]
-name = "serde"
-version = "1.0.126"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec7505abeacaec74ae4778d9d9328fe5a5d04253220a85c4ee022239fc996d03"
-
-[[package]]
-name = "serde_json"
-version = "1.0.64"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "799e97dc9fdae36a5c8b8f2cae9ce2ee9fdce2058c57a93e6099d919fd982f79"
-dependencies = [
- "itoa",
- "ryu",
- "serde",
 ]
 
 [[package]]
