@@ -7,5 +7,5 @@ edition = "2018"
 [dependencies]
 pancake-db-idl = {path= "../../pancake-idl/rust"}
 protobuf = {git="https://github.com/stepancheg/rust-protobuf"}
-q_compress = {path="../../quantile-compression"}
+q_compress = {path="../../../opensource/quantile-compression"}
 zstd = "0.9"

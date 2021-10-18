@@ -9,7 +9,7 @@ use pancake_db_idl::schema::ColumnMeta;
 use protobuf::MessageField;
 
 impl Client {
-  async fn decode_segment_column(
+  pub async fn decode_segment_column(
     &self,
     table_name: &str,
     partition: &[PartitionField],
