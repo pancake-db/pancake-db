@@ -114,7 +114,7 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
     DataType::BOOL => |v: &FieldValue| v.has_bool_val(),
     DataType::BYTES =>  |v: &FieldValue| v.has_bytes_val(),
     DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
-    DataType::TIMESTAMP_NS => |v: &FieldValue| v.has_timestamp_val(),
+    DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
   };
   traverse_field_value(value, &checker)
 }
