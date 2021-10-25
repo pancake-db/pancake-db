@@ -64,10 +64,15 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
     let map_lock = &self.0[Self::hash_bucket(k)];
     let mut map_guard = map_lock.write().await;
     let map = &mut *map_guard;
-    let entry = Arc::new(RwLock::new(v));
-    map.insert(k.clone(), entry.clone());
+    let res = if map.contains_key(k) {
+      map.get(k).unwrap().clone()
+    } else {
+      let entry = Arc::new(RwLock::new(v));
+      map.insert(k.clone(), entry.clone());
+      entry
+    };
 
-    Ok(entry)
+    Ok(res)
   }
 
   pub async fn prune<F>(&self, f: F)

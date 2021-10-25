@@ -506,3 +506,28 @@ pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> 
   let all_time_compacted_n = compaction.compacted_n as u64 + compaction.omitted_n;
   (all_time_flushed_n - all_time_compacted_n) as usize
 }
+
+pub fn field_map(row: &Row) -> HashMap<&String, &Field> {
+  let mut res = HashMap::new();
+  for field in &row.fields {
+    res.insert(&field.name, field);
+  }
+  return res;
+}
+
+pub fn single_field_from_row(row: &Row, name: &str) -> Field {
+  // this returns a field with no value if the
+  // row does not contain the name
+  let mut res = Field {
+    name: name.to_string(),
+    ..Default::default()
+  };
+  for field in &row.fields {
+    if &field.name == name {
+      res.value = field.value.clone();
+      break;
+    }
+  }
+  res
+}
+

@@ -56,7 +56,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 
     let mut field_maps = Vec::new();
     for row in &rows {
-      field_maps.push(row.field_map());
+      field_maps.push(common::field_map(row));
     }
 
     // before we do anything destructive, mark this segment as flushing
