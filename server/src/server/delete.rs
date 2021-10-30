@@ -10,6 +10,8 @@ use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils::common;
 
+const DROP_ROUTE_NAME: &str = "drop_table";
+
 impl Server {
   pub async fn drop_table(&self, req: DropTableRequest) -> ServerResult<DropTableResponse> {
     DropTableOp { req }.execute(&self).await
@@ -17,7 +19,7 @@ impl Server {
 
   pub fn drop_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
-      .and(warp::path("drop_table"))
+      .and(warp::path(DROP_ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::drop_table_from_body)
@@ -29,6 +31,10 @@ impl Server {
   }
 
   async fn drop_table_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    common::pancake_result_into_warp(server.drop_table_from_bytes(body).await)
+    Self::log_request(DROP_ROUTE_NAME, &body);
+    common::pancake_result_into_warp(
+      server.drop_table_from_bytes(body).await,
+      DROP_ROUTE_NAME,
+    )
   }
 }

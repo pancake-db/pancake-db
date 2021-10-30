@@ -17,6 +17,7 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::traits::ServerOp;
 use crate::ops::flush::FlushOp;
 use crate::errors::ServerErrorKind;
+use hyper::body::Bytes;
 
 mod create_table;
 mod delete;
@@ -209,6 +210,14 @@ impl Server {
       background: Background::default(),
       activity: Activity::default(),
     }
+  }
+
+  fn log_request(route_name: &str, body: &Bytes) {
+    log::info!(
+      "received REST request for {} containing {} bytes",
+      route_name,
+      body.len(),
+    );
   }
 
   pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

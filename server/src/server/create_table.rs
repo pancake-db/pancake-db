@@ -11,6 +11,8 @@ use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils::common;
 
+const ROUTE_NAME: &str = "create_table";
+
 impl Server {
   pub async fn create_table(&self, req: CreateTableRequest) -> ServerResult<CreateTableResponse> {
     CreateTableOp { req }.execute(self).await
@@ -18,7 +20,7 @@ impl Server {
 
   pub fn create_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
-      .and(warp::path("create_table"))
+      .and(warp::path(ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::create_table_from_body)
@@ -30,7 +32,11 @@ impl Server {
   }
 
   async fn create_table_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    common::pancake_result_into_warp(server.create_table_from_bytes(body).await)
+    Self::log_request(ROUTE_NAME, &body);
+    common::pancake_result_into_warp(
+      server.create_table_from_bytes(body).await,
+      ROUTE_NAME,
+    )
   }
 }
 

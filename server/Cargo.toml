@@ -12,8 +12,8 @@ futures = "0.3.12"
 hyper = "0.14.9"
 log = "0.4.14"
 pancake-db-core = {path="../../pancake-core/core"}
-pancake-db-idl = {path="../../pancake-idl/rust"}
-protobuf = {git="https://github.com/stepancheg/rust-protobuf", rev="b3fe22932968995779e4046189becdf7be82ba1d"}
+pancake-db-idl = "0.0.0-alpha.0"
+protobuf = "3.0.0-alpha.1"
 serde_json = "1.0.59"
 serde = {version="1.0.117", features=["derive"]}
 structopt = "0.3.22"

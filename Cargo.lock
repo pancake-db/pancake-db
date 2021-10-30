@@ -317,12 +317,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "either"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
-
-[[package]]
 name = "event-listener"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,7 +850,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "pancake-db-core"
-version = "0.0.0"
+version = "0.0.0-alpha.0"
 dependencies = [
  "pancake-db-idl",
  "protobuf",
@@ -866,10 +860,11 @@ dependencies = [
 
 [[package]]
 name = "pancake-db-idl"
-version = "0.0.0"
+version = "0.0.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41f4c8ce8992f4bc1e6230e8a4cedd767ce9066724396ea9a2126bf6d150f95d"
 dependencies = [
  "protobuf",
- "protoc-rust",
 ]
 
 [[package]]
@@ -1031,36 +1026,9 @@ dependencies = [
 
 [[package]]
 name = "protobuf"
-version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
-
-[[package]]
-name = "protobuf-codegen"
-version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
-dependencies = [
- "protobuf",
-]
-
-[[package]]
-name = "protoc"
-version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
-dependencies = [
- "log",
- "which",
-]
-
-[[package]]
-name = "protoc-rust"
-version = "3.0.0-pre"
-source = "git+https://github.com/stepancheg/rust-protobuf?rev=b3fe22932968995779e4046189becdf7be82ba1d#b3fe22932968995779e4046189becdf7be82ba1d"
-dependencies = [
- "protobuf",
- "protobuf-codegen",
- "protoc",
- "tempfile",
-]
+version = "3.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "179dfed5ac5d90df13ede91b3035443ec07e0ec964b86afb10700597b5f990bc"
 
 [[package]]
 name = "q_compress"
@@ -1799,17 +1767,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d743fdedc5c64377b5fc2bc036b01c7fd642205a0d96356034ae3404d49eb7fb"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "which"
-version = "4.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea187a8ef279bc014ec368c27a920da2024d2a711109bfbe3440585d5cf27ad9"
-dependencies = [
- "either",
- "lazy_static",
- "libc",
 ]
 
 [[package]]

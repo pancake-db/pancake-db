@@ -11,6 +11,8 @@ use crate::ops::write_to_partition::WriteToPartitionOp;
 
 use super::Server;
 
+const ROUTE_NAME: &str = "write_to_partition";
+
 impl Server {
   pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> ServerResult<WriteToPartitionResponse> {
     WriteToPartitionOp { req }.execute(&self).await
@@ -18,7 +20,7 @@ impl Server {
 
   pub fn write_to_partition_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
-      .and(warp::path("write_to_partition"))
+      .and(warp::path(ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::warp_write_to_partition)
@@ -30,6 +32,10 @@ impl Server {
   }
 
   async fn warp_write_to_partition(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    common::pancake_result_into_warp(server.write_to_partition_from_bytes(body).await)
+    Self::log_request(ROUTE_NAME, &body);
+    common::pancake_result_into_warp(
+      server.write_to_partition_from_bytes(body).await,
+      ROUTE_NAME,
+    )
   }
 }

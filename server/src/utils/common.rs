@@ -278,26 +278,40 @@ pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> ServerResult<T> {
   Ok(req)
 }
 
-pub fn pancake_result_into_warp<T: Message>(res: ServerResult<T>) -> Result<Box<dyn Reply>, Infallible> {
+pub fn pancake_result_into_warp<T: Message>(
+  server_res: ServerResult<T>,
+  route_name: &str,
+) -> Result<Box<dyn Reply>, Infallible> {
   let options = protobuf::json::PrintOptions {
     always_output_default_values: true,
     ..Default::default()
   };
-  let body_res = res.and_then(|pb|
+  let body_res = server_res.and_then(|pb|
     protobuf::json::print_to_string_with_options(&pb, &options)
       .map_err(|_| ServerError::internal("unable to write response as json"))
   );
   match body_res {
     Ok(body) => {
+      log::info!(
+        "replying OK to {} request with {} bytes",
+        route_name,
+        body.len()
+      );
       Ok(Box::new(Response::new(body)))
     },
     Err(e) => {
       let reply = warp::reply::json(&ErrorResponse {
-        message: e.to_string(),
+        message: e.to_client_string(),
       });
+      let status = e.kind.warp_status_code();
+      log::info!(
+        "replying ERR to {} request with status {}",
+        route_name,
+        status,
+      );
       Ok(Box::new(warp::reply::with_status(
         reply,
-        e.kind.warp_status_code(),
+        status,
       )))
     }
   }

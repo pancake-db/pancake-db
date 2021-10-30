@@ -19,6 +19,9 @@ use crate::utils::common;
 
 use super::Server;
 
+const LIST_ROUTE_NAME: &str = "list_segments";
+const READ_ROUTE_NAME: &str = "read_segment_column";
+
 impl Server {
   pub async fn read_compact_col(
     &self,
@@ -106,19 +109,23 @@ impl Server {
 
   pub fn list_segments_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
-      .and(warp::path("list_segments"))
+      .and(warp::path(LIST_ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::warp_list_segments)
   }
 
   async fn warp_list_segments(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    common::pancake_result_into_warp(server.list_segments_from_bytes(body).await)
+    Self::log_request(LIST_ROUTE_NAME, &body);
+    common::pancake_result_into_warp(
+      server.list_segments_from_bytes(body).await,
+      LIST_ROUTE_NAME
+    )
   }
 
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
-      .and(warp::path("read_segment_column"))
+      .and(warp::path(READ_ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::warp_read_segment_column)
@@ -134,9 +141,10 @@ impl Server {
   }
 
   async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    Self::log_request(READ_ROUTE_NAME, &body);
     let pancake_res = server.read_segment_column_from_bytes(body).await;
     if pancake_res.is_err() {
-      return common::pancake_result_into_warp(pancake_res);
+      return common::pancake_result_into_warp(pancake_res, READ_ROUTE_NAME);
     }
 
     let resp = pancake_res.unwrap();

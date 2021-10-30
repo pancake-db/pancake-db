@@ -11,6 +11,8 @@ use crate::utils::common;
 use crate::ops::get_schema::GetSchemaOp;
 use crate::ops::traits::ServerOp;
 
+const ROUTE_NAME: &str = "get_schema";
+
 impl Server {
   pub async fn get_schema(&self, req: GetSchemaRequest) -> ServerResult<GetSchemaResponse> {
     GetSchemaOp { req }.execute(self).await
@@ -18,7 +20,7 @@ impl Server {
 
   pub fn get_schema_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
-      .and(warp::path("get_schema"))
+      .and(warp::path(ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::get_schema_from_body)
@@ -30,7 +32,11 @@ impl Server {
   }
 
   async fn get_schema_from_body(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    common::pancake_result_into_warp(server.get_schema_from_bytes(body).await)
+    Self::log_request(ROUTE_NAME, &body);
+    common::pancake_result_into_warp(
+      server.get_schema_from_bytes(body).await,
+      ROUTE_NAME,
+    )
   }
 }
 
