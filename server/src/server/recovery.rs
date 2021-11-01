@@ -31,9 +31,8 @@ impl Server {
       let path = entry.path();
       let possible_meta_path = path.join(TABLE_METADATA_FILENAME);
       if common::file_exists(&possible_meta_path).await? {
-        for name in path
-          .file_name()
-          .and_then(|s| s.to_str()) {
+        let path_str = path.file_name().and_then(|s| s.to_str());
+        if let Some(name) = path_str {
           let name = name.to_string();
           let meta = TableMetadata::load(
             &self.opts.dir,

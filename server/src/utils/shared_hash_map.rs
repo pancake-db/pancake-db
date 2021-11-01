@@ -11,7 +11,8 @@ use crate::storage::MetadataKey;
 
 const HASH_BUCKETS: usize = 16;
 
-pub struct SharedHashMap<K, V>(Vec<RwLock<HashMap<K, Arc<RwLock<V>>>>>) where K: MetadataKey;
+pub struct SharedHashMap<K, V>(Vec<RwLock<HashMap<K, Arc<RwLock<V>>>>>)
+  where K: MetadataKey;
 
 impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
   pub fn new() -> Self {
@@ -28,27 +29,12 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
     hash.finish() as usize % HASH_BUCKETS
   }
 
-  pub async fn contains(&self, k: &K) -> bool {
-    let map_lock = &self.0[Self::hash_bucket(k)];
-    map_lock.read().await.contains_key(k)
-  }
-
-  pub async fn insert_if_missing(&self, k: &K, v: V) {
-    let map_lock = &self.0[Self::hash_bucket(k)];
-    let mut map_guard = map_lock.write().await;
-    let map = &mut *map_guard;
-
-    if !map.contains_key(k) {
-      map.insert(k.clone(), Arc::new(RwLock::new(v)));
-    }
-  }
-
   pub async fn get_lock(&self, k: &K) -> Option<Arc<RwLock<V>>> {
     let map_lock = &self.0[Self::hash_bucket(k)];
     let map_guard = map_lock.read().await;
     let map = &*map_guard;
 
-    map.get(k).map(|k| k.clone())
+    map.get(k).cloned()
   }
 
   pub async fn get_lock_or<Fut, F>(&self, k: &K, load_fn: F) -> ServerResult<Arc<RwLock<V>>>

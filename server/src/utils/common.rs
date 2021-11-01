@@ -526,7 +526,7 @@ pub fn field_map(row: &Row) -> HashMap<&String, &Field> {
   for field in &row.fields {
     res.insert(&field.name, field);
   }
-  return res;
+  res
 }
 
 pub fn single_field_from_row(row: &Row, name: &str) -> Field {
@@ -537,7 +537,7 @@ pub fn single_field_from_row(row: &Row, name: &str) -> Field {
     ..Default::default()
   };
   for field in &row.fields {
-    if &field.name == name {
+    if field.name == *name {
       res.value = field.value.clone();
       break;
     }

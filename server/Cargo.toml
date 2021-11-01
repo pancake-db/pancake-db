@@ -11,7 +11,7 @@ chrono = {version="0.4", features=["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
 log = "0.4.14"
-pancake-db-core = {path="../../pancake-core/core"}
+pancake-db-core = "0.0.0-alpha.0"
 pancake-db-idl = "0.0.0-alpha.0"
 protobuf = "3.0.0-alpha.1"
 serde_json = "1.0.59"

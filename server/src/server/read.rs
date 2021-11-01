@@ -160,6 +160,11 @@ impl Server {
     } else {
       resp_bytes.extend(resp.compressed_data)
     }
+    log::info!(
+      "replying OK to {} request with {} bytes",
+      READ_ROUTE_NAME,
+      resp_bytes.len()
+    );
     Ok(Box::new(
       Response::builder()
         .body(resp_bytes)

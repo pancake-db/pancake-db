@@ -130,10 +130,7 @@ impl Server {
           let flush_result = FlushOp { segment_key: candidate.clone() }
             .execute(&self)
             .await;
-          if flush_result.is_ok() {
-            self.background.add_compaction_candidate(candidate.clone()).await;
-          } else {
-            let err = flush_result.unwrap_err();
+          if let Err(err) = flush_result {
             let remove = if matches!(err.kind, ServerErrorKind::Internal) {
               self.background.add_compaction_candidate(candidate.clone()).await;
               false
@@ -141,6 +138,8 @@ impl Server {
               true
             };
             log::error!("flushing {} failed (will give up? {}): {}", candidate, remove, err);
+          } else {
+            self.background.add_compaction_candidate(candidate.clone()).await;
           }
         }
 

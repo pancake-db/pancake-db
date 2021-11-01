@@ -23,7 +23,7 @@ impl ServerOp<TableReadLocks> for GetSchemaOp {
   async fn execute_with_locks(&self, _server: &Server, locks: TableReadLocks) -> ServerResult<GetSchemaResponse> {
     let TableReadLocks { table_meta } = locks;
     Ok(GetSchemaResponse {
-      schema: MessageField::some(table_meta.schema.clone()),
+      schema: MessageField::some(table_meta.schema),
       ..Default::default()
     })
   }

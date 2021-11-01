@@ -9,9 +9,10 @@ impl Log for Logger {
   }
 
   fn log(&self, record: &Record) {
+    let time_string = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     println!(
       "{} {}| {}",
-      Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
+      &time_string[2..],
       record.level(),
       record.args()
     );

@@ -38,14 +38,15 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
       table_meta,
       mut definitely_partition_guard,
       mut definitely_segment_guard,
-      segment_key,
+      mut segment_key,
     } = locks;
     let partition_meta = definitely_partition_guard.as_mut().unwrap();
-    let segment_meta = definitely_segment_guard.as_mut().unwrap();
+    let mut segment_meta = definitely_segment_guard.as_mut().unwrap();
 
     common::validate_rows(&table_meta.schema, &self.req.rows)?;
 
-    let segment_key = if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
+    let mut default_segment_meta = SegmentMetadata::default();
+    if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
       let new_segment_id = Uuid::new_v4().to_string();
       let key = SegmentKey {
         table_name: segment_key.table_name.clone(),
@@ -56,10 +57,10 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
       partition_meta.write_segment_id = new_segment_id.clone();
       partition_meta.segment_ids.push(new_segment_id);
       partition_meta.overwrite(dir, &segment_key.partition_key()).await?;
-      key
-    } else {
-      segment_key
-    };
+
+      segment_key = key;
+      segment_meta = &mut default_segment_meta;
+    }
 
     let staged_bytes = common::rows_to_staged_bytes(&self.req.rows)?;
     common::append_to_file(

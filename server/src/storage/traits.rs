@@ -11,7 +11,7 @@ use std::io;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::utils::common;
-use crate::storage::shared_hash_map::SharedHashMap;
+use crate::utils::shared_hash_map::SharedHashMap;
 
 pub trait MetadataJson: Clone + Send + Sync {
   fn to_json_string(&self) -> ServerResult<String>;
