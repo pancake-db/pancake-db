@@ -57,35 +57,24 @@ fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::F
       Ok(value_pb)
     }
     Value::Bool(b) => {
-      value_pb.set_bool_val(b.clone());
+      value_pb.set_bool_val(*b);
       Ok(value_pb)
     }
     Value::Object(o) => {
-      for (key, value) in o {
-        match key.as_str() {
-          "timestamp" => {
-            let timestamp = parse_timestamp(value)?;
-            value_pb.set_timestamp_val(timestamp);
-            return Ok(value_pb);
-          }
-          "bytes" => {
-            let bytes_str = value.as_str().unwrap();
-            let bytes = decode(bytes_str).unwrap();
-            value_pb.set_bytes_val(bytes);
-            return Ok(value_pb);
-          }
-          _ => {
-            return Err(ServerError::invalid(&format!(
-              "Unsupported object type: {}",
-              key
-            )));
-          }
-        }
+      if o.contains_key("timestamp") {
+        let value = o.get("timestamp").unwrap();
+        let timestamp = parse_timestamp(value)?;
+        value_pb.set_timestamp_val(timestamp);
+        Ok(value_pb)
+      } else if o.contains_key("bytes") {
+        let value = o.get("bytes").unwrap();
+        let bytes_str = value.as_str().unwrap();
+        let bytes = decode(bytes_str).unwrap();
+        value_pb.set_bytes_val(bytes);
+        Ok(value_pb)
+      } else {
+        Err(ServerError::invalid("unsupported object"))
       }
-      Err(ServerError::invalid(&format!(
-        "Unsupported object: {}",
-        field_value
-      )))
     }
     Value::Array(a) => {
       let mut repeated_value_pb = pancake_db_idl::dml::RepeatedFieldValue::new();
@@ -121,24 +110,23 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
         if n.is_i64() {
           pb_partition_field.set_int64_val(n.as_i64().unwrap());
         } else {
-          Err(ServerError::invalid(
+          return Err(ServerError::invalid(
             "numeric partition field is not an integer",
-          ))?;
+          ));
         }
       }
       Value::Bool(b) => {
         pb_partition_field.set_bool_val(*b);
       }
       Value::Object(o) => {
-        for (key, value) in o {
-          if key == "timestamp" {
-            let timestamp = parse_timestamp(value)?;
-            pb_partition_field.set_timestamp_val(timestamp);
-          } else {
-            return Err(ServerError::invalid(
-              "partition field does not have correct type",
-            ));
-          }
+        if o.contains_key("timestamp") {
+          let value = o.get("timestamp").unwrap();
+          let timestamp = parse_timestamp(value)?;
+          pb_partition_field.set_timestamp_val(timestamp);
+        } else {
+          return Err(ServerError::invalid(
+            "object partition field is not a timestamp",
+          ));
         }
       }
       _ => {
@@ -169,7 +157,7 @@ impl Server {
     &self,
     req: WriteToPartitionRequest,
   ) -> ServerResult<WriteToPartitionResponse> {
-    WriteToPartitionOp { req }.execute(&self).await
+    WriteToPartitionOp { req }.execute(self).await
   }
 
   pub fn write_to_partition_simple_filter(
