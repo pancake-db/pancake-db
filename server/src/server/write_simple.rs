@@ -40,6 +40,7 @@ fn parse_timestamp(value: &Value) -> ServerResult<protobuf::well_known_types::Ti
       .map_err(|_| ServerError::invalid("invalid timestamp"))?;
   Ok(timestamp)
 }
+
 fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::FieldValue> {
   let mut value_pb = pancake_db_idl::dml::FieldValue::new();
   match field_value {
