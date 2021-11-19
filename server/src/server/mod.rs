@@ -24,6 +24,7 @@ mod delete;
 mod get_schema;
 mod read;
 mod write;
+mod write_simple;
 mod recovery;
 
 const FLUSH_SECONDS: u64 = 1;
@@ -224,6 +225,7 @@ impl Server {
       .and(
         Self::create_table_filter()
           .or(Self::write_to_partition_filter())
+          .or(Self::write_to_partition_simple_filter())
           .or(Self::read_segment_column_filter())
           .or(Self::list_segments_filter())
           .or(Self::get_schema_filter())

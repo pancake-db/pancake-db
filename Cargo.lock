@@ -875,6 +875,7 @@ version = "0.0.0"
 dependencies = [
  "async-std",
  "async-trait",
+ "base64",
  "chrono",
  "futures",
  "hyper",
