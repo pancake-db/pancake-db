@@ -23,3 +23,4 @@ tower = {version="0.4.6", features=["make"]}
 tower-http = {version="0.1.1", features=["add-extension"]}
 uuid = {version="0.8.2", features=["v4"]}
 warp = "0.3.1"
+base64 = "0.13.0"
