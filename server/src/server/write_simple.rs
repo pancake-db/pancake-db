@@ -9,11 +9,9 @@ use crate::ops::traits::ServerOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
 use crate::utils::common;
 use base64::decode;
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 
 use super::Server;
 
@@ -27,13 +25,6 @@ struct WriteToPartitionSimpleRequest {
 }
 
 fn parse_timestamp(value: &Value) -> ServerResult<protobuf::well_known_types::Timestamp> {
-  let timestamp_string = value.to_string();
-  let rfc3339 = DateTime::parse_from_rfc3339(&timestamp_string).unwrap();
-  let mut timestamp = protobuf::well_known_types::Timestamp::new();
-  timestamp.seconds = rfc3339.timestamp();
-  timestamp.nanos = i32::try_from(rfc3339.timestamp_subsec_nanos())
-    .ok()
-    .unwrap();
   let value_str = value.to_string();
   let timestamp =
     protobuf::json::parse_from_str::<protobuf::well_known_types::Timestamp>(&value_str)
@@ -47,19 +38,19 @@ fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::F
     Value::String(s) => {
       value_pb.set_string_val(s.clone());
       Ok(value_pb)
-    }
+    },
     Value::Number(n) if n.is_i64() => {
       value_pb.set_int64_val(n.as_i64().unwrap());
       Ok(value_pb)
-    }
+    },
     Value::Number(n) if n.is_f64() => {
       value_pb.set_float64_val(n.as_f64().unwrap());
       Ok(value_pb)
-    }
+    },
     Value::Bool(b) => {
       value_pb.set_bool_val(*b);
       Ok(value_pb)
-    }
+    },
     Value::Object(o) => {
       if o.contains_key("timestamp") {
         let value = o.get("timestamp").unwrap();
@@ -75,7 +66,7 @@ fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::F
       } else {
         Err(ServerError::invalid("unsupported object"))
       }
-    }
+    },
     Value::Array(a) => {
       let mut repeated_value_pb = pancake_db_idl::dml::RepeatedFieldValue::new();
       for value in a {
@@ -85,7 +76,7 @@ fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::F
       let mut value_pb = pancake_db_idl::dml::FieldValue::new();
       value_pb.set_list_val(repeated_value_pb);
       Ok(value_pb)
-    }
+    },
     _ => Err(ServerError::invalid(&format!(
       "Unsupported type for field value: {}",
       field_value
@@ -105,7 +96,7 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
     match partition_field {
       Value::String(s) => {
         pb_partition_field.set_string_val(s.clone());
-      }
+      },
       Value::Number(n) => {
         if n.is_i64() {
           pb_partition_field.set_int64_val(n.as_i64().unwrap());
@@ -114,10 +105,10 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
             "numeric partition field is not an integer",
           ));
         }
-      }
+      },
       Value::Bool(b) => {
         pb_partition_field.set_bool_val(*b);
-      }
+      },
       Value::Object(o) => {
         if o.contains_key("timestamp") {
           let value = o.get("timestamp").unwrap();
@@ -128,7 +119,7 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
             "object partition field is not a timestamp",
           ));
         }
-      }
+      },
       _ => {
         return Err(ServerError::invalid(
           "partition field does not have correct type",
