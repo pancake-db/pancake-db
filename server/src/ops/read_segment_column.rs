@@ -1,10 +1,12 @@
 use std::convert::TryFrom;
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 use async_trait::async_trait;
 use pancake_db_core::encoding;
-use pancake_db_idl::dml::{ReadSegmentColumnRequest, ReadSegmentColumnResponse, FieldValue};
+use pancake_db_idl::dml::{FieldValue, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 use tokio::fs;
+use uuid::Uuid;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::segment::SegmentReadLocks;
@@ -109,7 +111,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     Ok(SegmentKey {
       table_name: self.req.table_name.clone(),
       partition,
-      segment_id: self.req.segment_id.clone(),
+      segment_id: Uuid::from_str(&self.req.segment_id)?,
     })
   }
 
@@ -160,7 +162,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     match continuation.file_type {
       FileType::Compact => {
         let compressed_filename = dirs::compact_col_file(
-          &dir,
+          dir,
           &compaction_key,
           &col_name,
         );
@@ -177,7 +179,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
 
         let next_token = if compressed_data.len() < opts.read_page_byte_size {
           let has_uncompressed_data = common::file_exists(dirs::flush_col_file(
-            &dir,
+            dir,
             &compaction_key,
             &col_name
           )).await?;
@@ -204,7 +206,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
       },
       FileType::Flush => {
         let uncompressed_filename = dirs::flush_col_file(
-          &dir,
+          dir,
           &compaction_key,
           &col_name,
         );

@@ -2,22 +2,23 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::Future;
+use hyper::body::Bytes;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
+use crate::errors::{ServerErrorKind, ServerResult};
+use crate::ops::compact::CompactionOp;
+use crate::ops::flush::FlushOp;
+use crate::ops::traits::ServerOp;
+use crate::opt::Opt;
 use crate::storage::compaction::CompactionCache;
+use crate::storage::partition::PartitionMetadataCache;
 use crate::storage::segment::SegmentMetadataCache;
 use crate::storage::table::TableMetadataCache;
-use crate::storage::partition::PartitionMetadataCache;
 use crate::types::SegmentKey;
-use crate::opt::Opt;
-
-use crate::ops::compact::CompactionOp;
-use crate::ops::traits::ServerOp;
-use crate::ops::flush::FlushOp;
-use crate::errors::ServerErrorKind;
-use hyper::body::Bytes;
+use crate::storage::global::{GlobalMetadataCache, GlobalMetadata};
+use crate::storage::Metadata;
 
 mod create_table;
 mod delete;
@@ -61,7 +62,6 @@ pub struct Background {
 
 #[derive(Default)]
 pub struct BackgroundState {
-  // rows: HashMap<PartitionKey, Vec<Row>>,
   flush_candidates: HashSet<SegmentKey>,
   compaction_candidates: HashSet<SegmentKey>,
 }
@@ -107,6 +107,7 @@ pub struct Server {
   pub opts: Opt,
   background: Background,
   activity: Activity,
+  pub global_metadata_cache: GlobalMetadataCache,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
   pub segment_metadata_cache: SegmentMetadataCache,
@@ -114,7 +115,20 @@ pub struct Server {
 }
 
 impl Server {
-  pub async fn init(&self) -> (impl Future<Output=()> + '_, impl Future<Output=()> + '_) {
+  async fn bootstrap(&self) -> ServerResult<()> {
+    let global_meta_lock = self.global_metadata_cache.get_lock(&()).await?;
+    let mut global_meta_guard = global_meta_lock.write().await;
+    if global_meta_guard.is_none() {
+      let global_meta = GlobalMetadata::default();
+      global_meta.overwrite(&self.opts.dir, &()).await?;
+      *global_meta_guard = Some(global_meta);
+    }
+    Ok(())
+  }
+
+  pub async fn init(&self) -> ServerResult<(impl Future<Output=()> + '_, impl Future<Output=()> + '_)> {
+    self.bootstrap().await?;
+
     let flush_clone = self.clone();
     let flush_forever_future = async move {
       let mut last_t = Instant::now();
@@ -129,7 +143,7 @@ impl Server {
         let candidates = flush_clone.background.pop_flush_candidates().await;
         for candidate in &candidates {
           let flush_result = FlushOp { segment_key: candidate.clone() }
-            .execute(&self)
+            .execute(self)
             .await;
           if let Err(err) = flush_result {
             let remove = if matches!(err.kind, ServerErrorKind::Internal) {
@@ -167,7 +181,7 @@ impl Server {
           .await;
         let mut segment_keys_to_remove = Vec::new();
         for segment_key in &compaction_candidates {
-          let remove = CompactionOp { key: segment_key.clone() }.execute(&self).await
+          let remove = CompactionOp { key: segment_key.clone() }.execute(self).await
             .unwrap_or_else(|e| {
               let remove = !matches!(e.kind, ServerErrorKind::Internal);
               log::error!("compacting {} failed (will give up? {}): {}", segment_key, remove, e);
@@ -188,7 +202,7 @@ impl Server {
       }
     };
 
-    (flush_forever_future, compact_forever_future)
+    Ok((flush_forever_future, compact_forever_future))
   }
 
   pub async fn stop(&self) {
@@ -197,12 +211,14 @@ impl Server {
 
   pub fn new(opts: Opt) -> Server {
     let dir = &opts.dir;
+    let global_metadata_cache = GlobalMetadataCache::new(dir);
     let table_metadata_cache = TableMetadataCache::new(dir);
     let partition_metadata_cache = PartitionMetadataCache::new(dir);
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
       opts,
+      global_metadata_cache,
       table_metadata_cache,
       partition_metadata_cache,
       segment_metadata_cache,

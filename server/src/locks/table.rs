@@ -6,6 +6,13 @@ use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::table::TableMetadata;
+use crate::storage::global::GlobalMetadata;
+use crate::utils::common;
+
+pub struct GlobalTableReadLocks {
+  pub global_meta: GlobalMetadata,
+  pub table_meta: TableMetadata,
+}
 
 pub struct TableReadLocks {
   pub table_meta: TableMetadata,
@@ -13,6 +20,34 @@ pub struct TableReadLocks {
 
 pub struct TableWriteLocks {
   pub maybe_table_guard: OwnedRwLockWriteGuard<Option<TableMetadata>>,
+}
+
+#[async_trait]
+impl ServerOpLocks for GlobalTableReadLocks {
+  type Key = String;
+
+  async fn execute<Op: ServerOp<Self>>(
+    server: &Server,
+    op: &Op,
+  ) -> ServerResult<Op::Response> where Self: Sized {
+    let global_lock = server.global_metadata_cache.get_lock(&()).await?;
+    let global_guard = global_lock.read().await;
+    let global_meta = common::unwrap_metadata(&(), &*global_guard)?;
+
+    let table_name = op.get_key()?;
+    let lock = server.table_metadata_cache.get_lock(&table_name).await?;
+    let guard = lock.read().await;
+    let maybe_table = guard.clone();
+    if maybe_table.is_none() {
+      return Err(ServerError::does_not_exist("table", &table_name))
+    }
+
+    let locks = GlobalTableReadLocks {
+      global_meta,
+      table_meta: maybe_table.unwrap(),
+    };
+    op.execute_with_locks(server, locks).await
+  }
 }
 
 #[async_trait]

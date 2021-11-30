@@ -62,7 +62,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     // before we do anything destructive, mark this segment as flushing
     // for recovery purposes
     segment_meta.flushing = true;
-    segment_meta.overwrite(&dir, &segment_key).await?;
+    segment_meta.overwrite(dir, &segment_key).await?;
 
     for version in &segment_meta.write_versions {
       let compaction_key = segment_key.compaction_key(*version);
@@ -84,13 +84,13 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     segment_meta.last_flush_at = Utc::now();
     segment_meta.staged_n = 0;
     segment_meta.staged_deleted_n = 0;
-    segment_meta.overwrite(&dir, &segment_key).await?;
+    segment_meta.overwrite(dir, &segment_key).await?;
 
     log::debug!("truncating staged rows path {:?}", staged_rows_path);
     Self::truncate_staged_rows(staged_rows_path).await?;
 
     segment_meta.flushing = false;
-    segment_meta.overwrite(&dir, &segment_key).await?;
+    segment_meta.overwrite(dir, &segment_key).await?;
 
     Ok(())
   }
@@ -120,7 +120,7 @@ impl FlushOp {
       .await?
       .unwrap_or_default();
 
-    let trim_idx = common::flush_only_n(&segment_meta, &compaction);
+    let trim_idx = common::flush_only_n(segment_meta, &compaction);
     for col_meta in &table_meta.schema.columns {
       let flush_file = dirs::flush_col_file(dir, compaction_key, &col_meta.name);
       let bytes = fs::read(&flush_file).await?;

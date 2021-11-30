@@ -96,6 +96,12 @@ impl<E> From<E> for ServerError where E: ServerUpcastableError {
   }
 }
 
+impl ServerUpcastableError for uuid::Error {
+  fn kind(&self) -> ServerErrorKind {
+    ServerErrorKind::Corrupt
+  }
+}
+
 impl ServerUpcastableError for io::Error {
   fn kind(&self) -> ServerErrorKind {
     match self.raw_os_error() {

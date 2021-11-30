@@ -61,6 +61,11 @@ impl CompactionOp {
       }
       let parsed: u64 = parts[1].parse::<u64>()?;
       if parsed < current_read_version {
+        log::info!(
+          "deleting {} version {}",
+          self.key,
+          parsed,
+        );
         let full_path = dir.join(fname);
         fs::remove_dir_all(full_path).await?;
       }
@@ -76,6 +81,12 @@ impl CompactionOp {
     let opts = &server.opts;
     let current_time = Utc::now();
     if current_time - segment_meta.read_version_since > Duration::seconds(opts.delete_stale_compaction_seconds) {
+      log::info!(
+        "checking for old versions for {} version {} (current as of {:?}",
+        self.key,
+        segment_meta.read_version,
+        segment_meta.read_version_since,
+      );
       self.delete_old_versions(&opts.dir, segment_meta.read_version).await?;
     }
 
@@ -92,12 +103,19 @@ impl CompactionOp {
       omitted_n,
     };
     if segment_meta.write_versions.len() > 1 || compacted_n < opts.min_rows_for_compaction {
-      //already compacting or too few rows to warrant compaction
       res.remove_from_candidates = true;
+      log::debug!(
+        "will not compact {}; already compacting or too few rows",
+        self.key,
+      );
       return Ok(res);
     }
 
     if current_time - segment_meta.read_version_since < Duration::seconds(opts.min_compaction_intermission_seconds) {
+      log::debug!(
+        "will not compact {}; was compacted too recently",
+        self.key,
+      );
       return Ok(res);
     }
 
@@ -114,8 +132,17 @@ impl CompactionOp {
     let n_rows_has_doubled = compacted_n >= 2 * existing_compaction.compacted_n;
     let n_rows_has_been_constant = current_time - segment_meta.last_flush_at > Duration::seconds(opts.compact_as_constant_seconds);
     if n_rows_has_doubled || (n_rows_has_increased && n_rows_has_been_constant) {
+      log::debug!(
+        "will compact {}",
+        self.key,
+      );
       res.remove_from_candidates = true;
       res.do_compaction = true;
+    } else {
+      log::debug!(
+        "will not compact {}; recently active without enough new rows",
+        self.key,
+      );
     }
     Ok(res)
   }

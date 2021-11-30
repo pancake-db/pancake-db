@@ -15,7 +15,7 @@ const ROUTE_NAME: &str = "write_to_partition";
 
 impl Server {
   pub async fn write_to_partition(&self, req: WriteToPartitionRequest) -> ServerResult<WriteToPartitionResponse> {
-    WriteToPartitionOp { req }.execute(&self).await
+    WriteToPartitionOp { req }.execute(self).await
   }
 
   pub fn write_to_partition_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

@@ -14,7 +14,7 @@ const DROP_ROUTE_NAME: &str = "drop_table";
 
 impl Server {
   pub async fn drop_table(&self, req: DropTableRequest) -> ServerResult<DropTableResponse> {
-    DropTableOp { req }.execute(&self).await
+    DropTableOp { req }.execute(self).await
   }
 
   pub fn drop_table_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
