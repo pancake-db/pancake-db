@@ -1,18 +1,18 @@
+use std::path::Path;
+
 use async_trait::async_trait;
 use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
-use uuid::Uuid;
 use tokio::fs;
 
-use crate::utils::dirs;
-use crate::errors::{ServerResult, ServerError};
+use crate::errors::{ServerError, ServerResult};
 use crate::locks::partition::PartitionWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::Metadata;
-use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
-use crate::utils::common;
 use crate::storage::segment::SegmentMetadata;
-use std::path::Path;
+use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
+use crate::utils::{common, navigation};
+use crate::utils::dirs;
 
 pub struct WriteToPartitionOp {
   pub req: WriteToPartitionRequest,
@@ -35,11 +35,14 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     let dir = &server.opts.dir;
     let PartitionWriteLocks {
+      global_meta: _,
       table_meta,
       mut definitely_partition_guard,
       mut definitely_segment_guard,
+      shard_id,
       mut segment_key,
     } = locks;
+    let partition_key = segment_key.partition_key();
     let partition_meta = definitely_partition_guard.as_mut().unwrap();
     let mut segment_meta = definitely_segment_guard.as_mut().unwrap();
 
@@ -47,16 +50,15 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     let mut default_segment_meta = SegmentMetadata::default();
     if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
-      let new_segment_id = Uuid::new_v4().to_string();
+      let new_segment_id = shard_id.generate_segment_id();
       let key = SegmentKey {
         table_name: segment_key.table_name.clone(),
         partition: segment_key.partition.clone(),
-        segment_id: new_segment_id.clone(),
+        segment_id: new_segment_id,
       };
-      common::create_segment_dirs(&dirs::segment_dir(dir, &key)).await?;
-      partition_meta.write_segment_id = new_segment_id.clone();
-      partition_meta.segment_ids.push(new_segment_id);
-      partition_meta.overwrite(dir, &segment_key.partition_key()).await?;
+      navigation::create_segment_dirs(&dirs::segment_dir(dir, &key)).await?;
+      partition_meta.replace_active_segment_id(segment_key.segment_id, new_segment_id);
+      partition_meta.overwrite(dir, &partition_key).await?;
 
       segment_key = key;
       segment_meta = &mut default_segment_meta;
@@ -87,7 +89,7 @@ impl WriteToPartitionOp {
     if n_rows > 0 {
       segment_meta.all_time_n += n_rows as u64;
       segment_meta.staged_n += n_rows;
-      segment_meta.overwrite(dir, &segment_key).await
+      segment_meta.overwrite(dir, segment_key).await
     } else {
       Ok(())
     }
@@ -99,7 +101,7 @@ impl WriteToPartitionOp {
     segment_meta: &mut SegmentMetadata,
   ) -> ServerResult<()> {
     let dir = &server.opts.dir;
-    let staged_rows_path = dirs::staged_rows_path(dir, &segment_key);
+    let staged_rows_path = dirs::staged_rows_path(dir, segment_key);
     let staged_rows = common::staged_bytes_to_rows(&fs::read(&staged_rows_path).await?)?;
     if staged_rows.len() < segment_meta.staged_n {
       return Err(ServerError::internal(&format!(
@@ -116,6 +118,6 @@ impl WriteToPartitionOp {
         segment_key,
       )
     }
-    Self::increment_segment_meta_n_rows(n_rows, segment_meta, dir, &segment_key).await
+    Self::increment_segment_meta_n_rows(n_rows, segment_meta, dir, segment_key).await
   }
 }

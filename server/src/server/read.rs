@@ -1,20 +1,19 @@
 use std::convert::Infallible;
 
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, PartitionField, PartitionFilter};
+use pancake_db_core::compression;
+use pancake_db_core::encoding;
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
 
-use pancake_db_core::compression;
-use pancake_db_core::encoding;
-
-use crate::utils::dirs;
 use crate::errors::ServerResult;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::read_segment_column::ReadSegmentColumnOp;
 use crate::ops::traits::ServerOp;
-use crate::types::{SegmentKey, PartitionKey, NormalizedPartition};
+use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
+use crate::utils::{dirs, navigation};
 use crate::utils::common;
 
 use super::Server;
@@ -99,7 +98,7 @@ impl Server {
   }
 
   async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {
-    ListSegmentsOp { req }.execute(&self).await
+    ListSegmentsOp { req }.execute(self).await
   }
 
   async fn list_segments_from_bytes(&self, body: Bytes) -> ServerResult<ListSegmentsResponse> {
@@ -132,7 +131,7 @@ impl Server {
   }
 
   async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
-    ReadSegmentColumnOp { req }.execute(&self).await
+    ReadSegmentColumnOp { req }.execute(self).await
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {
@@ -190,7 +189,7 @@ impl Server {
             partition: NormalizedPartition::from_raw_fields(partition)?
           }
         );
-        let subpartitions = common::list_subpartitions(&subdir, meta)
+        let subpartitions = navigation::list_subpartitions(&subdir, meta)
           .await?;
 
         for leaf in subpartitions {

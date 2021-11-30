@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::errors::ServerResult;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::dirs;
-use crate::types::CompactionKey;
+use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
+use crate::types::CompactionKey;
+use crate::utils::dirs;
 
 use super::traits::{CacheData, Metadata, MetadataKey};
 

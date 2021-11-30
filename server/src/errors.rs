@@ -96,6 +96,14 @@ impl<E> From<E> for ServerError where E: ServerUpcastableError {
   }
 }
 
+// TODO stop automatically casting this
+// instead deal with on case-by-case basis
+impl ServerUpcastableError for uuid::Error {
+  fn kind(&self) -> ServerErrorKind {
+    ServerErrorKind::Corrupt
+  }
+}
+
 impl ServerUpcastableError for io::Error {
   fn kind(&self) -> ServerErrorKind {
     match self.raw_os_error() {

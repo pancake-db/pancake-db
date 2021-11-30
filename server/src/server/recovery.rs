@@ -2,18 +2,20 @@ use tokio::fs;
 
 use crate::constants::TABLE_METADATA_FILENAME;
 use crate::errors::ServerResult;
+use crate::ops::compact::CompactionOp;
 use crate::ops::drop_table::DropTableOp;
+use crate::ops::flush::FlushOp;
+use crate::ops::write_to_partition::WriteToPartitionOp;
 use crate::server::Server;
+use crate::storage::compaction::Compaction;
 use crate::storage::Metadata;
-use crate::storage::table::TableMetadata;
-use crate::utils::common;
-use crate::types::{NormalizedPartition, PartitionKey};
 use crate::storage::partition::PartitionMetadata;
 use crate::storage::segment::SegmentMetadata;
-use crate::ops::compact::CompactionOp;
-use crate::ops::write_to_partition::WriteToPartitionOp;
-use crate::ops::flush::FlushOp;
-use crate::storage::compaction::Compaction;
+use crate::storage::table::TableMetadata;
+use crate::types::{NormalizedPartition, PartitionKey};
+use crate::utils::{common, navigation};
+use std::collections::HashSet;
+use uuid::Uuid;
 
 struct TableInfo {
   pub name: String,
@@ -66,7 +68,7 @@ impl Server {
     } = table_info;
 
     if table_meta.dropped {
-      DropTableOp::recover(&self, &table_name, &table_meta).await?;
+      DropTableOp::recover(self, &table_name, &table_meta).await?;
       return Ok(());
     }
 
@@ -88,9 +90,11 @@ impl Server {
         continue;
       }
       let partition_meta = maybe_partition_meta.unwrap();
+      let all_segment_ids = navigation::list_segment_ids(dir, &partition_key).await?;
+      let active_segment_ids: HashSet<Uuid> = partition_meta.active_segment_ids.into_iter().collect();
 
-      for segment_id in &partition_meta.segment_ids {
-        let segment_key = partition_key.segment_key(segment_id.clone());
+      for segment_id in &all_segment_ids {
+        let segment_key = partition_key.segment_key(*segment_id);
         let mut maybe_segment_meta = SegmentMetadata::load(dir, &segment_key).await?;
 
         if maybe_segment_meta.is_none() {
@@ -99,14 +103,14 @@ impl Server {
         let segment_meta = maybe_segment_meta.as_mut().unwrap();
 
         // 2. Compactions
-        CompactionOp::recover(&self, &segment_key, segment_meta).await?;
+        CompactionOp::recover(self, &segment_key, segment_meta).await?;
 
         // 3. Flushes
-        FlushOp::recover(&self, &table_meta, &segment_key, segment_meta).await?;
+        FlushOp::recover(self, &table_meta, &segment_key, segment_meta).await?;
 
-        if segment_id == &partition_meta.write_segment_id {
+        if active_segment_ids.contains(segment_id) {
           // 4. Writes
-          WriteToPartitionOp::recover(&self, &segment_key, segment_meta).await?;
+          WriteToPartitionOp::recover(self, &segment_key, segment_meta).await?;
         }
 
         // 5. background state
@@ -120,7 +124,7 @@ impl Server {
         let compaction = Compaction::load(dir, &compaction_key)
           .await?
           .unwrap_or_default();
-        let flush_only_n = common::flush_only_n(&segment_meta, &compaction);
+        let flush_only_n = common::flush_only_n(segment_meta, &compaction);
         if flush_only_n > 0 {
           log::debug!("adding segment {} as compaction candidate", segment_key);
           self.background.add_compaction_candidate(segment_key).await;

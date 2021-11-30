@@ -1,15 +1,17 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
-use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, Segment};
+use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionField, Segment};
 use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
 use protobuf::MessageField;
 
 use crate::errors::ServerResult;
-use crate::locks::table::TableReadLocks;
+use crate::locks::table::GlobalTableReadLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::segment::SegmentMetadata;
 use crate::types::{NormalizedPartition, PartitionKey};
-use crate::utils::common;
+use crate::utils::{common, navigation, sharding};
 
 pub struct ListSegmentsOp {
   pub req: ListSegmentsRequest,
@@ -26,53 +28,36 @@ impl ListSegmentsOp {
       }
     }))
   }
-}
 
-#[async_trait]
-impl ServerOp<TableReadLocks> for ListSegmentsOp {
-  type Response = ListSegmentsResponse;
-
-  fn get_key(&self) -> ServerResult<String> {
-    Ok(self.req.table_name.clone())
-  }
-
-  async fn execute_with_locks(&self, server: &Server, locks: TableReadLocks) -> ServerResult<ListSegmentsResponse> {
-    let req = &self.req;
-    let table_name = &req.table_name;
-    common::validate_entity_name_for_read("table name", &table_name)?;
-
-    let TableReadLocks { table_meta } = locks;
-
-    let partitioning = table_meta.schema.partitioning.clone();
-    let partitions = server.list_partitions(
-      table_name,
-      partitioning,
-      &req.partition_filter,
-    ).await?;
-
+  async fn list_shards_segments(
+    &self,
+    server: &Server,
+    table_name: &str,
+    partitions: &[Vec<PartitionField>],
+    n_shards_log: u32,
+    shards: HashSet<u64>,
+    include_metadata: bool,
+  ) -> ServerResult<Vec<Segment>> {
     let mut segments = Vec::new();
-    for partition in &partitions {
+    for partition in partitions {
       let normalized_partition = NormalizedPartition::from_raw_fields(partition)?;
       let partition_key = PartitionKey {
-        table_name: table_name.clone(),
-        partition: normalized_partition.clone(),
+        table_name: table_name.to_string(),
+        partition: normalized_partition,
       };
 
-      let partition_meta_lock = server.partition_metadata_cache
-        .get_lock(&partition_key)
-        .await?;
-      let partition_meta_guard = partition_meta_lock.read().await;
-      let maybe_partition_meta = &*partition_meta_guard;
+      let all_segment_ids = navigation::list_segment_ids(
+        &server.opts.dir,
+        &partition_key,
+      ).await?;
 
-      if maybe_partition_meta.is_none() {
-        log::warn!("missing segments metadata for table {} partition {}", table_name, normalized_partition);
-        continue;
-      }
+      for &segment_id in &all_segment_ids {
+        if !shards.contains(&sharding::segment_id_to_shard(n_shards_log, segment_id)) {
+          continue;
+        }
 
-      let partition_meta = maybe_partition_meta.as_ref().unwrap();
-      for segment_id in &partition_meta.segment_ids {
-        let metadata = if req.include_metadata {
-          let segment_key = partition_key.segment_key(segment_id.clone());
+        let metadata = if include_metadata {
+          let segment_key = partition_key.segment_key(segment_id);
           let segment_lock = server.segment_metadata_cache
             .get_lock(&segment_key)
             .await?;
@@ -84,12 +69,55 @@ impl ServerOp<TableReadLocks> for ListSegmentsOp {
         };
         segments.push(Segment {
           partition: partition.clone(),
-          segment_id: segment_id.clone(),
+          segment_id: segment_id.to_string(),
           metadata,
           ..Default::default()
         });
       }
     }
+    Ok(segments)
+  }
+}
+
+#[async_trait]
+impl ServerOp<GlobalTableReadLocks> for ListSegmentsOp {
+  type Response = ListSegmentsResponse;
+
+  fn get_key(&self) -> ServerResult<String> {
+    Ok(self.req.table_name.clone())
+  }
+
+  async fn execute_with_locks(&self, server: &Server, locks: GlobalTableReadLocks) -> ServerResult<ListSegmentsResponse> {
+    let req = &self.req;
+    let table_name = &req.table_name;
+    common::validate_entity_name_for_read("table name", table_name)?;
+
+    let GlobalTableReadLocks {
+      global_meta,
+      table_meta,
+    } = locks;
+
+    let partitioning = table_meta.schema.partitioning.clone();
+    let partitions = server.list_partitions(
+      table_name,
+      partitioning,
+      &req.partition_filter,
+    ).await?;
+
+    let n_shards = 1_u64 << global_meta.n_shards_log;
+    let mut all_shards = HashSet::new();
+    for shard in 0..n_shards {
+      // seems silly for now, but will make sense when we have distributed sharding
+      all_shards.insert(shard);
+    }
+    let segments = self.list_shards_segments(
+      server,
+      table_name,
+      &partitions,
+      global_meta.n_shards_log,
+      all_shards,
+      req.include_metadata,
+    ).await?;
 
     Ok(ListSegmentsResponse {
       segments,

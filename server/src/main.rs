@@ -36,7 +36,9 @@ async fn main() {
     .await
     .expect("unable to recover server state");
 
-  let backgrounds = server.init().await;
+  let backgrounds = server.init()
+    .await
+    .expect("unable to initialize server");
   log::info!("initialized server background processes in dir {:?}", opts.dir);
 
   let filter = server.warp_filter();

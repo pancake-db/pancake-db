@@ -83,7 +83,7 @@ impl ServerOpLocks for SegmentReadLocks {
     let maybe_segment_meta = segment_guard.clone();
 
     if maybe_segment_meta.is_none() {
-      return Err(ServerError::does_not_exist("segment", &key.segment_id));
+      return Err(ServerError::does_not_exist("segment", &key.segment_id.to_string()));
     }
 
     let segment_meta = maybe_segment_meta.unwrap();

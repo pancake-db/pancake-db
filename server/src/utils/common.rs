@@ -14,7 +14,7 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dml::partition_field::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
-use pancake_db_idl::schema::{PartitionMeta, Schema};
+use pancake_db_idl::schema::Schema;
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use protobuf::well_known_types::Timestamp;
 use serde::Serialize;
@@ -27,9 +27,10 @@ use warp::Reply;
 
 use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
 use crate::errors::{ServerError, ServerResult};
-use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
-use crate::storage::segment::SegmentMetadata;
+use crate::storage::{Metadata, MetadataKey};
 use crate::storage::compaction::Compaction;
+use crate::storage::segment::SegmentMetadata;
+use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -135,10 +136,10 @@ fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> 
 pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &NormalizedPartitionField) -> bool {
   let value = field.value.clone();
   match dtype {
-    PartitionDataType::STRING => matches!(value, NormalizedPartitionValue::STRING(_)),
-    PartitionDataType::INT64 => matches!(value, NormalizedPartitionValue::INT64(_)),
-    PartitionDataType::BOOL => matches!(value, NormalizedPartitionValue::BOOL(_)),
-    PartitionDataType::TIMESTAMP_MINUTE => matches!(value, NormalizedPartitionValue::MINUTE(_)),
+    PartitionDataType::STRING => matches!(value, NormalizedPartitionValue::String(_)),
+    PartitionDataType::INT64 => matches!(value, NormalizedPartitionValue::Int64(_)),
+    PartitionDataType::BOOL => matches!(value, NormalizedPartitionValue::Bool(_)),
+    PartitionDataType::TIMESTAMP_MINUTE => matches!(value, NormalizedPartitionValue::Minute(_)),
   }
 }
 
@@ -401,40 +402,6 @@ fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResul
   Ok(())
 }
 
-pub async fn list_subpartitions(
-  dir: &Path,
-  meta: &PartitionMeta,
-) -> ServerResult<Vec<PartitionField>> {
-  let mut res = Vec::new();
-  let mut read_dir = fs::read_dir(&dir).await?;
-  while let Ok(Some(entry)) = read_dir.next_entry().await {
-    if !entry.file_type().await.unwrap().is_dir() {
-      continue;
-    }
-
-    let fname = entry.file_name();
-    let parts = fname
-      .to_str()
-      .unwrap()
-      .split('=')
-      .collect::<Vec<&str>>();
-
-    if parts.len() != 2 {
-      continue;
-    }
-    if *parts[0] != meta.name {
-      continue;
-    }
-    let parsed = partition_field_from_string(
-      &meta.name,
-      parts[1],
-      meta.dtype.unwrap(),
-    )?;
-    res.push(parsed);
-  }
-  Ok(res)
-}
-
 pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
   let mut col_map = HashMap::new();
   for col in &schema.columns {
@@ -445,7 +412,7 @@ pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
       let mut err_msgs = Vec::new();
       match col_map.get(&field.name) {
         Some(col) => {
-          if !dtype_matches_field(&col.dtype.unwrap(), &field) {
+          if !dtype_matches_field(&col.dtype.unwrap(), field) {
             err_msgs.push(format!(
               "invalid field value for column {} with dtype {:?}: {:?}",
               col.name,
@@ -508,12 +475,6 @@ pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
   Ok(res)
 }
 
-pub async fn create_segment_dirs(segment_dir: &Path) -> io::Result<()> {
-  fs::create_dir(segment_dir).await?;
-  fs::create_dir(segment_dir.join("v0")).await?;
-  Ok(())
-}
-
 // number of rows (deleted or otherwise) in flush files (not compaction or staged)
 pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> usize {
   let all_time_flushed_n = segment_meta.all_time_n - segment_meta.staged_n as u64;
@@ -545,3 +506,12 @@ pub fn single_field_from_row(row: &Row, name: &str) -> Field {
   res
 }
 
+pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
+  key: &K,
+  metadata: &Option<M>,
+) -> ServerResult<M> {
+  match metadata {
+    Some(m) => Ok(m.clone()),
+    None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", key)))
+  }
+}
