@@ -9,7 +9,6 @@ use crate::storage::global::GlobalMetadata;
 use crate::storage::Metadata;
 use crate::storage::partition::PartitionMetadata;
 use crate::storage::segment::SegmentMetadata;
-// use crate::storage::shard::ShardMetadata;
 use crate::storage::table::TableMetadata;
 use crate::types::{PartitionKey, SegmentKey, ShardId};
 use crate::utils::{common, navigation};
