@@ -11,6 +11,7 @@ use crate::types::SegmentKey;
 use crate::utils::dirs;
 
 use super::traits::{CacheData, Metadata};
+use pancake_db_idl::schema::Schema;
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";
@@ -39,8 +40,8 @@ impl Metadata<SegmentKey> for SegmentMetadata {
   }
 }
 
-impl Default for SegmentMetadata {
-  fn default() -> SegmentMetadata {
+impl SegmentMetadata {
+  pub fn new(explicit_columns: HashSet<String>) -> SegmentMetadata {
     SegmentMetadata {
       all_time_n: 0,
       all_time_deleted_n: 0,
@@ -51,8 +52,15 @@ impl Default for SegmentMetadata {
       read_version_since: Utc::now(),
       last_flush_at: Utc::now(),
       flushing: false,
-      explicit_columns: HashSet::new()
+      explicit_columns,
     }
+  }
+
+  pub fn new_from_schema(schema: &Schema) -> Self {
+    let explicit_columns = schema.columns.iter()
+      .map(|c| c.name.clone())
+      .collect();
+    Self::new(explicit_columns)
   }
 }
 

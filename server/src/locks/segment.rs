@@ -45,7 +45,7 @@ impl ServerOpLocks for SegmentWriteLocks {
     let mut segment_guard = segment_meta_lock.write_owned().await;
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
-      *maybe_segment_meta = Some(SegmentMetadata::default());
+      *maybe_segment_meta = Some(SegmentMetadata::new_from_schema(&table_meta.schema));
     }
 
     let locks = SegmentWriteLocks {

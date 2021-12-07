@@ -89,7 +89,7 @@ impl ServerOpLocks for PartitionWriteLocks {
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
       navigation::create_segment_dirs(&dirs::segment_dir(&server.opts.dir, &segment_key)).await?;
-      let segment_meta = SegmentMetadata::default();
+      let segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
       *maybe_segment_meta = Some(segment_meta);
     }
 

@@ -48,7 +48,7 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 
     common::validate_rows(&table_meta.schema, &self.req.rows)?;
 
-    let mut default_segment_meta = SegmentMetadata::default();
+    let mut default_segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
     if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
       let new_segment_id = shard_id.generate_segment_id();
       let key = SegmentKey {
