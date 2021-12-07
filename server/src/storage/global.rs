@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 
-use super::traits::{CacheData, Metadata, MetadataKey};
+use super::traits::{Metadata, MetadataKey};
 
 impl MetadataKey for () {
   const ENTITY_NAME: &'static str = "global metadata";
@@ -31,5 +31,3 @@ impl Default for GlobalMetadata {
     }
   }
 }
-
-pub type GlobalMetadataCache = CacheData<(), GlobalMetadata>;

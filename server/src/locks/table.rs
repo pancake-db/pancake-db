@@ -7,7 +7,6 @@ use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::table::TableMetadata;
 use crate::storage::global::GlobalMetadata;
-use crate::utils::common;
 
 pub struct GlobalTableReadLocks {
   pub global_meta: GlobalMetadata,
@@ -30,9 +29,7 @@ impl ServerOpLocks for GlobalTableReadLocks {
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> where Self: Sized {
-    let global_lock = server.global_metadata_cache.get_lock(&()).await?;
-    let global_guard = global_lock.read().await;
-    let global_meta = common::unwrap_metadata(&(), &*global_guard)?;
+    let global_guard = server.global_metadata_lock.read().await;
 
     let table_name = op.get_key()?;
     let lock = server.table_metadata_cache.get_lock(&table_name).await?;
@@ -43,7 +40,7 @@ impl ServerOpLocks for GlobalTableReadLocks {
     }
 
     let locks = GlobalTableReadLocks {
-      global_meta,
+      global_meta: global_guard.clone(),
       table_meta: maybe_table.unwrap(),
     };
     op.execute_with_locks(server, locks).await

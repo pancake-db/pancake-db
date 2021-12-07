@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tokio::sync::OwnedRwLockWriteGuard;
 
-use crate::errors::{ServerError, ServerResult};
+use crate::errors::ServerResult;
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
@@ -34,20 +34,15 @@ impl ServerOpLocks for PartitionWriteLocks {
     let dir = &server.opts.dir;
 
     // global lock
-    let global_lock = server.global_metadata_cache.get_lock(&()).await?;
-    let global_guard = global_lock.read().await;
-    let global_meta = common::unwrap_metadata(&(), &*global_guard)?;
+    let global_guard = server.global_metadata_lock.read().await;
+    let global_meta = global_guard.clone();
 
     // table lock
     let key: PartitionKey = op.get_key()?;
     let table_name = &key.table_name;
     let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
     let table_guard = table_lock.read().await;
-    let maybe_table = table_guard.clone();
-    if maybe_table.is_none() {
-      return Err(ServerError::does_not_exist("table", table_name));
-    }
-    let table_meta = maybe_table.unwrap();
+    let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
 
     key.partition.check_against_schema(&table_meta.schema)?;
 

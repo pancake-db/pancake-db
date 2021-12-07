@@ -17,7 +17,7 @@ use crate::storage::partition::PartitionMetadataCache;
 use crate::storage::segment::SegmentMetadataCache;
 use crate::storage::table::TableMetadataCache;
 use crate::types::SegmentKey;
-use crate::storage::global::{GlobalMetadataCache, GlobalMetadata};
+use crate::storage::global::GlobalMetadata;
 use crate::storage::Metadata;
 
 mod create_table;
@@ -107,7 +107,7 @@ pub struct Server {
   pub opts: Opt,
   background: Background,
   activity: Activity,
-  pub global_metadata_cache: GlobalMetadataCache,
+  pub global_metadata_lock: Arc<RwLock<GlobalMetadata>>,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
   pub segment_metadata_cache: SegmentMetadataCache,
@@ -116,12 +116,11 @@ pub struct Server {
 
 impl Server {
   async fn bootstrap(&self) -> ServerResult<()> {
-    let global_meta_lock = self.global_metadata_cache.get_lock(&()).await?;
-    let mut global_meta_guard = global_meta_lock.write().await;
-    if global_meta_guard.is_none() {
-      let global_meta = GlobalMetadata::default();
-      global_meta.overwrite(&self.opts.dir, &()).await?;
-      *global_meta_guard = Some(global_meta);
+    let maybe_existing_global = GlobalMetadata::load(&self.opts.dir, &()).await?;
+    if let Some(existing_global) = maybe_existing_global {
+      let mut global_meta_guard = self.global_metadata_lock.write().await;
+      existing_global.overwrite(&self.opts.dir, &()).await?;
+      *global_meta_guard = existing_global;
     }
     Ok(())
   }
@@ -211,14 +210,14 @@ impl Server {
 
   pub fn new(opts: Opt) -> Server {
     let dir = &opts.dir;
-    let global_metadata_cache = GlobalMetadataCache::new(dir);
+    let global_metadata_lock = Arc::new(RwLock::new(GlobalMetadata::default()));
     let table_metadata_cache = TableMetadataCache::new(dir);
     let partition_metadata_cache = PartitionMetadataCache::new(dir);
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
       opts,
-      global_metadata_cache,
+      global_metadata_lock,
       table_metadata_cache,
       partition_metadata_cache,
       segment_metadata_cache,
