@@ -1,17 +1,15 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use async_trait::async_trait;
 use pancake_db_idl::ddl::{AlterTableRequest, AlterTableResponse};
 
 use crate::constants::MAX_NESTED_LIST_DEPTH;
-use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::storage::Metadata;
 use crate::utils::common;
-use crate::storage::table::TableMetadata;
 
 pub struct AlterTableOp {
   pub req: AlterTableRequest,
@@ -71,9 +69,10 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
         }
 
         let mut new_table_meta = table_meta.clone();
-        new_table_meta.schema.columns.extend(&req.new_columns);
+        new_table_meta.schema.columns.extend_from_slice(&req.new_columns);
         new_table_meta.overwrite(dir, table_name).await?;
         *maybe_table_guard = Some(new_table_meta);
+        Ok(())
       }
       None => {
         Err(ServerError::does_not_exist("table", table_name))

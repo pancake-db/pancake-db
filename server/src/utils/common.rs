@@ -539,11 +539,13 @@ pub async fn assert_file(path: &Path, content: Vec<u8>) -> ServerResult<bool> {
       }
     },
     Err(e) => {
-      if e.raw_os_error() == 2 {
-        // no such file exists
-        fs::write(path, &content).await?
-      } else {
-        Err(ServerError::from(e))
+      match e.raw_os_error() {
+        Some(2) => {
+          // no such file exists
+          fs::write(path, &content).await?;
+          Ok(true)
+        }
+        _ => Err(ServerError::from(e))
       }
     }
   }

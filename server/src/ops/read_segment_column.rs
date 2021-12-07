@@ -16,7 +16,7 @@ use crate::types::{NormalizedPartition, SegmentKey};
 use crate::utils::common;
 use crate::utils::dirs;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum FileType {
   Flush,
   Compact,
@@ -43,10 +43,10 @@ struct SegmentColumnContinuation {
 }
 
 impl SegmentColumnContinuation {
-  fn new(version: u64) -> Self {
+  fn new(file_type: FileType, version: u64) -> Self {
     SegmentColumnContinuation {
       version,
-      file_type: if version > 0 { FileType::Compact } else { FileType::Flush },
+      file_type,
       offset: 0,
     }
   }
@@ -136,8 +136,17 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     }
     let col_meta = maybe_col_meta.unwrap();
 
+    let is_explicit_column = segment_meta.explicit_columns.contains(&col_name);
     let continuation = if req.continuation_token.is_empty() {
-      SegmentColumnContinuation::new(segment_meta.read_version)
+      // If the segment explicitly contains this column and version > 0,
+      // it probably has compacted data.
+      // Otherwise it definitely doesn't, and we can skip to flushed+staged data.
+      let version = segment_meta.read_version;
+      if is_explicit_column && version > 0 {
+        SegmentColumnContinuation::new(FileType::Compact, version)
+      } else {
+        SegmentColumnContinuation::new(FileType::Flush, version)
+      }
     } else {
       SegmentColumnContinuation::try_from(req.continuation_token.clone())?
     };
@@ -155,8 +164,15 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     let opts = &server.opts;
     let dir = &opts.dir;
     let row_count = (segment_meta.all_time_n - segment_meta.all_time_deleted_n) as u32;
+    let implicit_nulls_count = if is_explicit_column {
+      0
+    } else {
+      let staged_count = segment_meta.staged_n - segment_meta.staged_deleted_n;
+      row_count - staged_count as u32
+    };
     let mut response = ReadSegmentColumnResponse {
       row_count,
+      implicit_nulls_count,
       ..Default::default()
     };
     match continuation.file_type {

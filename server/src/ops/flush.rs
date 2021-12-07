@@ -85,7 +85,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
       let compaction_key = segment_key.compaction_key(version);
       for col in &table_meta.schema.columns {
         if new_explicit_columns.contains(&col.name) {
-          self.assert_explicit_files(col, &compaction_key, &segment_meta, server).await?;
+          self.assert_explicit_files(col, &compaction_key, segment_meta, server).await?;
         }
 
         let field_values = field_maps
@@ -132,21 +132,24 @@ impl FlushOp {
 
     // compacted data
     let compaction = {
-      let compaction_lock = server.compaction_cache.get_lock(&compaction_key).await?;
+      let compaction_lock = server.compaction_cache.get_lock(compaction_key).await?;
       let mut compaction_guard = compaction_lock.write().await;
-      let mut compaction = compaction_guard.unwrap_or_default();
+      let mut compaction = compaction_guard.clone().unwrap_or_default();
 
       let compacted_n = compaction.compacted_n;
       if compacted_n > 0 {
         let codec_name = compaction.col_codecs
           .get(&col_meta.name)
           .cloned()
-          .unwrap_or(compression::choose_codec(dtype));
+          .unwrap_or_else(|| compression::choose_codec(dtype));
         let codec = compression::new_codec(dtype, &codec_name)?;
-        let compacted_nulls = vec![FieldValue::new()].repeat(compacted_n);
+        let mut compacted_nulls = Vec::with_capacity(compacted_n);
+        for _ in 0..compacted_n {
+          compacted_nulls.push(FieldValue::new());
+        }
         let compacted_null_bytes = codec.compress(&compacted_nulls, nested_list_depth)?;
         compaction.col_codecs.insert(col_meta.name.clone(), codec_name);
-        compaction.overwrite(dir, &compaction_key).await?;
+        compaction.overwrite(dir, compaction_key).await?;
         *compaction_guard = Some(compaction.clone());
 
         common::assert_file(
@@ -158,7 +161,7 @@ impl FlushOp {
     };
 
     // flushed data
-    let flushed_n = common::flush_only_n(&segment_meta, &compaction);
+    let flushed_n = common::flush_only_n(segment_meta, &compaction);
     if flushed_n > 0 {
       let encoder = encoding::new_encoder(dtype, nested_list_depth);
       let flushed_null_bytes = encoder.encode_count(flushed_n as u32);

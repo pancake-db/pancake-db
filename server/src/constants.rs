@@ -1,4 +1,4 @@
-pub const MAX_FIELD_BYTE_SIZE: usize = 65536;
+pub const MAX_FIELD_BYTE_SIZE: usize = 4096;
 pub const LIST_LENGTH_BYTES: usize = 2;
 pub const MAX_NESTED_LIST_DEPTH: u32 = 3;
 pub const MAX_PARTITIONING_DEPTH: usize = 4;
