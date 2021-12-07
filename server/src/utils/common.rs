@@ -25,7 +25,7 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
+use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH};
 use crate::errors::{ServerError, ServerResult};
 use crate::storage::{Metadata, MetadataKey};
 use crate::storage::compaction::Compaction;
@@ -381,11 +381,20 @@ pub fn validate_entity_name_for_write(entity: &str, name: &str) -> ServerResult<
 fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResult<()> {
   let first_char = match name.chars().next() {
     Some(c) => Ok(c),
-    None => Err(ServerError::invalid(&format!("{} name may not be empty", entity)))
+    None => Err(ServerError::invalid(&format!("{} name must not be empty", entity)))
   }?;
+  if name.len() > MAX_NAME_LENGTH {
+    return Err(ServerError::invalid(&format!(
+      "{} name \"{}...\" must not contain over {} bytes",
+      entity,
+      &name[0..MAX_NAME_LENGTH - 3],
+      MAX_NAME_LENGTH,
+    )))
+  }
+
   if is_write && first_char == '_' {
     return Err(ServerError::invalid(&format!(
-      "{} name \"{}\" may not start with an underscore",
+      "{} name \"{}\" must not start with an underscore",
       entity,
       name
     )));
@@ -513,5 +522,29 @@ pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
   match metadata {
     Some(m) => Ok(m.clone()),
     None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", key)))
+  }
+}
+
+// returns true if it creates a new file, false if the correct file already exists
+pub async fn assert_file(path: &Path, content: Vec<u8>) -> ServerResult<bool> {
+  match fs::read(path).await {
+    Ok(bytes) => {
+      if bytes == content {
+        Ok(false)
+      } else {
+        Err(ServerError::invalid(&format!(
+          "file {:?} already exists with different content",
+          path
+        )))
+      }
+    },
+    Err(e) => {
+      if e.raw_os_error() == 2 {
+        // no such file exists
+        fs::write(path, &content).await?
+      } else {
+        Err(ServerError::from(e))
+      }
+    }
   }
 }

@@ -5,6 +5,7 @@ use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use pancake_db_idl::schema::Schema;
 
+use crate::constants::{MAX_PARTITIONING_DEPTH, MAX_NESTED_LIST_DEPTH};
 use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
@@ -13,9 +14,6 @@ use crate::server::Server;
 use crate::storage::Metadata;
 use crate::utils::common;
 use crate::storage::table::TableMetadata;
-
-const MAX_NESTED_LIST_DEPTH: u32 = 3;
-const MAX_PARTITIONING_DEPTH: usize = 4;
 
 fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {
   if schema0.partitioning.len() != schema1.partitioning.len() {

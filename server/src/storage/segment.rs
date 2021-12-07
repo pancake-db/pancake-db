@@ -1,14 +1,14 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ServerResult;
-
 use crate::impl_metadata_serde_json;
-use crate::utils::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
+use crate::utils::dirs;
 
 use super::traits::{CacheData, Metadata};
 
@@ -27,6 +27,7 @@ pub struct SegmentMetadata {
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
   pub flushing: bool, // used for recovery purposes
+  pub explicit_columns: HashSet<String>,
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -50,6 +51,7 @@ impl Default for SegmentMetadata {
       read_version_since: Utc::now(),
       last_flush_at: Utc::now(),
       flushing: false,
+      explicit_columns: HashSet::new()
     }
   }
 }

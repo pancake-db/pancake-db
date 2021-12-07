@@ -1,4 +1,5 @@
 pub mod traits;
+pub mod alter_table;
 pub mod create_table;
 pub mod drop_table;
 pub mod get_schema;

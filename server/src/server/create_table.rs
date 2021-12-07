@@ -1,6 +1,5 @@
 use std::convert::Infallible;
 
-
 use hyper::body::Bytes;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
 use warp::{Filter, Rejection, Reply};
