@@ -142,6 +142,7 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
               }
               let alter_table_op = AlterTableOp {
                 req: AlterTableRequest {
+                  table_name: req.table_name.to_string(),
                   new_columns,
                   ..Default::default()
                 }

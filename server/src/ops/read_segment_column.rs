@@ -194,12 +194,17 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
         ).await?;
 
         let next_token = if compressed_data.len() < opts.read_page_byte_size {
-          let has_uncompressed_data = common::file_exists(dirs::flush_col_file(
+          let has_flushed_data_future = common::file_exists(dirs::flush_col_file(
             dir,
             &compaction_key,
             &col_name
-          )).await?;
-          if has_uncompressed_data {
+          ));
+          let has_staged_data_future = common::file_nonempty(dirs::staged_rows_path(
+            dir,
+            &segment_key,
+          ));
+          let (has_flushed_data, has_staged_data) = tokio::join!(has_flushed_data_future, has_staged_data_future);
+          if has_flushed_data? || has_staged_data? {
             SegmentColumnContinuation {
               version: continuation.version,
               file_type: FileType::Flush,

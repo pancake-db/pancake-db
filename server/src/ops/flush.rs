@@ -21,6 +21,7 @@ use crate::utils::common;
 use crate::utils::decoding_seek;
 use crate::utils::dirs;
 use pancake_db_idl::schema::ColumnMeta;
+use std::io;
 
 pub struct FlushOp {
   pub segment_key: SegmentKey,
@@ -67,14 +68,11 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     // if any columns in the request have never been explicitly flushed to this
     // segment before, we need to initialize them
     let mut new_explicit_columns = HashSet::new();
-    for row in &rows {
-      for field in &row.fields {
-        if !segment_meta.explicit_columns.contains(&field.name) {
-          new_explicit_columns.insert(field.name.clone());
-        }
+    for col in &table_meta.schema.columns {
+      if !segment_meta.explicit_columns.contains(&col.name) {
+        new_explicit_columns.insert(col.name.clone());
       }
     }
-
 
     // before we do anything destructive, mark this segment as flushing
     // for recovery purposes
@@ -102,7 +100,14 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
       }
     }
 
-    segment_meta.explicit_columns.extend(new_explicit_columns);
+    if !new_explicit_columns.is_empty() {
+      log::debug!(
+        "marking columns {:?} as explicit for segment {}",
+        new_explicit_columns,
+        segment_key
+      );
+      segment_meta.explicit_columns.extend(new_explicit_columns);
+    }
     segment_meta.last_flush_at = Utc::now();
     segment_meta.staged_n = 0;
     segment_meta.staged_deleted_n = 0;
@@ -152,6 +157,12 @@ impl FlushOp {
         compaction.overwrite(dir, compaction_key).await?;
         *compaction_guard = Some(compaction.clone());
 
+        log::info!(
+          "asserting explicit compaction column file for {:?} column {} with {} rows",
+          compaction_key,
+          col_meta.name,
+          compacted_n,
+        );
         common::assert_file(
           &dirs::compact_col_file(dir, compaction_key, &col_meta.name),
           compacted_null_bytes
@@ -165,6 +176,12 @@ impl FlushOp {
     if flushed_n > 0 {
       let encoder = encoding::new_encoder(dtype, nested_list_depth);
       let flushed_null_bytes = encoder.encode_count(flushed_n as u32);
+      log::info!(
+        "asserting explicit flush column file for {:?} column {} with {} rows",
+        compaction_key,
+        col_meta.name,
+        flushed_n,
+      );
       common::assert_file(
         &dirs::flush_col_file(dir, compaction_key, &col_meta.name),
         flushed_null_bytes
@@ -200,7 +217,21 @@ impl FlushOp {
     let trim_idx = common::flush_only_n(segment_meta, &compaction);
     for col_meta in &table_meta.schema.columns {
       let flush_file = dirs::flush_col_file(dir, compaction_key, &col_meta.name);
-      let bytes = fs::read(&flush_file).await?;
+      let bytes_result = fs::read(&flush_file).await;
+
+      if let Err(e) = &bytes_result {
+        if matches!(e.kind(), io::ErrorKind::NotFound) {
+          log::debug!(
+            "flush file for {:?} column {} does not yet exist; skipping trim",
+            compaction_key,
+            col_meta.name,
+          );
+          continue;
+        }
+      }
+
+      log::debug!("determining where to truncate {:?}", flush_file);
+      let bytes = bytes_result?;
       let trim_byte_idx = decoding_seek::byte_idx_for_row_idx(
         col_meta.dtype.enum_value_or_default(),
         col_meta.nested_list_depth as u8,
@@ -215,6 +246,8 @@ impl FlushOp {
           .open(flush_file)
           .await?;
         file.set_len(trim_byte_idx as u64).await?;
+      } else {
+        log::debug!("no trim needed for {:?}", flush_file);
       }
     }
     Ok(())
@@ -257,6 +290,7 @@ impl FlushOp {
       }
     }
 
+    log::debug!("cleaning segment {} metadata", segment_key);
     segment_meta.flushing = false;
     segment_meta.overwrite(dir, segment_key).await?;
 

@@ -44,6 +44,18 @@ pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   }
 }
 
+pub async fn file_nonempty(fname: impl AsRef<Path>) -> io::Result<bool> {
+  match fs::File::open(fname).await {
+    Ok(mut f) => {
+      let mut buf = vec![0_u8];
+      let bytes_read = f.read(&mut buf).await?;
+      Ok(bytes_read > 0)
+    },
+    Err(e) if matches!(e.kind(), io::ErrorKind::NotFound) => Ok(false),
+    Err(e) => Err(e),
+  }
+}
+
 pub async fn read_with_offset(fname: impl AsRef<Path>, offset: u64, bytes: usize) -> io::Result<Vec<u8>> {
   // return completed: bool, and bytes if any
   let mut maybe_file = fs::File::open(fname).await
@@ -114,6 +126,7 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
     DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
     DataType::BOOL => |v: &FieldValue| v.has_bool_val(),
     DataType::BYTES =>  |v: &FieldValue| v.has_bytes_val(),
+    DataType::FLOAT32 => |v: &FieldValue| v.has_float32_val(),
     DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
     DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
   };
@@ -331,6 +344,7 @@ pub fn byte_size_of_field(value: &FieldValue) -> usize {
     Value::string_val(x) => LIST_LENGTH_BYTES + x.len(),
     Value::bool_val(_) => 1,
     Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::float32_val(_) => 4,
     Value::float64_val(_) => 8,
     Value::timestamp_val(_) => 12,
     Value::list_val(x) => {
@@ -539,9 +553,8 @@ pub async fn assert_file(path: &Path, content: Vec<u8>) -> ServerResult<bool> {
       }
     },
     Err(e) => {
-      match e.raw_os_error() {
-        Some(2) => {
-          // no such file exists
+      match e.kind() {
+        io::ErrorKind::NotFound => {
           fs::write(path, &content).await?;
           Ok(true)
         }
