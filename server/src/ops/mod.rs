@@ -8,3 +8,4 @@ pub mod write_to_partition;
 pub mod flush;
 pub mod read_segment_column;
 pub mod compact;
+pub mod list_tables;
