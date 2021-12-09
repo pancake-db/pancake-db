@@ -222,7 +222,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
         };
 
         response.codec = codec;
-        response.compressed_data = compressed_data;
+        response.data = compressed_data;
         response.continuation_token = next_token;
       },
       FileType::Flush => {
@@ -231,7 +231,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           &compaction_key,
           &col_name,
         );
-        response.uncompressed_data = common::read_with_offset(
+        response.data = common::read_with_offset(
           uncompressed_filename,
           continuation.offset,
           opts.read_page_byte_size,
@@ -240,9 +240,9 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
         response.continuation_token = SegmentColumnContinuation {
           version: continuation.version,
           file_type: FileType::Flush,
-          offset: continuation.offset + response.uncompressed_data.len() as u64
+          offset: continuation.offset + response.data.len() as u64
         }.to_string();
-        if response.uncompressed_data.len() < opts.read_page_byte_size {
+        if response.data.len() < opts.read_page_byte_size {
           // we have reached the end of flushed data
           response.continuation_token = "".to_string();
 
@@ -258,7 +258,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
             col_meta.nested_list_depth as u8
           );
           let staged_bytes = encoder.encode(&staged_values)?;
-          response.uncompressed_data.extend(staged_bytes);
+          response.data.extend(staged_bytes);
         }
       }
     }

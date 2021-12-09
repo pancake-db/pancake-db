@@ -148,17 +148,12 @@ impl Server {
 
     let resp = pancake_res.unwrap();
     let mut resp_meta = resp.clone();
-    resp_meta.uncompressed_data = Vec::new();
-    resp_meta.compressed_data = Vec::new();
+    resp_meta.data = Vec::new();
     let mut resp_bytes = protobuf::json::print_to_string(&resp_meta)
       .unwrap()
       .into_bytes();
     resp_bytes.extend("\n".as_bytes());
-    if !resp.uncompressed_data.is_empty() {
-      resp_bytes.extend(resp.uncompressed_data)
-    } else {
-      resp_bytes.extend(resp.compressed_data)
-    }
+    resp_bytes.extend(resp.data);
     log::info!(
       "replying OK to {} request with {} bytes",
       READ_ROUTE_NAME,
