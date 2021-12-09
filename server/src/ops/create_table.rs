@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse};
+use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse, AlterTableRequest};
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use pancake_db_idl::schema::Schema;
 
+use crate::constants::{MAX_PARTITIONING_DEPTH, MAX_NESTED_LIST_DEPTH, MAX_N_COLUMNS};
 use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
@@ -13,9 +14,7 @@ use crate::server::Server;
 use crate::storage::Metadata;
 use crate::utils::common;
 use crate::storage::table::TableMetadata;
-
-const MAX_NESTED_LIST_DEPTH: u32 = 3;
-const MAX_PARTITIONING_DEPTH: usize = 4;
+use crate::ops::alter_table::AlterTableOp;
 
 fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {
   if schema0.partitioning.len() != schema1.partitioning.len() {
@@ -73,7 +72,7 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
   async fn execute_with_locks(
     &self,
     server: &Server,
-    locks: TableWriteLocks,
+    mut locks: TableWriteLocks,
   ) -> ServerResult<CreateTableResponse> {
     let req = &self.req;
     let table_name = &req.table_name;
@@ -92,7 +91,14 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         "number of partition fields may not exceed {} but was {}",
         MAX_PARTITIONING_DEPTH,
         schema.partitioning.len(),
-      )))
+      )));
+    }
+    if schema.columns.len() > MAX_N_COLUMNS {
+      return Err(ServerError::invalid(&format!(
+        "number of columns may not exceed {} but was {}; rethink your data model",
+        MAX_N_COLUMNS,
+        schema.columns.len(),
+      )));
     }
     for meta in &schema.partitioning {
       common::validate_entity_name_for_write("partition name", &meta.name)?;
@@ -109,25 +115,51 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
       }
     }
 
-    let TableWriteLocks {
-      mut maybe_table_guard
-    } = locks;
-    let maybe_table = &mut *maybe_table_guard;
+    let maybe_table = &mut *locks.maybe_table_guard;
+    let mut result = CreateTableResponse {..Default::default()};
 
-    let already_exists = match maybe_table {
+    match maybe_table {
       Some(table_meta) => {
+        result.already_exists = true;
         if !partitioning_matches(schema, &table_meta.schema) {
           return Err(ServerError::invalid("existing schema has different partitioning"))
         }
+
         match schema_mode {
           SchemaMode::FAIL_IF_EXISTS => Err(ServerError::invalid("table already exists")),
           SchemaMode::OK_IF_EXACT => {
             if is_subset(&table_meta.schema, schema) && is_subset(schema, &table_meta.schema) {
-              Ok(true)
+              Ok(result)
             } else {
               Err(ServerError::invalid("existing schema columns are not identical"))
             }
           },
+          SchemaMode::ADD_NEW_COLUMNS => {
+            if is_subset(&table_meta.schema, schema) {
+              let mut new_columns = Vec::new();
+              let existing_col_names: HashSet<_> = table_meta.schema.columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+              for col_meta in &schema.columns {
+                if !existing_col_names.contains(&col_meta.name) {
+                  new_columns.push(col_meta.clone());
+                  result.columns_added.push(col_meta.name.clone());
+                }
+              }
+              let alter_table_op = AlterTableOp {
+                req: AlterTableRequest {
+                  table_name: req.table_name.to_string(),
+                  new_columns,
+                  ..Default::default()
+                }
+              };
+              alter_table_op.execute_with_locks(server, locks).await?;
+              Ok(result)
+            } else {
+              Err(ServerError::invalid("existing schema contains columns not in declared schema"))
+            }
+          }
         }
       }
       None => {
@@ -142,13 +174,8 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         let table_meta = TableMetadata::new(schema.clone());
         *maybe_table = Some(table_meta.clone());
         table_meta.overwrite(dir, table_name).await?;
-        Ok(false)
+        Ok(result)
       }
-    }?;
-
-    Ok(CreateTableResponse {
-      already_exists,
-      ..Default::default()
-    })
+    }
   }
 }

@@ -1,6 +1,8 @@
-use tokio::fs;
+use std::collections::HashSet;
 
-use crate::constants::TABLE_METADATA_FILENAME;
+use tokio::fs;
+use uuid::Uuid;
+
 use crate::errors::ServerResult;
 use crate::ops::compact::CompactionOp;
 use crate::ops::drop_table::DropTableOp;
@@ -11,58 +13,51 @@ use crate::storage::compaction::Compaction;
 use crate::storage::Metadata;
 use crate::storage::partition::PartitionMetadata;
 use crate::storage::segment::SegmentMetadata;
-use crate::storage::table::TableMetadata;
-use crate::types::{NormalizedPartition, PartitionKey};
+use crate::types::{InternalTableInfo, NormalizedPartition, PartitionKey};
 use crate::utils::{common, navigation};
-use std::collections::HashSet;
-use uuid::Uuid;
-
-struct TableInfo {
-  pub name: String,
-  pub meta: TableMetadata,
-}
 
 impl Server {
-  async fn list_tables(&self) -> ServerResult<Vec<TableInfo>> {
-    let mut res = Vec::new();
+  pub async fn internal_list_tables(&self) -> ServerResult<Vec<InternalTableInfo>> {
+    let mut tables = Vec::new();
     let mut read_dir = fs::read_dir(&self.opts.dir).await?;
     while let Ok(Some(entry)) = read_dir.next_entry().await {
       if !entry.file_type().await?.is_dir() {
         continue;
       }
-      let path = entry.path();
-      let possible_meta_path = path.join(TABLE_METADATA_FILENAME);
-      if common::file_exists(&possible_meta_path).await? {
-        let path_str = path.file_name().and_then(|s| s.to_str());
-        if let Some(name) = path_str {
-          let name = name.to_string();
-          let meta = TableMetadata::load(
-            &self.opts.dir,
-            &name,
-          ).await?.unwrap();
-          res.push(TableInfo {
-            name,
-            meta,
-          })
+
+      if let Some(possible_table_name) = entry.file_name().to_str() {
+        let lock_res = self.table_metadata_cache.get_lock(&possible_table_name.to_string()).await;
+        if let Err(err) = lock_res {
+          log::error!("failed to read metadata when listing table {}: {}", possible_table_name, err);
+          continue;
+        }
+
+        let lock = lock_res.unwrap();
+        let guard = lock.read().await;
+        if let Some(meta) = &*guard {
+          tables.push(InternalTableInfo {
+            name: possible_table_name.to_string(),
+            meta: meta.clone(),
+          });
         }
       }
     }
-    Ok(res)
+    Ok(tables)
   }
 
   pub async fn recover(&self) -> ServerResult<()> {
     log::info!("recovering to clean state");
 
-    for table_info in self.list_tables().await? {
+    for table_info in self.internal_list_tables().await? {
       self.recover_table(table_info).await?;
     }
     Ok(())
   }
 
-  async fn recover_table(&self, table_info: TableInfo) -> ServerResult<()> {
+  async fn recover_table(&self, table_info: InternalTableInfo) -> ServerResult<()> {
     log::debug!("recovering table {}", table_info.name);
     // 1. Dropped tables
-    let TableInfo {
+    let InternalTableInfo {
       name: table_name,
       meta: table_meta
     } = table_info;

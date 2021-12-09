@@ -27,6 +27,8 @@ mod read;
 mod write;
 mod write_simple;
 mod recovery;
+mod alter_table;
+mod list_tables;
 
 const FLUSH_SECONDS: u64 = 1;
 const FLUSH_NANOS: u32 = 0;
@@ -239,11 +241,13 @@ impl Server {
     warp::path("rest")
       .and(
         Self::create_table_filter()
+          .or(Self::alter_table_filter())
           .or(Self::write_to_partition_filter())
           .or(Self::write_to_partition_simple_filter())
           .or(Self::read_segment_column_filter())
           .or(Self::list_segments_filter())
           .or(Self::get_schema_filter())
+          .or(Self::list_tables_filter())
           .or(Self::drop_table_filter())
       )
   }

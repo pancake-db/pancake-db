@@ -25,7 +25,7 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE};
+use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH};
 use crate::errors::{ServerError, ServerResult};
 use crate::storage::{Metadata, MetadataKey};
 use crate::storage::compaction::Compaction;
@@ -41,6 +41,18 @@ pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
         _ => Err(e)
       }
     }
+  }
+}
+
+pub async fn file_nonempty(fname: impl AsRef<Path>) -> io::Result<bool> {
+  match fs::File::open(fname).await {
+    Ok(mut f) => {
+      let mut buf = vec![0_u8];
+      let bytes_read = f.read(&mut buf).await?;
+      Ok(bytes_read > 0)
+    },
+    Err(e) if matches!(e.kind(), io::ErrorKind::NotFound) => Ok(false),
+    Err(e) => Err(e),
   }
 }
 
@@ -114,6 +126,7 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
     DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
     DataType::BOOL => |v: &FieldValue| v.has_bool_val(),
     DataType::BYTES =>  |v: &FieldValue| v.has_bytes_val(),
+    DataType::FLOAT32 => |v: &FieldValue| v.has_float32_val(),
     DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
     DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
   };
@@ -331,6 +344,7 @@ pub fn byte_size_of_field(value: &FieldValue) -> usize {
     Value::string_val(x) => LIST_LENGTH_BYTES + x.len(),
     Value::bool_val(_) => 1,
     Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::float32_val(_) => 4,
     Value::float64_val(_) => 8,
     Value::timestamp_val(_) => 12,
     Value::list_val(x) => {
@@ -381,11 +395,20 @@ pub fn validate_entity_name_for_write(entity: &str, name: &str) -> ServerResult<
 fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResult<()> {
   let first_char = match name.chars().next() {
     Some(c) => Ok(c),
-    None => Err(ServerError::invalid(&format!("{} name may not be empty", entity)))
+    None => Err(ServerError::invalid(&format!("{} name must not be empty", entity)))
   }?;
+  if name.len() > MAX_NAME_LENGTH {
+    return Err(ServerError::invalid(&format!(
+      "{} name \"{}...\" must not contain over {} bytes",
+      entity,
+      &name[0..MAX_NAME_LENGTH - 3],
+      MAX_NAME_LENGTH,
+    )))
+  }
+
   if is_write && first_char == '_' {
     return Err(ServerError::invalid(&format!(
-      "{} name \"{}\" may not start with an underscore",
+      "{} name \"{}\" must not start with an underscore",
       entity,
       name
     )));
@@ -513,5 +536,51 @@ pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
   match metadata {
     Some(m) => Ok(m.clone()),
     None => Err(ServerError::does_not_exist(K::ENTITY_NAME, &format!("{:?}", key)))
+  }
+}
+
+// returns true if it creates a new file, false if the correct file already exists
+pub async fn assert_file(path: &Path, content: Vec<u8>) -> ServerResult<bool> {
+  match fs::read(path).await {
+    Ok(bytes) => {
+      if bytes == content {
+        Ok(false)
+      } else {
+        Err(ServerError::invalid(&format!(
+          "file {:?} already exists with different content",
+          path
+        )))
+      }
+    },
+    Err(e) => {
+      match e.kind() {
+        io::ErrorKind::NotFound => {
+          fs::write(path, &content).await?;
+          Ok(true)
+        }
+        _ => Err(ServerError::from(e))
+      }
+    }
+  }
+}
+
+pub fn check_no_duplicate_names(entity_name: &str, names: Vec<String>) -> ServerResult<()> {
+  let mut seen = HashSet::new();
+  let mut duplicates = Vec::new();
+  for name in names {
+    if seen.contains(&name) {
+      duplicates.push(name)
+    } else {
+      seen.insert(name);
+    }
+  }
+  if duplicates.len() > 0 {
+    Err(ServerError::invalid(&format!(
+      "duplicate {} names found: {}",
+      entity_name,
+      duplicates.join(", ")
+    )))
+  } else {
+    Ok(())
   }
 }

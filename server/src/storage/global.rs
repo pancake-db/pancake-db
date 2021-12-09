@@ -24,6 +24,7 @@ impl Metadata<()> for GlobalMetadata {
   }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for GlobalMetadata {
   fn default() -> Self {
     GlobalMetadata {

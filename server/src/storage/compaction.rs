@@ -23,6 +23,7 @@ pub struct Compaction {
 
 impl_metadata_serde_json!(Compaction);
 
+#[allow(clippy::derivable_impls)]
 impl Default for Compaction {
   fn default() -> Compaction {
     Compaction {

@@ -19,7 +19,7 @@ pub struct Opt {
 
   // a target number of rows for each segment of data
   // Segments should complete slightly after this row count
-  #[structopt(long, default_value = "1000000")]
+  #[structopt(long, default_value = "2000000")]
   pub default_rows_per_segment: u64,
 
   // the fewest number of rows in a segment before compaction
@@ -48,7 +48,7 @@ pub struct Opt {
   #[structopt(long, default_value = "1800")]
   pub compact_as_constant_seconds: i64,
 
-  #[structopt(long, default_value = "1048576")]
+  #[structopt(long, default_value = "4194304")]
   pub read_page_byte_size: usize,
 }
 

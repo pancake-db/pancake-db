@@ -1,16 +1,17 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ServerResult;
-
 use crate::impl_metadata_serde_json;
-use crate::utils::dirs;
 use crate::storage::traits::MetadataKey;
 use crate::types::SegmentKey;
+use crate::utils::dirs;
 
 use super::traits::{CacheData, Metadata};
+use pancake_db_idl::schema::Schema;
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";
@@ -27,6 +28,7 @@ pub struct SegmentMetadata {
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
   pub flushing: bool, // used for recovery purposes
+  pub explicit_columns: HashSet<String>,
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -38,8 +40,8 @@ impl Metadata<SegmentKey> for SegmentMetadata {
   }
 }
 
-impl Default for SegmentMetadata {
-  fn default() -> SegmentMetadata {
+impl SegmentMetadata {
+  pub fn new(explicit_columns: HashSet<String>) -> SegmentMetadata {
     SegmentMetadata {
       all_time_n: 0,
       all_time_deleted_n: 0,
@@ -50,7 +52,15 @@ impl Default for SegmentMetadata {
       read_version_since: Utc::now(),
       last_flush_at: Utc::now(),
       flushing: false,
+      explicit_columns,
     }
+  }
+
+  pub fn new_from_schema(schema: &Schema) -> Self {
+    let explicit_columns = schema.columns.iter()
+      .map(|c| c.name.clone())
+      .collect();
+    Self::new(explicit_columns)
   }
 }
 
