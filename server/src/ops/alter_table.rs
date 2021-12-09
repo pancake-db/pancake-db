@@ -1,9 +1,7 @@
-use std::collections::HashSet;
-
 use async_trait::async_trait;
 use pancake_db_idl::ddl::{AlterTableRequest, AlterTableResponse};
 
-use crate::constants::MAX_NESTED_LIST_DEPTH;
+use crate::constants::{MAX_NESTED_LIST_DEPTH, MAX_N_COLUMNS};
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
@@ -32,9 +30,29 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     let table_name = &req.table_name;
     let dir = &server.opts.dir;
 
+    let TableWriteLocks {
+      mut maybe_table_guard
+    } = locks;
+    let table_meta = common::unwrap_metadata(table_name, &*maybe_table_guard)?;
+
     common::validate_entity_name_for_write("table name", &req.table_name)?;
     if req.new_columns.is_empty() {
       return Err(ServerError::invalid("alter table request contains 0 alterations"))
+    }
+    let all_column_names: Vec<String> = table_meta.schema.columns.iter()
+      .chain(req.new_columns.iter())
+      .map(|c| c.name.clone())
+      .collect();
+    let total_n_cols = all_column_names.len();
+    common::check_no_duplicate_names("column", all_column_names)?;
+    if total_n_cols > MAX_N_COLUMNS {
+      return Err(ServerError::invalid(&format!(
+        "number of columns must not exceed {} but was {}+{}={}; rethink your data model",
+        MAX_N_COLUMNS,
+        table_meta.schema.columns.len(),
+        req.new_columns.len(),
+        total_n_cols,
+      )));
     }
     for meta in &req.new_columns {
       common::validate_entity_name_for_write("column name", &meta.name)?;
@@ -44,40 +62,14 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
           MAX_NESTED_LIST_DEPTH,
           meta.nested_list_depth,
           meta.name,
-        )))
+        )));
       }
     }
 
-    let TableWriteLocks {
-      mut maybe_table_guard
-    } = locks;
-    let maybe_table = &mut *maybe_table_guard;
-
-    match maybe_table {
-      Some(table_meta) => {
-        let existing_column_names: HashSet<_> = table_meta.schema.columns
-          .iter()
-          .map(|c| c.name.clone())
-          .collect();
-        for column in &req.new_columns {
-          if existing_column_names.contains(&column.name) {
-            return Err(ServerError::invalid(&format!(
-              "column {} already exists",
-              column.name
-            )))
-          }
-        }
-
-        let mut new_table_meta = table_meta.clone();
-        new_table_meta.schema.columns.extend_from_slice(&req.new_columns);
-        new_table_meta.overwrite(dir, table_name).await?;
-        *maybe_table_guard = Some(new_table_meta);
-        Ok(())
-      }
-      None => {
-        Err(ServerError::does_not_exist("table", table_name))
-      }
-    }?;
+    let mut new_table_meta = table_meta.clone();
+    new_table_meta.schema.columns.extend_from_slice(&req.new_columns);
+    new_table_meta.overwrite(dir, table_name).await?;
+    *maybe_table_guard = Some(new_table_meta);
 
     Ok(AlterTableResponse {
       ..Default::default()

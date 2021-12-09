@@ -563,3 +563,24 @@ pub async fn assert_file(path: &Path, content: Vec<u8>) -> ServerResult<bool> {
     }
   }
 }
+
+pub fn check_no_duplicate_names(entity_name: &str, names: Vec<String>) -> ServerResult<()> {
+  let mut seen = HashSet::new();
+  let mut duplicates = Vec::new();
+  for name in names {
+    if seen.contains(&name) {
+      duplicates.push(name)
+    } else {
+      seen.insert(name);
+    }
+  }
+  if duplicates.len() > 0 {
+    Err(ServerError::invalid(&format!(
+      "duplicate {} names found: {}",
+      entity_name,
+      duplicates.join(", ")
+    )))
+  } else {
+    Ok(())
+  }
+}

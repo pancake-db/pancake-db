@@ -5,7 +5,7 @@ use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse, AlterTableReq
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use pancake_db_idl::schema::Schema;
 
-use crate::constants::{MAX_PARTITIONING_DEPTH, MAX_NESTED_LIST_DEPTH};
+use crate::constants::{MAX_PARTITIONING_DEPTH, MAX_NESTED_LIST_DEPTH, MAX_N_COLUMNS};
 use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
@@ -91,7 +91,14 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         "number of partition fields may not exceed {} but was {}",
         MAX_PARTITIONING_DEPTH,
         schema.partitioning.len(),
-      )))
+      )));
+    }
+    if schema.columns.len() > MAX_N_COLUMNS {
+      return Err(ServerError::invalid(&format!(
+        "number of columns may not exceed {} but was {}; rethink your data model",
+        MAX_N_COLUMNS,
+        schema.columns.len(),
+      )));
     }
     for meta in &schema.partitioning {
       common::validate_entity_name_for_write("partition name", &meta.name)?;
