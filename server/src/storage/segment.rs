@@ -57,10 +57,7 @@ impl SegmentMetadata {
   }
 
   pub fn new_from_schema(schema: &Schema) -> Self {
-    let explicit_columns = schema.columns.iter()
-      .map(|c| c.name.clone())
-      .collect();
-    Self::new(explicit_columns)
+    Self::new(schema.columns.keys().cloned().collect())
   }
 }
 

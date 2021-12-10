@@ -129,8 +129,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     let col_name = req.column_name.clone();
 
     let maybe_col_meta = table_meta.schema.columns
-      .iter()
-      .find(|&meta| meta.name == col_name);
+      .get(&col_name);
     if maybe_col_meta.is_none() {
       return Err(ServerError::does_not_exist("column", &col_name));
     }
@@ -251,7 +250,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           let staged_bytes = fs::read(&staged_rows_path).await?;
           let staged_rows = common::staged_bytes_to_rows(&staged_bytes)?;
           let staged_values = staged_rows.iter()
-            .map(|row| common::single_field_from_row(row, &col_name).value.unwrap_or_default())
+            .map(|row| row.fields.get(&col_name).cloned().unwrap_or_default())
             .collect::<Vec<FieldValue>>();
           let encoder = encoding::new_encoder(
             col_meta.dtype.enum_value_or_default(),

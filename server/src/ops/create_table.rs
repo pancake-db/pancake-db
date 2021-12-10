@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use pancake_db_idl::ddl::{CreateTableRequest, CreateTableResponse, AlterTableRequest};
@@ -21,15 +21,9 @@ fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {
     return false;
   }
 
-  let mut partitioning = HashMap::new();
-  schema0.partitioning.iter()
-    .for_each(|meta| {
-      partitioning.insert(meta.name.clone(), meta);
-    });
-
-  for meta1 in &schema1.partitioning {
-    let agrees = match partitioning.get(&meta1.name) {
-      Some(meta0) => *meta0 == meta1,
+  for (partition_name, meta1) in &schema1.partitioning {
+    let agrees = match schema0.partitioning.get(partition_name) {
+      Some(meta0) => meta0 == meta1,
       None => false,
     };
     if !agrees {
@@ -40,14 +34,9 @@ fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {
 }
 
 fn is_subset(sub_schema: &Schema, schema: &Schema) -> bool {
-  let mut columns = HashMap::new();
-  for column in &schema.columns {
-    columns.insert(column.name.clone(), column);
-  }
-
-  for sub_column in &sub_schema.columns {
-    let agrees = match columns.get(&sub_column.name) {
-      Some(column) => *column == sub_column,
+  for (col_name, sub_col_meta) in &sub_schema.columns {
+    let agrees = match schema.columns.get(col_name) {
+      Some(col_meta) => col_meta == sub_col_meta,
       None => false,
     };
     if !agrees {
@@ -100,17 +89,17 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         schema.columns.len(),
       )));
     }
-    for meta in &schema.partitioning {
-      common::validate_entity_name_for_write("partition name", &meta.name)?;
+    for partition_name in schema.partitioning.keys() {
+      common::validate_entity_name_for_write("partition name", partition_name)?;
     }
-    for meta in &schema.columns {
-      common::validate_entity_name_for_write("column name", &meta.name)?;
-      if meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
+    for (col_name, col_meta) in &schema.columns {
+      common::validate_entity_name_for_write("column name", col_name)?;
+      if col_meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
         return Err(ServerError::invalid(&format!(
           "nested_list_depth may not exceed {} but was {} for {}",
           MAX_NESTED_LIST_DEPTH,
-          meta.nested_list_depth,
-          meta.name,
+          col_meta.nested_list_depth,
+          col_name,
         )))
       }
     }
@@ -136,15 +125,11 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
           },
           SchemaMode::ADD_NEW_COLUMNS => {
             if is_subset(&table_meta.schema, schema) {
-              let mut new_columns = Vec::new();
-              let existing_col_names: HashSet<_> = table_meta.schema.columns
-                .iter()
-                .map(|c| c.name.clone())
-                .collect();
-              for col_meta in &schema.columns {
-                if !existing_col_names.contains(&col_meta.name) {
-                  new_columns.push(col_meta.clone());
-                  result.columns_added.push(col_meta.name.clone());
+              let mut new_columns = HashMap::new();
+              for (col_name, col_meta) in &schema.columns {
+                if !table_meta.schema.columns.contains_key(col_name) {
+                  new_columns.insert(col_name.clone(), col_meta.clone());
+                  result.columns_added.push(col_name.to_string());
                 }
               }
               let alter_table_op = AlterTableOp {

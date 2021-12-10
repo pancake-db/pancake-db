@@ -39,9 +39,9 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     if req.new_columns.is_empty() {
       return Err(ServerError::invalid("alter table request contains 0 alterations"))
     }
-    let all_column_names: Vec<String> = table_meta.schema.columns.iter()
-      .chain(req.new_columns.iter())
-      .map(|c| c.name.clone())
+    let all_column_names: Vec<String> = table_meta.schema.columns.keys()
+      .chain(req.new_columns.keys())
+      .cloned()
       .collect();
     let total_n_cols = all_column_names.len();
     common::check_no_duplicate_names("column", all_column_names)?;
@@ -54,20 +54,20 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
         total_n_cols,
       )));
     }
-    for meta in &req.new_columns {
-      common::validate_entity_name_for_write("column name", &meta.name)?;
-      if meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
+    for (col_name, col_meta) in &req.new_columns {
+      common::validate_entity_name_for_write("column name", col_name)?;
+      if col_meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
         return Err(ServerError::invalid(&format!(
           "nested_list_depth may not exceed {} but was {} for {}",
           MAX_NESTED_LIST_DEPTH,
-          meta.nested_list_depth,
-          meta.name,
+          col_meta.nested_list_depth,
+          col_name,
         )));
       }
     }
 
     let mut new_table_meta = table_meta.clone();
-    new_table_meta.schema.columns.extend_from_slice(&req.new_columns);
+    new_table_meta.schema.columns.extend(req.new_columns.clone());
     new_table_meta.overwrite(dir, table_name).await?;
     *maybe_table_guard = Some(new_table_meta);
 

@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 use async_trait::async_trait;
-use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionField, Segment};
+use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, Segment};
 use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
 use protobuf::MessageField;
 
@@ -33,7 +33,7 @@ impl ListSegmentsOp {
     &self,
     server: &Server,
     table_name: &str,
-    partitions: &[Vec<PartitionField>],
+    partitions: &[HashMap<String, PartitionFieldValue>],
     n_shards_log: u32,
     shards: HashSet<u64>,
     include_metadata: bool,
@@ -100,7 +100,7 @@ impl ServerOp<GlobalTableReadLocks> for ListSegmentsOp {
     let partitioning = table_meta.schema.partitioning.clone();
     let partitions = server.list_partitions(
       table_name,
-      partitioning,
+      &partitioning,
       &req.partition_filter,
     ).await?;
 

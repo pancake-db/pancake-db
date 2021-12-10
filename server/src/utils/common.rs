@@ -8,10 +8,9 @@ use std::path::Path;
 use std::str::FromStr;
 
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter, Row};
-use pancake_db_idl::dml::{Field, PartitionField};
+use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter, Row, PartitionFieldValue, PartitionFieldComparison};
 use pancake_db_idl::dml::field_value::Value;
-use pancake_db_idl::dml::partition_field::Value as PartitionValue;
+use pancake_db_idl::dml::partition_field_value::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::Schema;
@@ -31,6 +30,7 @@ use crate::storage::{Metadata, MetadataKey};
 use crate::storage::compaction::Compaction;
 use crate::storage::segment::SegmentMetadata;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
+use pancake_db_idl::dml::partition_field_comparison::Operator;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> io::Result<bool> {
   match fs::File::open(fname).await {
@@ -116,11 +116,7 @@ pub async fn append_to_file(path: impl AsRef<Path> + Debug, contents: &[u8]) -> 
   Ok(file.write_all(contents).await?)
 }
 
-pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
-  let value = field.value.get_ref();
-  if value.value.is_none() {
-    return true;
-  }
+pub fn dtype_matches_field(dtype: &DataType, fv: &FieldValue) -> bool {
   let checker = match dtype {
     DataType::STRING => |v: &FieldValue| v.has_string_val(),
     DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
@@ -130,7 +126,7 @@ pub fn dtype_matches_field(dtype: &DataType, field: &Field) -> bool {
     DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
     DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
   };
-  traverse_field_value(value, &checker)
+  traverse_field_value(fv, &checker)
 }
 
 fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> bool {
@@ -156,11 +152,10 @@ pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &Normaliz
   }
 }
 
-pub fn partition_field_from_string(
-  name: &str,
+pub fn partition_field_value_from_string(
   value_str: &str,
   dtype: PartitionDataType
-) -> ServerResult<PartitionField> {
+) -> ServerResult<PartitionFieldValue> {
   let value = match dtype {
     PartitionDataType::INT64 => {
       let parsed: Result<i64, _> = value_str.parse();
@@ -194,8 +189,7 @@ pub fn partition_field_from_string(
   if value.is_none() {
     return Err(ServerError::internal("failed to parse partition field value"));
   }
-  Ok(PartitionField {
-    name: name.to_string(),
+  Ok(PartitionFieldValue {
     value,
     ..Default::default()
   })
@@ -216,46 +210,42 @@ fn cmp_partition_field_values(v0: &PartitionValue, v1: &PartitionValue) -> Serve
   }
 }
 
-fn field_satisfies_basic_filter(field: &PartitionField, criterion: &PartitionField, satisfies: &dyn Fn(Ordering) -> bool) -> ServerResult<bool> {
-  if field.name != criterion.name {
-    Ok(true)
-  } else {
-    let ordering = cmp_partition_field_values(
-      field.value.as_ref().unwrap(),
-      criterion.value.as_ref().unwrap()
-    )?;
-    Ok(satisfies(ordering))
+fn field_satisfies_comparison_filter(name: &str, field: &PartitionFieldValue, comparison: &PartitionFieldComparison) -> ServerResult<bool> {
+  let flat_comparison_value = comparison.value.as_ref()
+    .map(|v| v.value.clone())
+    .flatten();
+  if flat_comparison_value.is_none() {
+    return Err(ServerError::invalid(&format!(
+      "partition filter for {} has no value",
+      comparison.name
+    )))
   }
+
+  if name != comparison.name {
+    return Ok(true);
+  }
+
+  let ordering = cmp_partition_field_values(
+    field.value.as_ref().unwrap(),
+    &flat_comparison_value.unwrap(),
+  )?;
+  Ok(match comparison.operator.enum_value_or_default() {
+    Operator::EQ_TO => matches!(ordering, Ordering::Equal),
+    Operator::LESS_OR_EQ_TO => !matches!(ordering, Ordering::Greater),
+    Operator::LESS => matches!(ordering, Ordering::Less),
+    Operator::GREATER_OR_EQ_TO => !matches!(ordering, Ordering::Less),
+    Operator::GREATER => matches!(ordering, Ordering::Greater),
+  })
 }
 
-pub fn satisfies_filters(partition: &[PartitionField], filters: &[PartitionFilter]) -> ServerResult<bool> {
-  for field in partition {
+pub fn satisfies_filters(partition: &HashMap<String, PartitionFieldValue>, filters: &[PartitionFilter]) -> ServerResult<bool> {
+  for (name, pfv) in partition {
     for filter in filters {
       let satisfies = match &filter.value {
-        Some(partition_filter::Value::equal_to(other)) => field_satisfies_basic_filter(
-          field,
-          other,
-          &|ordering| matches!(ordering, Ordering::Equal),
-        ),
-        Some(partition_filter::Value::less_than(other)) => field_satisfies_basic_filter(
-          field,
-          other,
-          &|ordering| matches!(ordering, Ordering::Less),
-        ),
-        Some(partition_filter::Value::less_or_eq_to(other)) => field_satisfies_basic_filter(
-          field,
-          other,
-          &|ordering| !matches!(ordering, Ordering::Greater),
-        ),
-        Some(partition_filter::Value::greater_than(other)) => field_satisfies_basic_filter(
-          field,
-          other,
-          &|ordering| matches!(ordering, Ordering::Greater),
-        ),
-        Some(partition_filter::Value::greater_or_eq_to(other)) => field_satisfies_basic_filter(
-          field,
-          other,
-          &|ordering| !matches!(ordering, Ordering::Less),
+        Some(partition_filter::Value::comparison(comparison)) => field_satisfies_comparison_filter(
+          name,
+          pfv,
+          comparison,
         ),
         None => Ok(true),
       }?;
@@ -426,38 +416,31 @@ fn validate_entity_name(entity: &str, name: &str, is_write: bool) -> ServerResul
 }
 
 pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
-  let mut col_map = HashMap::new();
-  for col in &schema.columns {
-    col_map.insert(&col.name, col);
-  }
   for row in rows {
-    for field in &row.fields {
+    for (col_name, fv) in &row.fields {
       let mut err_msgs = Vec::new();
-      match col_map.get(&field.name) {
+      match schema.columns.get(col_name) {
         Some(col) => {
-          if !dtype_matches_field(&col.dtype.unwrap(), field) {
+          if !dtype_matches_field(&col.dtype.unwrap(), fv) {
             err_msgs.push(format!(
               "invalid field value for column {} with dtype {:?}: {:?}",
-              col.name,
+              col_name,
               col.dtype,
-              field,
+              fv,
             ));
           }
         },
         _ => {
-          err_msgs.push(format!("unknown column: {}", field.name));
+          err_msgs.push(format!("unknown column: {}", col_name));
         },
       };
 
-      if field.value.is_some() {
-        let byte_size = byte_size_of_field(field.value.as_ref().unwrap());
-        if byte_size > MAX_FIELD_BYTE_SIZE {
-          err_msgs.push(format!(
-            "field for {} exceeds max byte size of {}",
-            field.name,
-            MAX_FIELD_BYTE_SIZE
-          ))
-        }
+      if byte_size_of_field(fv) > MAX_FIELD_BYTE_SIZE {
+        err_msgs.push(format!(
+          "field for {} exceeds max byte size of {}",
+          col_name,
+          MAX_FIELD_BYTE_SIZE
+        ))
       }
 
       if !err_msgs.is_empty() {
@@ -505,30 +488,6 @@ pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> 
   (all_time_flushed_n - all_time_compacted_n) as usize
 }
 
-pub fn field_map(row: &Row) -> HashMap<&String, &Field> {
-  let mut res = HashMap::new();
-  for field in &row.fields {
-    res.insert(&field.name, field);
-  }
-  res
-}
-
-pub fn single_field_from_row(row: &Row, name: &str) -> Field {
-  // this returns a field with no value if the
-  // row does not contain the name
-  let mut res = Field {
-    name: name.to_string(),
-    ..Default::default()
-  };
-  for field in &row.fields {
-    if field.name == *name {
-      res.value = field.value.clone();
-      break;
-    }
-  }
-  res
-}
-
 pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
   key: &K,
   metadata: &Option<M>,
@@ -574,7 +533,7 @@ pub fn check_no_duplicate_names(entity_name: &str, names: Vec<String>) -> Server
       seen.insert(name);
     }
   }
-  if duplicates.len() > 0 {
+  if !duplicates.is_empty() {
     Err(ServerError::invalid(&format!(
       "duplicate {} names found: {}",
       entity_name,

@@ -60,17 +60,12 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     let staged_bytes = fs::read(&staged_rows_path).await?;
     let rows = common::staged_bytes_to_rows(&staged_bytes)?;
 
-    let mut field_maps = Vec::new();
-    for row in &rows {
-      field_maps.push(common::field_map(row));
-    }
-
     // if any columns in the request have never been explicitly flushed to this
     // segment before, we need to initialize them
     let mut new_explicit_columns = HashSet::new();
-    for col in &table_meta.schema.columns {
-      if !segment_meta.explicit_columns.contains(&col.name) {
-        new_explicit_columns.insert(col.name.clone());
+    for col_name in table_meta.schema.columns.keys() {
+      if !segment_meta.explicit_columns.contains(col_name) {
+        new_explicit_columns.insert(col_name.to_string());
       }
     }
 
@@ -81,20 +76,26 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 
     for &version in &segment_meta.write_versions {
       let compaction_key = segment_key.compaction_key(version);
-      for col in &table_meta.schema.columns {
-        if new_explicit_columns.contains(&col.name) {
-          self.assert_explicit_files(col, &compaction_key, segment_meta, server).await?;
+      for (col_name, col_meta) in &table_meta.schema.columns {
+        if new_explicit_columns.contains(col_name) {
+          self.assert_explicit_files(
+            col_name,
+            col_meta,
+            &compaction_key,
+            segment_meta,
+            server
+          ).await?;
         }
 
-        let field_values = field_maps
+        let field_values = rows
           .iter()
-          .map(|m| m.get(&col.name).map(|f| f.value.clone().unwrap()).unwrap_or_default())
+          .map(|row| row.fields.get(col_name).cloned().unwrap_or_default())
           .collect::<Vec<FieldValue>>();
-        let dtype = common::unwrap_dtype(col.dtype)?;
-        let bytes = encoding::new_encoder(dtype, col.nested_list_depth as u8)
+        let dtype = common::unwrap_dtype(col_meta.dtype)?;
+        let bytes = encoding::new_encoder(dtype, col_meta.nested_list_depth as u8)
           .encode(&field_values)?;
         common::append_to_file(
-          &dirs::flush_col_file(dir, &compaction_key, &col.name),
+          &dirs::flush_col_file(dir, &compaction_key, col_name),
           &bytes,
         ).await?;
       }
@@ -126,6 +127,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 impl FlushOp {
   async fn assert_explicit_files(
     &self,
+    col_name: &str,
     col_meta: &ColumnMeta,
     compaction_key: &CompactionKey,
     segment_meta: &SegmentMetadata,
@@ -144,7 +146,7 @@ impl FlushOp {
       let compacted_n = compaction.compacted_n;
       if compacted_n > 0 {
         let codec_name = compaction.col_codecs
-          .get(&col_meta.name)
+          .get(col_name)
           .cloned()
           .unwrap_or_else(|| compression::choose_codec(dtype));
         let codec = compression::new_codec(dtype, &codec_name)?;
@@ -153,18 +155,18 @@ impl FlushOp {
           compacted_nulls.push(FieldValue::new());
         }
         let compacted_null_bytes = codec.compress(&compacted_nulls, nested_list_depth)?;
-        compaction.col_codecs.insert(col_meta.name.clone(), codec_name);
+        compaction.col_codecs.insert(col_name.to_string(), codec_name);
         compaction.overwrite(dir, compaction_key).await?;
         *compaction_guard = Some(compaction.clone());
 
         log::info!(
           "asserting explicit compaction column file for {:?} column {} with {} rows",
           compaction_key,
-          col_meta.name,
+          col_name,
           compacted_n,
         );
         common::assert_file(
-          &dirs::compact_col_file(dir, compaction_key, &col_meta.name),
+          &dirs::compact_col_file(dir, compaction_key, col_name),
           compacted_null_bytes
         ).await?;
       }
@@ -179,11 +181,11 @@ impl FlushOp {
       log::info!(
         "asserting explicit flush column file for {:?} column {} with {} rows",
         compaction_key,
-        col_meta.name,
+        col_name,
         flushed_n,
       );
       common::assert_file(
-        &dirs::flush_col_file(dir, compaction_key, &col_meta.name),
+        &dirs::flush_col_file(dir, compaction_key, col_name),
         flushed_null_bytes
       ).await?;
     }
@@ -215,8 +217,8 @@ impl FlushOp {
       .unwrap_or_default();
 
     let trim_idx = common::flush_only_n(segment_meta, &compaction);
-    for col_meta in &table_meta.schema.columns {
-      let flush_file = dirs::flush_col_file(dir, compaction_key, &col_meta.name);
+    for (col_name, col_meta) in &table_meta.schema.columns {
+      let flush_file = dirs::flush_col_file(dir, compaction_key, col_name);
       let bytes_result = fs::read(&flush_file).await;
 
       if let Err(e) = &bytes_result {
@@ -224,7 +226,7 @@ impl FlushOp {
           log::debug!(
             "flush file for {:?} column {} does not yet exist; skipping trim",
             compaction_key,
-            col_meta.name,
+            col_name,
           );
           continue;
         }
