@@ -6,8 +6,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use pancake_db_idl::dml::partition_field::Value;
-use pancake_db_idl::dml::PartitionField;
+use pancake_db_idl::dml::partition_field_value::Value;
 use pancake_db_idl::schema::Schema;
 use protobuf::well_known_types::Timestamp;
 use rand::Rng;
@@ -18,6 +17,7 @@ use crate::constants::SHARD_ID_BYTE_LENGTH;
 use crate::errors::{ServerError, ServerResult};
 use crate::utils::{common, sharding};
 use crate::storage::table::TableMetadata;
+use pancake_db_idl::dml::PartitionFieldValue;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct PartitionMinute {
@@ -83,12 +83,8 @@ impl NormalizedPartitionField {
   pub fn to_path_buf(&self) -> PathBuf {
     PathBuf::from(self.to_string())
   }
-}
 
-impl TryFrom<&PartitionField> for NormalizedPartitionField {
-  type Error = ServerError;
-
-  fn try_from(raw_field: &PartitionField) -> ServerResult<NormalizedPartitionField> {
+  pub fn try_from_raw(name: &str, raw_field: &PartitionFieldValue) -> ServerResult<NormalizedPartitionField> {
     let value_result: ServerResult<NormalizedPartitionValue> = match raw_field.value.as_ref() {
       Some(Value::string_val(x)) => {
         common::validate_partition_string(x)?;
@@ -100,11 +96,11 @@ impl TryFrom<&PartitionField> for NormalizedPartitionField {
         let minute = PartitionMinute::try_from(x)?;
         Ok(NormalizedPartitionValue::Minute(minute))
       },
-      None => Err(ServerError::invalid(&format!("partition field value for {} is empty", raw_field.name))),
+      None => Err(ServerError::invalid(&format!("partition field value for {} is empty", name))),
     };
     let value = value_result?;
     Ok(NormalizedPartitionField {
-      name: raw_field.name.clone(),
+      name: name.to_string(),
       value,
     })
   }
@@ -137,14 +133,14 @@ impl NormalizedPartition {
     for field in &self.fields {
       field_map.insert(&field.name, field);
     }
-    for meta in &schema.partitioning {
-      let maybe_field = field_map.get(&meta.name);
+    for (partition_name, partition_meta) in &schema.partitioning {
+      let maybe_field = field_map.get(partition_name);
       if maybe_field.is_none() {
-        return Err(ServerError::invalid(&format!("partition field {} is missing", meta.name)));
+        return Err(ServerError::invalid(&format!("partition field {} is missing", partition_name)));
       }
       let field = *maybe_field.unwrap();
       if !common::partition_dtype_matches_field(
-        &meta.dtype.unwrap(),
+        &partition_meta.dtype.unwrap(),
         field
       ) {
         return Err(ServerError::invalid("partition field dtype does not match schema"));
@@ -162,11 +158,11 @@ impl NormalizedPartition {
   }
 
   pub fn from_raw_fields(
-    raw_fields: &[PartitionField]
+    raw_fields: &HashMap<String, PartitionFieldValue>
   ) -> ServerResult<NormalizedPartition> {
     let mut normalized_fields = Vec::new();
-    for field in raw_fields {
-      normalized_fields.push(NormalizedPartitionField::try_from(field)?);
+    for (partition_name, pfv) in raw_fields {
+      normalized_fields.push(NormalizedPartitionField::try_from_raw(partition_name, pfv)?);
     }
     Ok(NormalizedPartition::from_normalized_fields(&normalized_fields))
   }

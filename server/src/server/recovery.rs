@@ -70,7 +70,7 @@ impl Server {
     let dir = &self.opts.dir;
     for partition in &self.list_partitions(
       &table_name,
-      table_meta.schema.partitioning.clone(),
+      &table_meta.schema.partitioning,
       &Vec::new(),
     ).await? {
       let normalized = NormalizedPartition::from_raw_fields(partition)?;

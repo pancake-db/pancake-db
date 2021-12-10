@@ -150,10 +150,10 @@ impl CompactionOp {
   fn plan_compaction(&self, schema: &Schema, assessment: &CompactionAssessment) -> Compaction {
     let mut col_codecs = HashMap::new();
 
-    for col in &schema.columns {
+    for (col_name, col_meta) in &schema.columns {
       col_codecs.insert(
-        col.name.clone(),
-        compression::choose_codec(col.dtype.unwrap())
+        col_name.to_string(),
+        compression::choose_codec(col_meta.dtype.unwrap())
       );
     }
 
@@ -167,22 +167,24 @@ impl CompactionOp {
   async fn execute_col_compaction(
     &self,
     server: &Server,
-    col: &ColumnMeta,
+    col_name: &str,
+    col_meta: &ColumnMeta,
     assessment: &CompactionAssessment,
     old_compression_params: Option<&String>,
     compressor: &dyn ValueCodec,
   ) -> ServerResult<()> {
     let values = server.read_col(
       &self.key,
-      col,
+      col_name,
+      col_meta,
       assessment.old_version,
       old_compression_params,
       assessment.compacted_n,
     ).await?;
-    let bytes = compressor.compress(&values, col.nested_list_depth as u8)?;
+    let bytes = compressor.compress(&values, col_meta.nested_list_depth as u8)?;
     let compaction_key = self.key.compaction_key(assessment.new_version);
     common::append_to_file(
-      &dirs::compact_col_file(&server.opts.dir, &compaction_key, &col.name),
+      &dirs::compact_col_file(&server.opts.dir, &compaction_key, col_name),
       bytes.as_slice(),
     ).await?;
     Ok(())
@@ -220,16 +222,17 @@ impl CompactionOp {
       assessment.new_version,
       assessment.compacted_n,
     );
-    for col in &schema.columns {
+    for (col_name, col_meta) in &schema.columns {
       let old_compression_params = old_compaction.col_codecs
-        .get(&col.name);
+        .get(col_name);
       let compressor = compression::new_codec(
-        col.dtype.unwrap(),
-        compaction.col_codecs.get(&col.name).unwrap()
+        col_meta.dtype.unwrap(),
+        compaction.col_codecs.get(col_name).unwrap()
       )?;
       self.execute_col_compaction(
         server,
-        col,
+        col_name,
+        col_meta,
         assessment,
         old_compression_params,
         &*compressor,

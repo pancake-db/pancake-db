@@ -1,17 +1,17 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 
+use base64::decode;
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::{FieldValue, PartitionFieldValue, WriteToPartitionRequest, WriteToPartitionResponse};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use warp::{Filter, Rejection, Reply};
 
 use crate::errors::{ServerError, ServerResult};
 use crate::ops::traits::ServerOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
 use crate::utils::common;
-use base64::decode;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 
 use super::Server;
 
@@ -32,8 +32,8 @@ fn parse_timestamp(value: &Value) -> ServerResult<protobuf::well_known_types::Ti
   Ok(timestamp)
 }
 
-fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::FieldValue> {
-  let mut value_pb = pancake_db_idl::dml::FieldValue::new();
+fn parse_field_value(field_value: &Value) -> ServerResult<FieldValue> {
+  let mut value_pb = FieldValue::new();
   match field_value {
     Value::String(s) => {
       value_pb.set_string_val(s.clone());
@@ -73,7 +73,7 @@ fn parse_field_value(field_value: &Value) -> ServerResult<pancake_db_idl::dml::F
         let sub_field = parse_field_value(value)?;
         repeated_value_pb.vals.push(sub_field);
       }
-      let mut value_pb = pancake_db_idl::dml::FieldValue::new();
+      let mut value_pb = FieldValue::new();
       value_pb.set_list_val(repeated_value_pb);
       Ok(value_pb)
     },
@@ -89,10 +89,10 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
     .map_err(|_| ServerError::invalid("body bytes do not parse to string"))?;
   let req_simple: WriteToPartitionSimpleRequest = serde_json::from_str(&body_string)
     .map_err(|_| ServerError::invalid("body string does not parse to json"))?;
-  let mut pb_req = pancake_db_idl::dml::WriteToPartitionRequest::new();
+  let mut pb_req = WriteToPartitionRequest::new();
   pb_req.table_name = req_simple.table_name;
-  for (_name, partition_field) in req_simple.partition.iter() {
-    let mut pb_partition_field = pancake_db_idl::dml::PartitionField::new();
+  for (partition_name, partition_field) in &req_simple.partition {
+    let mut pb_partition_field = PartitionFieldValue::new();
     match partition_field {
       Value::String(s) => {
         pb_partition_field.set_string_val(s.clone());
@@ -126,17 +126,14 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
         ))
       }
     }
-    pb_req.partition.push(pb_partition_field);
+    pb_req.partition.insert(partition_name.to_string(), pb_partition_field);
   }
 
   for row in req_simple.rows.iter() {
     let mut pb_row = pancake_db_idl::dml::Row::new();
     for (column, value) in row.iter() {
-      let mut pb_field = pancake_db_idl::dml::Field::new();
-      pb_field.name = column.to_string();
       let field_val = parse_field_value(value)?;
-      pb_field.value = protobuf::MessageField::from_option(Some(field_val));
-      pb_row.fields.push(pb_field);
+      pb_row.fields.insert(column.to_string(), field_val);
     }
     pb_req.rows.push(pb_row);
   }

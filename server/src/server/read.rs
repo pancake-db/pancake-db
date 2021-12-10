@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use hyper::body::Bytes;
 use pancake_db_core::compression;
 use pancake_db_core::encoding;
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionField, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse, PartitionFieldValue};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
@@ -17,6 +17,7 @@ use crate::utils::{dirs, navigation};
 use crate::utils::common;
 
 use super::Server;
+use std::collections::HashMap;
 
 const LIST_ROUTE_NAME: &str = "list_segments";
 const READ_ROUTE_NAME: &str = "read_segment_column";
@@ -25,19 +26,20 @@ impl Server {
   pub async fn read_compact_col(
     &self,
     segment_key: &SegmentKey,
-    col: &ColumnMeta,
+    col_name: &str,
+    col_meta: &ColumnMeta,
     read_version: u64,
     codec: &str,
     limit: usize,
   ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(read_version);
-    let path = dirs::compact_col_file(&self.opts.dir, &compaction_key, &col.name);
+    let path = dirs::compact_col_file(&self.opts.dir, &compaction_key, col_name);
     let bytes = common::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let decompressor = compression::new_codec(col.dtype.unwrap(), codec)?;
-      let decoded = decompressor.decompress(bytes, col.nested_list_depth as u8)?;
+      let decompressor = compression::new_codec(col_meta.dtype.unwrap(), codec)?;
+      let decoded = decompressor.decompress(bytes, col_meta.nested_list_depth as u8)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])
       } else {
@@ -50,18 +52,19 @@ impl Server {
   pub async fn read_flush_col(
     &self,
     segment_key: &SegmentKey,
-    col: &ColumnMeta,
+    col_name: &str,
+    col_meta: &ColumnMeta,
     read_version: u64,
     limit: usize,
   ) -> ServerResult<Vec<FieldValue>> {
     let compaction_key = segment_key.compaction_key(read_version);
-    let path = dirs::flush_col_file(&self.opts.dir, &compaction_key, &col.name);
+    let path = dirs::flush_col_file(&self.opts.dir, &compaction_key, col_name);
     let bytes = common::read_or_empty(&path).await?;
     if bytes.is_empty() {
       Ok(Vec::new())
     } else {
-      let dtype = common::unwrap_dtype(col.dtype)?;
-      let decoder = encoding::new_field_value_decoder(dtype, col.nested_list_depth as u8);
+      let dtype = common::unwrap_dtype(col_meta.dtype)?;
+      let decoder = encoding::new_field_value_decoder(dtype, col_meta.nested_list_depth as u8);
       Ok(decoder.decode_limited(&bytes, limit)?)
     }
   }
@@ -69,7 +72,8 @@ impl Server {
   pub async fn read_col(
     &self,
     segment_key: &SegmentKey,
-    col: &ColumnMeta,
+    col_name: &str,
+    col_meta: &ColumnMeta,
     read_version: u64,
     maybe_compression_params: Option<&String>,
     limit: usize,
@@ -79,7 +83,8 @@ impl Server {
       values.extend(
         self.read_compact_col(
           segment_key,
-          col,
+          col_name,
+          col_meta,
           read_version,
           compression_params,
           limit
@@ -89,7 +94,8 @@ impl Server {
     if values.len() < limit {
       values.extend(self.read_flush_col(
         segment_key,
-        col,
+        col_name,
+        col_meta,
         read_version,
         limit - values.len()
       ).await?);
@@ -169,13 +175,15 @@ impl Server {
   pub async fn list_partitions(
     &self,
     table_name: &str,
-    mut partitioning: Vec<PartitionMeta>,
+    partitioning: &HashMap<String, PartitionMeta>,
     filters: &[PartitionFilter],
-  ) -> ServerResult<Vec<Vec<PartitionField>>> {
-    let mut partitions: Vec<Vec<PartitionField>> = vec![vec![]];
-    partitioning.sort_by_key(|meta| meta.name.clone());
-    for meta in &partitioning {
-      let mut new_partitions: Vec<Vec<PartitionField>> = Vec::new();
+  ) -> ServerResult<Vec<HashMap<String, PartitionFieldValue>>> {
+    let mut partitions: Vec<HashMap<String, PartitionFieldValue>> = vec![HashMap::new()];
+    let mut partition_names: Vec<_> = partitioning.keys().cloned().collect();
+    partition_names.sort();
+    for partition_name in &partition_names {
+      let meta = partitioning[partition_name].clone();
+      let mut new_partitions: Vec<HashMap<String, PartitionFieldValue>> = Vec::new();
       for partition in &partitions {
         let subdir = dirs::partition_dir(
           &self.opts.dir,
@@ -184,12 +192,16 @@ impl Server {
             partition: NormalizedPartition::from_raw_fields(partition)?
           }
         );
-        let subpartitions = navigation::list_subpartitions(&subdir, meta)
+        let subpartitions = navigation::list_subpartitions(
+          &subdir,
+          partition_name,
+          &meta
+        )
           .await?;
 
         for leaf in subpartitions {
           let mut new_partition = partition.clone();
-          new_partition.push(leaf);
+          new_partition.insert(partition_name.to_string(), leaf);
           if common::satisfies_filters(&new_partition, filters)? {
             new_partitions.push(new_partition);
           }
