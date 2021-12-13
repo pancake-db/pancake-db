@@ -19,9 +19,9 @@ impl MetadataKey for SegmentKey {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentMetadata {
-  pub all_time_n: u64, // only increases, includes deleted
+  pub all_time_n: u32, // only increases, includes deleted
   pub staged_n: usize, // includes deleted
-  pub all_time_deleted_n: u64, // only increases
+  pub all_time_deleted_n: u32, // only increases
   pub staged_deleted_n: usize,
   pub write_versions: Vec<u64>,
   pub read_version: u64,

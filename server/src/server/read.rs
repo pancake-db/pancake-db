@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
+use std::path::Path;
 
 use hyper::body::Bytes;
-use pancake_db_core::compression;
-use pancake_db_core::encoding;
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse, PartitionFieldValue};
+use pancake_db_core::{compression, deletion, encoding};
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
+use tokio::fs;
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
 
@@ -12,12 +14,12 @@ use crate::errors::ServerResult;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::read_segment_column::ReadSegmentColumnOp;
 use crate::ops::traits::ServerOp;
-use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
+use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{dirs, navigation};
 use crate::utils::common;
 
 use super::Server;
-use std::collections::HashMap;
+use std::io::ErrorKind;
 
 const LIST_ROUTE_NAME: &str = "list_segments";
 const READ_ROUTE_NAME: &str = "read_segment_column";
@@ -101,6 +103,45 @@ impl Server {
       ).await?);
     }
     Ok(values)
+  }
+
+  pub async fn read_pre_compaction_deletions(
+    &self,
+    compaction_key: &CompactionKey,
+  ) -> ServerResult<Vec<bool>> {
+    self.read_deletions(
+      &dirs::pre_compaction_deletions_path(
+        &self.opts.dir,
+        compaction_key
+      ),
+    ).await
+  }
+
+  pub async fn read_post_compaction_deletions(
+    &self,
+    compaction_key: &CompactionKey,
+  ) -> ServerResult<Vec<bool>> {
+    self.read_deletions(
+      &dirs::post_compaction_deletions_path(
+        &self.opts.dir,
+        compaction_key
+      ),
+    ).await
+  }
+
+  async fn read_deletions(
+    &self,
+    path: &Path,
+  ) -> ServerResult<Vec<bool>> {
+    match fs::read(path).await {
+      Ok(bytes) => {
+        Ok(deletion::decompress_deletions(bytes)?)
+      },
+      Err(e) if matches!(e.kind(), ErrorKind::NotFound) => {
+        Ok(Vec::new())
+      },
+      Err(e) => Err(e.into()),
+    }
   }
 
   async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {

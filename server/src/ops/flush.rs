@@ -74,9 +74,13 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     segment_meta.flushing = true;
     segment_meta.overwrite(dir, &segment_key).await?;
 
+    let augmented_cols = common::augmented_columns(
+      &table_meta.schema
+    );
+
     for &version in &segment_meta.write_versions {
       let compaction_key = segment_key.compaction_key(version);
-      for (col_name, col_meta) in &table_meta.schema.columns {
+      for (col_name, col_meta) in &augmented_cols {
         if new_explicit_columns.contains(col_name) {
           self.assert_explicit_files(
             col_name,

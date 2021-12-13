@@ -6,3 +6,4 @@ pub mod table;
 pub mod compaction;
 pub mod partition;
 pub mod global;
+pub mod deletion;

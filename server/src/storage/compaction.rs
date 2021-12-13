@@ -17,7 +17,7 @@ impl MetadataKey for CompactionKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
   pub compacted_n: usize,
-  pub omitted_n: u64, // all time # of rows deleted that don't show up in compaction
+  pub omitted_n: u32, // all time # of rows deleted that don't show up in compaction
   pub col_codecs: HashMap<String, String>,
 }
 

@@ -19,6 +19,7 @@ use crate::storage::table::TableMetadataCache;
 use crate::types::SegmentKey;
 use crate::storage::global::GlobalMetadata;
 use crate::storage::Metadata;
+use crate::storage::deletion::DeletionMetadataCache;
 
 mod create_table;
 mod delete;
@@ -112,6 +113,7 @@ pub struct Server {
   pub global_metadata_lock: Arc<RwLock<GlobalMetadata>>,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
+  pub deletion_metadata_cache: DeletionMetadataCache,
   pub segment_metadata_cache: SegmentMetadataCache,
   pub compaction_cache: CompactionCache,
 }
@@ -215,6 +217,7 @@ impl Server {
     let global_metadata_lock = Arc::new(RwLock::new(GlobalMetadata::default()));
     let table_metadata_cache = TableMetadataCache::new(dir);
     let partition_metadata_cache = PartitionMetadataCache::new(dir);
+    let deletion_metadata_cache = DeletionMetadataCache::new(dir);
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
@@ -222,6 +225,7 @@ impl Server {
       global_metadata_lock,
       table_metadata_cache,
       partition_metadata_cache,
+      deletion_metadata_cache,
       segment_metadata_cache,
       compaction_cache,
       background: Background::default(),
