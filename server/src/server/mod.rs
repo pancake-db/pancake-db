@@ -253,6 +253,8 @@ impl Server {
           .or(Self::get_schema_filter())
           .or(Self::list_tables_filter())
           .or(Self::drop_table_filter())
+          .or(Self::delete_from_segment_filter())
+          .or(Self::read_segment_deletions_filter())
       )
   }
 

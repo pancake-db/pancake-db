@@ -115,7 +115,6 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     }
     segment_meta.last_flush_at = Utc::now();
     segment_meta.staged_n = 0;
-    segment_meta.staged_deleted_n = 0;
     segment_meta.overwrite(dir, &segment_key).await?;
 
     log::debug!("truncating staged rows path {:?}", staged_rows_path);
@@ -147,14 +146,14 @@ impl FlushOp {
       let mut compaction_guard = compaction_lock.write().await;
       let mut compaction = compaction_guard.clone().unwrap_or_default();
 
-      let compacted_n = compaction.compacted_n;
+      let compacted_n = compaction.all_time_compacted_n - compaction.all_time_omitted_n;
       if compacted_n > 0 {
         let codec_name = compaction.col_codecs
           .get(col_name)
           .cloned()
           .unwrap_or_else(|| compression::choose_codec(dtype));
         let codec = compression::new_codec(dtype, &codec_name)?;
-        let mut compacted_nulls = Vec::with_capacity(compacted_n);
+        let mut compacted_nulls = Vec::with_capacity(compacted_n as usize);
         for _ in 0..compacted_n {
           compacted_nulls.push(FieldValue::new());
         }
@@ -220,7 +219,7 @@ impl FlushOp {
       .await?
       .unwrap_or_default();
 
-    let trim_idx = common::flush_only_n(segment_meta, &compaction);
+    let trim_idx = common::flush_only_n(segment_meta, &compaction) as usize;
     for (col_name, col_meta) in &table_meta.schema.columns {
       let flush_file = dirs::flush_col_file(dir, compaction_key, col_name);
       let bytes_result = fs::read(&flush_file).await;

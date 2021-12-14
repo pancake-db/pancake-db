@@ -20,15 +20,15 @@ impl MetadataKey for SegmentKey {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentMetadata {
   pub all_time_n: u32, // only increases, includes deleted
-  pub staged_n: usize, // includes deleted
   pub all_time_deleted_n: u32, // only increases
-  pub staged_deleted_n: usize,
+  pub staged_n: u32, // includes deleted
   pub write_versions: Vec<u64>,
   pub read_version: u64,
   pub read_version_since: DateTime<Utc>,
   pub last_flush_at: DateTime<Utc>,
   pub flushing: bool, // used for recovery purposes
   pub explicit_columns: HashSet<String>,
+  pub deletion_id: u64,
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -46,13 +46,13 @@ impl SegmentMetadata {
       all_time_n: 0,
       all_time_deleted_n: 0,
       staged_n: 0,
-      staged_deleted_n: 0,
       read_version: 0,
       write_versions: vec![0],
       read_version_since: Utc::now(),
       last_flush_at: Utc::now(),
       flushing: false,
       explicit_columns,
+      deletion_id: 0,
     }
   }
 

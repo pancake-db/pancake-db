@@ -309,9 +309,10 @@ pub fn pancake_result_into_warp<T: Message>(
       });
       let status = e.kind.warp_status_code();
       log::info!(
-        "replying ERR to {} request with status {}",
+        "replying ERR to {} request with status {}: {}",
         route_name,
         status,
+        e,
       );
       Ok(Box::new(warp::reply::with_status(
         reply,
@@ -482,10 +483,8 @@ pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
 }
 
 // number of rows (deleted or otherwise) in flush files (not compaction or staged)
-pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> usize {
-  let all_time_flushed_n = segment_meta.all_time_n - segment_meta.staged_n as u32;
-  let all_time_compacted_n = compaction.compacted_n as u32 + compaction.omitted_n;
-  (all_time_flushed_n - all_time_compacted_n) as usize
+pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> u32 {
+  segment_meta.all_time_n - segment_meta.staged_n - compaction.all_time_compacted_n
 }
 
 pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(

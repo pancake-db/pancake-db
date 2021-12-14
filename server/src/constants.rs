@@ -6,8 +6,6 @@ pub const MAX_NAME_LENGTH: usize = 255;
 pub const MAX_N_COLUMNS: usize = 255;
 
 pub const TABLE_METADATA_FILENAME: &str = "table_metadata.json";
-pub const PRE_COMPACTION_DELETIONS_FILENAME: &str = "pre_compaction_deletions.qco";
-pub const POST_COMPACTION_DELETIONS_FILENAME: &str = "post_compaction_deletions.qco";
 pub const DATA_SUBDIR: &str = "data";
 
 pub const ROW_ID_COLUMN_NAME: &str = "_row_id";

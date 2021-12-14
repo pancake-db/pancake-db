@@ -119,7 +119,7 @@ impl WriteToPartitionOp {
   ) -> ServerResult<()> {
     if n_rows > 0 {
       segment_meta.all_time_n += n_rows as u32;
-      segment_meta.staged_n += n_rows;
+      segment_meta.staged_n += n_rows as u32;
       segment_meta.overwrite(dir, segment_key).await
     } else {
       Ok(())
@@ -134,7 +134,7 @@ impl WriteToPartitionOp {
     let dir = &server.opts.dir;
     let staged_rows_path = dirs::staged_rows_path(dir, segment_key);
     let staged_rows = common::staged_bytes_to_rows(&fs::read(&staged_rows_path).await?)?;
-    if staged_rows.len() < segment_meta.staged_n {
+    if staged_rows.len() < segment_meta.staged_n as usize {
       return Err(ServerError::internal(&format!(
         "segment {} is in an impossible state with fewer rows ({}) in staged file than in metadata ({})",
         segment_key,
@@ -142,7 +142,7 @@ impl WriteToPartitionOp {
         segment_meta.staged_n,
       )))
     }
-    let n_rows = staged_rows.len() - segment_meta.staged_n;
+    let n_rows = staged_rows.len() - segment_meta.staged_n as usize;
     if n_rows > 0 {
       log::debug!(
         "identified missing staged rows in segment {} metadata; filling them in",

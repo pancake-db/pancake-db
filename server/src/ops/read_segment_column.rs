@@ -163,14 +163,15 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     let opts = &server.opts;
     let dir = &opts.dir;
     let row_count = (segment_meta.all_time_n - segment_meta.all_time_deleted_n) as u32;
+    let deletion_count = segment_meta.all_time_deleted_n - compaction.all_time_omitted_n;
     let implicit_nulls_count = if is_explicit_column {
       0
     } else {
-      let staged_count = segment_meta.staged_n - segment_meta.staged_deleted_n;
-      row_count - staged_count as u32
+      segment_meta.all_time_n - segment_meta.staged_n as u32
     };
     let mut response = ReadSegmentColumnResponse {
       row_count,
+      deletion_count,
       implicit_nulls_count,
       ..Default::default()
     };
