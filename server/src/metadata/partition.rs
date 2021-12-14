@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::utils::dirs;
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
-use crate::storage::traits::MetadataKey;
+use crate::metadata::traits::MetadataKey;
 use crate::types::{PartitionKey, ShardId};
 
-use super::traits::{CacheData, Metadata};
+use super::traits::{PersistentCacheData, PersistentMetadata};
 use uuid::Uuid;
 
 impl MetadataKey for PartitionKey {
@@ -26,7 +26,7 @@ pub struct PartitionMetadata {
 
 impl_metadata_serde_json!(PartitionMetadata);
 
-impl Metadata<PartitionKey> for PartitionMetadata {
+impl PersistentMetadata<PartitionKey> for PartitionMetadata {
   fn relative_path(key: &PartitionKey) -> PathBuf {
     dirs::relative_partition_dir(key)
       .join("partition_metadata.json")
@@ -64,4 +64,4 @@ impl PartitionMetadata {
   }
 }
 
-pub type PartitionMetadataCache = CacheData<PartitionKey, PartitionMetadata>;
+pub type PartitionMetadataCache = PersistentCacheData<PartitionKey, PartitionMetadata>;

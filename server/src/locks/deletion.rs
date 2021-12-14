@@ -1,28 +1,31 @@
 use async_trait::async_trait;
+use tokio::sync::OwnedRwLockWriteGuard;
 
-use crate::errors::{ServerError, ServerResult};
+use crate::errors::{ServerResult, ServerError};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::metadata::segment::SegmentMetadata;
-use crate::types::SegmentKey;
-use tokio::sync::OwnedRwLockWriteGuard;
+use crate::metadata::deletion::DeletionMetadata;
 use crate::metadata::table::TableMetadata;
+use crate::types::SegmentKey;
+use crate::utils::common;
+use crate::metadata::segment::SegmentMetadata;
 
-pub struct SegmentWriteLocks {
+pub struct DeletionWriteLocks {
   pub table_meta: TableMetadata,
-  pub definitely_segment_guard: OwnedRwLockWriteGuard<Option<SegmentMetadata>>,
+  pub deletion_guard: OwnedRwLockWriteGuard<Option<DeletionMetadata>>,
   pub segment_key: SegmentKey,
 }
 
-pub struct SegmentReadLocks {
+pub struct DeletionReadLocks {
   pub table_meta: TableMetadata,
+  pub maybe_deletion_meta: Option<DeletionMetadata>,
   pub segment_meta: SegmentMetadata,
   pub segment_key: SegmentKey,
 }
 
 #[async_trait]
-impl ServerOpLocks for SegmentWriteLocks {
+impl ServerOpLocks for DeletionWriteLocks {
   type Key = SegmentKey;
 
   async fn execute<Op: ServerOp<Self>>(
@@ -33,24 +36,16 @@ impl ServerOpLocks for SegmentWriteLocks {
     let table_name = &key.table_name;
     let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
     let table_guard = table_lock.read().await;
-    let maybe_table = table_guard.clone();
-    if maybe_table.is_none() {
-      return Err(ServerError::does_not_exist("table", table_name));
-    }
+    let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
 
-    let table_meta = maybe_table.unwrap();
     key.partition.check_against_schema(&table_meta.schema)?;
 
-    let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
-    let mut segment_guard = segment_meta_lock.write_owned().await;
-    let maybe_segment_meta = &mut *segment_guard;
-    if maybe_segment_meta.is_none() {
-      *maybe_segment_meta = Some(SegmentMetadata::new_from_schema(&table_meta.schema));
-    }
+    let deletion_lock = server.deletion_metadata_cache.get_lock(&key).await?;
+    let deletion_guard = deletion_lock.write_owned().await;
 
-    let locks = SegmentWriteLocks {
+    let locks = DeletionWriteLocks {
       table_meta,
-      definitely_segment_guard: segment_guard,
+      deletion_guard,
       segment_key: key,
     };
 
@@ -59,7 +54,7 @@ impl ServerOpLocks for SegmentWriteLocks {
 }
 
 #[async_trait]
-impl ServerOpLocks for SegmentReadLocks {
+impl ServerOpLocks for DeletionReadLocks {
   type Key = SegmentKey;
 
   async fn execute<Op: ServerOp<Self>>(
@@ -70,13 +65,12 @@ impl ServerOpLocks for SegmentReadLocks {
     let table_name = &key.table_name;
     let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
     let table_guard = table_lock.read().await;
-    let maybe_table = table_guard.clone();
-    if maybe_table.is_none() {
-      return Err(ServerError::does_not_exist("table", table_name));
-    }
+    let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
 
-    let table_meta = maybe_table.unwrap();
     key.partition.check_against_schema(&table_meta.schema)?;
+
+    let deletion_lock = server.deletion_metadata_cache.get_lock(&key).await?;
+    let deletion_guard = deletion_lock.read().await;
 
     let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
     let segment_guard = segment_meta_lock.read().await;
@@ -87,8 +81,10 @@ impl ServerOpLocks for SegmentReadLocks {
     }
 
     let segment_meta = maybe_segment_meta.unwrap();
-    let locks = SegmentReadLocks {
+
+    let locks = DeletionReadLocks {
       table_meta,
+      maybe_deletion_meta: deletion_guard.clone(),
       segment_meta,
       segment_key: key,
     };

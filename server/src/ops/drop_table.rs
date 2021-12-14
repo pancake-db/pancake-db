@@ -8,8 +8,8 @@ use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::utils::common;
-use crate::storage::Metadata;
-use crate::storage::table::TableMetadata;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::table::TableMetadata;
 use std::path::Path;
 
 pub struct DropTableOp {

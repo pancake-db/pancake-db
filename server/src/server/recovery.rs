@@ -9,10 +9,10 @@ use crate::ops::drop_table::DropTableOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
 use crate::server::Server;
-use crate::storage::compaction::Compaction;
-use crate::storage::Metadata;
-use crate::storage::partition::PartitionMetadata;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::compaction::Compaction;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::partition::PartitionMetadata;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::{InternalTableInfo, NormalizedPartition, PartitionKey};
 use crate::utils::{common, navigation};
 

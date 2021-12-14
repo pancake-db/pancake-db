@@ -57,3 +57,20 @@ pub fn version_dir(dir: &Path, compaction_key: &CompactionKey) -> PathBuf {
 pub fn staged_rows_path(dir: &Path, segment_key: &SegmentKey) -> PathBuf {
   segment_dir(dir, segment_key).join("staged_rows")
 }
+
+pub fn pre_compaction_deletions_path(
+  dir: &Path,
+  compaction_key: &CompactionKey,
+) -> PathBuf {
+  version_dir(dir, compaction_key).join("pre_compaction_deletions.qco")
+}
+
+pub fn post_compaction_deletions_path(
+  dir: &Path,
+  compaction_key: &CompactionKey,
+  deletion_id: u64,
+) -> PathBuf {
+  version_dir(dir, compaction_key).join(
+    format!("post_compaction_deletions_{}.qco", deletion_id)
+  )
+}

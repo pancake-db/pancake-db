@@ -6,7 +6,7 @@ use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::Metadata;
+use crate::metadata::PersistentMetadata;
 use crate::utils::common;
 
 pub struct AlterTableOp {

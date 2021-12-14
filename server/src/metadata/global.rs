@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 
-use super::traits::{Metadata, MetadataKey};
+use super::traits::{PersistentMetadata, MetadataKey};
 
 impl MetadataKey for () {
   const ENTITY_NAME: &'static str = "global metadata";
@@ -18,7 +18,7 @@ pub struct GlobalMetadata {
 
 impl_metadata_serde_json!(GlobalMetadata);
 
-impl Metadata<()> for GlobalMetadata {
+impl PersistentMetadata<()> for GlobalMetadata {
   fn relative_path(_: &()) -> PathBuf {
     "global_metadata.json".into()
   }

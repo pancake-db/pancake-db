@@ -13,7 +13,7 @@ use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dml::partition_field_value::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
-use pancake_db_idl::schema::Schema;
+use pancake_db_idl::schema::{Schema, ColumnMeta};
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use protobuf::well_known_types::Timestamp;
 use serde::Serialize;
@@ -24,11 +24,11 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH};
+use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 use crate::errors::{ServerError, ServerResult};
-use crate::storage::{Metadata, MetadataKey};
-use crate::storage::compaction::Compaction;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::{PersistentMetadata, MetadataKey};
+use crate::metadata::compaction::Compaction;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 use pancake_db_idl::dml::partition_field_comparison::Operator;
 
@@ -309,9 +309,10 @@ pub fn pancake_result_into_warp<T: Message>(
       });
       let status = e.kind.warp_status_code();
       log::info!(
-        "replying ERR to {} request with status {}",
+        "replying ERR to {} request with status {}: {}",
         route_name,
         status,
+        e,
       );
       Ok(Box::new(warp::reply::with_status(
         reply,
@@ -482,13 +483,11 @@ pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
 }
 
 // number of rows (deleted or otherwise) in flush files (not compaction or staged)
-pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> usize {
-  let all_time_flushed_n = segment_meta.all_time_n - segment_meta.staged_n as u64;
-  let all_time_compacted_n = compaction.compacted_n as u64 + compaction.omitted_n;
-  (all_time_flushed_n - all_time_compacted_n) as usize
+pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> u32 {
+  segment_meta.all_time_n - segment_meta.staged_n - compaction.all_time_compacted_n
 }
 
-pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
+pub fn unwrap_metadata<K: MetadataKey, M: PersistentMetadata<K>>(
   key: &K,
   metadata: &Option<M>,
 ) -> ServerResult<M> {
@@ -542,4 +541,26 @@ pub fn check_no_duplicate_names(entity_name: &str, names: Vec<String>) -> Server
   } else {
     Ok(())
   }
+}
+
+// return a schema including "DB" columns like _row_id
+pub fn augmented_columns(schema: &Schema) -> HashMap<String, ColumnMeta> {
+  let mut res = schema.columns.clone();
+  // If we ever add UINT32 or TIMESTAMP_SECONDS types, those would be
+  // more appropriate.
+  res.insert(
+    ROW_ID_COLUMN_NAME.to_string(),
+    ColumnMeta {
+      dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+      ..Default::default()
+    }
+  );
+  res.insert(
+    WRITTEN_AT_COLUMN_NAME.to_string(),
+    ColumnMeta {
+      dtype: ProtobufEnumOrUnknown::new(DataType::TIMESTAMP_MICROS),
+      ..Default::default()
+    }
+  );
+  res
 }

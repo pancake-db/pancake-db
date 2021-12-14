@@ -8,7 +8,7 @@ use crate::impl_metadata_serde_json;
 use crate::types::CompactionKey;
 use crate::utils::dirs;
 
-use super::traits::{CacheData, Metadata, MetadataKey};
+use super::traits::{PersistentCacheData, PersistentMetadata, MetadataKey};
 
 impl MetadataKey for CompactionKey {
   const ENTITY_NAME: &'static str = "compaction";
@@ -16,8 +16,12 @@ impl MetadataKey for CompactionKey {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Compaction {
-  pub compacted_n: usize,
-  pub omitted_n: u64, // all time # of rows deleted that don't show up in compaction
+  // total # of rows ever written (including deleted ones that don't show up)
+  // covered by this compaction
+  pub all_time_compacted_n: u32,
+  // total # of rows deleted prior to this compaction (these don't show up in
+  // the compacted data)
+  pub all_time_omitted_n: u32,
   pub col_codecs: HashMap<String, String>,
 }
 
@@ -27,17 +31,17 @@ impl_metadata_serde_json!(Compaction);
 impl Default for Compaction {
   fn default() -> Compaction {
     Compaction {
-      compacted_n: 0,
-      omitted_n: 0,
+      all_time_compacted_n: 0,
+      all_time_omitted_n: 0,
       col_codecs: HashMap::new(),
     }
   }
 }
 
-impl Metadata<CompactionKey> for Compaction {
+impl PersistentMetadata<CompactionKey> for Compaction {
   fn relative_path(key: &CompactionKey) -> PathBuf {
     dirs::relative_version_dir(key).join("compaction.json")
   }
 }
 
-pub type CompactionCache = CacheData<CompactionKey, Compaction>;
+pub type CompactionCache = PersistentCacheData<CompactionKey, Compaction>;

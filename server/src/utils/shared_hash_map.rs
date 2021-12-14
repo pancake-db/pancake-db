@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::errors::ServerResult;
-use crate::storage::MetadataKey;
+use crate::metadata::MetadataKey;
 
 const HASH_BUCKETS: usize = 16;
 
@@ -40,9 +40,8 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
   pub async fn get_lock_or<Fut, F>(&self, k: &K, load_fn: F) -> ServerResult<Arc<RwLock<V>>>
   where Fut: Future<Output=ServerResult<V>>, F: FnOnce() -> Fut {
     // first check if it already exists
-    let maybe_res = self.get_lock(k).await;
-    if maybe_res.is_some() {
-      return Ok(maybe_res.unwrap());
+    if let Some(res) = self.get_lock(k).await {
+      return Ok(res);
     }
 
     // otherwise we need to load value and obtain a write lock
@@ -50,8 +49,8 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
     let map_lock = &self.0[Self::hash_bucket(k)];
     let mut map_guard = map_lock.write().await;
     let map = &mut *map_guard;
-    let res = if map.contains_key(k) {
-      map.get(k).unwrap().clone()
+    let res = if let Some(lock) = map.get(k) {
+      lock.clone()
     } else {
       let entry = Arc::new(RwLock::new(v));
       map.insert(k.clone(), entry.clone());

@@ -11,9 +11,9 @@ use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::Metadata;
+use crate::metadata::PersistentMetadata;
 use crate::utils::common;
-use crate::storage::table::TableMetadata;
+use crate::metadata::table::TableMetadata;
 use crate::ops::alter_table::AlterTableOp;
 
 fn partitioning_matches(schema0: &Schema, schema1: &Schema) -> bool {

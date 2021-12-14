@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
+use std::path::Path;
 
 use hyper::body::Bytes;
-use pancake_db_core::compression;
-use pancake_db_core::encoding;
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse, PartitionFieldValue};
+use pancake_db_core::{compression, deletion, encoding};
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse, ReadSegmentDeletionsResponse, ReadSegmentDeletionsRequest};
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
+use tokio::fs;
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
 
@@ -12,15 +14,17 @@ use crate::errors::ServerResult;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::read_segment_column::ReadSegmentColumnOp;
 use crate::ops::traits::ServerOp;
-use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
+use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{dirs, navigation};
 use crate::utils::common;
 
 use super::Server;
-use std::collections::HashMap;
+use std::io::ErrorKind;
+use crate::ops::read_segment_deletions::ReadSegmentDeletionsOp;
 
 const LIST_ROUTE_NAME: &str = "list_segments";
-const READ_ROUTE_NAME: &str = "read_segment_column";
+const READ_COLUMN_ROUTE_NAME: &str = "read_segment_column";
+const READ_DELETIONS_ROUTE_NAME: &str = "read_segment_deletions";
 
 impl Server {
   pub async fn read_compact_col(
@@ -103,6 +107,47 @@ impl Server {
     Ok(values)
   }
 
+  pub async fn read_pre_compaction_deletions(
+    &self,
+    compaction_key: &CompactionKey,
+  ) -> ServerResult<Vec<bool>> {
+    self.read_deletions(
+      &dirs::pre_compaction_deletions_path(
+        &self.opts.dir,
+        compaction_key
+      ),
+    ).await
+  }
+
+  pub async fn read_post_compaction_deletions(
+    &self,
+    compaction_key: &CompactionKey,
+    deletion_id: u64,
+  ) -> ServerResult<Vec<bool>> {
+    self.read_deletions(
+      &dirs::post_compaction_deletions_path(
+        &self.opts.dir,
+        compaction_key,
+        deletion_id,
+      ),
+    ).await
+  }
+
+  async fn read_deletions(
+    &self,
+    path: &Path,
+  ) -> ServerResult<Vec<bool>> {
+    match fs::read(path).await {
+      Ok(bytes) => {
+        Ok(deletion::decompress_deletions(bytes)?)
+      },
+      Err(e) if matches!(e.kind(), ErrorKind::NotFound) => {
+        Ok(Vec::new())
+      },
+      Err(e) => Err(e.into()),
+    }
+  }
+
   async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {
     ListSegmentsOp { req }.execute(self).await
   }
@@ -128,16 +173,33 @@ impl Server {
     )
   }
 
+  pub fn read_segment_deletions_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+      .and(warp::path(READ_DELETIONS_ROUTE_NAME))
+      .and(warp::filters::ext::get::<Server>())
+      .and(warp::filters::body::bytes())
+      .and_then(Self::warp_read_segment_deletions)
+  }
+
   pub fn read_segment_column_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
-      .and(warp::path(READ_ROUTE_NAME))
+      .and(warp::path(READ_COLUMN_ROUTE_NAME))
       .and(warp::filters::ext::get::<Server>())
       .and(warp::filters::body::bytes())
       .and_then(Self::warp_read_segment_column)
   }
 
+  async fn read_segment_deletions(&self, req: ReadSegmentDeletionsRequest) -> ServerResult<ReadSegmentDeletionsResponse> {
+    ReadSegmentDeletionsOp { req }.execute(self).await
+  }
+
   async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
     ReadSegmentColumnOp { req }.execute(self).await
+  }
+
+  async fn read_segment_deletions_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentDeletionsResponse> {
+    let req = common::parse_pb::<ReadSegmentDeletionsRequest>(body)?;
+    self.read_segment_deletions(req).await
   }
 
   async fn read_segment_column_from_bytes(&self, body: Bytes) -> ServerResult<ReadSegmentColumnResponse> {
@@ -145,11 +207,11 @@ impl Server {
     self.read_segment_column(req).await
   }
 
-  async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
-    Self::log_request(READ_ROUTE_NAME, &body);
-    let pancake_res = server.read_segment_column_from_bytes(body).await;
+  async fn warp_read_segment_deletions(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    Self::log_request(READ_DELETIONS_ROUTE_NAME, &body);
+    let pancake_res = server.read_segment_deletions_from_bytes(body).await;
     if pancake_res.is_err() {
-      return common::pancake_result_into_warp(pancake_res, READ_ROUTE_NAME);
+      return common::pancake_result_into_warp(pancake_res, READ_COLUMN_ROUTE_NAME);
     }
 
     let resp = pancake_res.unwrap();
@@ -162,7 +224,34 @@ impl Server {
     resp_bytes.extend(resp.data);
     log::info!(
       "replying OK to {} request with {} bytes",
-      READ_ROUTE_NAME,
+      READ_DELETIONS_ROUTE_NAME,
+      resp_bytes.len()
+    );
+    Ok(Box::new(
+      Response::builder()
+        .body(resp_bytes)
+        .expect("unable to build response")
+    ))
+  }
+
+  async fn warp_read_segment_column(server: Server, body: Bytes) -> Result<impl Reply, Infallible> {
+    Self::log_request(READ_COLUMN_ROUTE_NAME, &body);
+    let pancake_res = server.read_segment_column_from_bytes(body).await;
+    if pancake_res.is_err() {
+      return common::pancake_result_into_warp(pancake_res, READ_COLUMN_ROUTE_NAME);
+    }
+
+    let resp = pancake_res.unwrap();
+    let mut resp_meta = resp.clone();
+    resp_meta.data = Vec::new();
+    let mut resp_bytes = protobuf::json::print_to_string(&resp_meta)
+      .unwrap()
+      .into_bytes();
+    resp_bytes.extend("\n".as_bytes());
+    resp_bytes.extend(resp.data);
+    log::info!(
+      "replying OK to {} request with {} bytes",
+      READ_COLUMN_ROUTE_NAME,
       resp_bytes.len()
     );
     Ok(Box::new(

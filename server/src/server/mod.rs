@@ -12,13 +12,15 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::traits::ServerOp;
 use crate::opt::Opt;
-use crate::storage::compaction::CompactionCache;
-use crate::storage::partition::PartitionMetadataCache;
-use crate::storage::segment::SegmentMetadataCache;
-use crate::storage::table::TableMetadataCache;
+use crate::metadata::compaction::CompactionCache;
+use crate::metadata::partition::PartitionMetadataCache;
+use crate::metadata::segment::SegmentMetadataCache;
+use crate::metadata::table::TableMetadataCache;
 use crate::types::SegmentKey;
-use crate::storage::global::GlobalMetadata;
-use crate::storage::Metadata;
+use crate::metadata::global::GlobalMetadata;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::deletion::DeletionMetadataCache;
+use crate::metadata::correlation::CorrelationMetadataCache;
 
 mod create_table;
 mod delete;
@@ -112,6 +114,8 @@ pub struct Server {
   pub global_metadata_lock: Arc<RwLock<GlobalMetadata>>,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
+  pub deletion_metadata_cache: DeletionMetadataCache,
+  pub correlation_metadata_cache: CorrelationMetadataCache,
   pub segment_metadata_cache: SegmentMetadataCache,
   pub compaction_cache: CompactionCache,
 }
@@ -215,6 +219,8 @@ impl Server {
     let global_metadata_lock = Arc::new(RwLock::new(GlobalMetadata::default()));
     let table_metadata_cache = TableMetadataCache::new(dir);
     let partition_metadata_cache = PartitionMetadataCache::new(dir);
+    let deletion_metadata_cache = DeletionMetadataCache::new();
+    let correlation_metadata_cache = CorrelationMetadataCache::new();
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
@@ -222,6 +228,8 @@ impl Server {
       global_metadata_lock,
       table_metadata_cache,
       partition_metadata_cache,
+      deletion_metadata_cache,
+      correlation_metadata_cache,
       segment_metadata_cache,
       compaction_cache,
       background: Background::default(),
@@ -249,6 +257,8 @@ impl Server {
           .or(Self::get_schema_filter())
           .or(Self::list_tables_filter())
           .or(Self::drop_table_filter())
+          .or(Self::delete_from_segment_filter())
+          .or(Self::read_segment_deletions_filter())
       )
   }
 

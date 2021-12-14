@@ -3,30 +3,31 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
+use pancake_db_core::{compression, deletion};
+use pancake_db_core::compression::ValueCodec;
 use pancake_db_idl::schema::{ColumnMeta, Schema};
 use tokio::fs;
+use tokio::sync::OwnedRwLockWriteGuard;
 
-use pancake_db_core::compression;
-use pancake_db_core::compression::ValueCodec;
-
-use crate::utils::dirs;
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::table::TableReadLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::compaction::Compaction;
-use crate::storage::Metadata;
-use crate::storage::segment::SegmentMetadata;
-use crate::types::SegmentKey;
+use crate::metadata::compaction::Compaction;
+use crate::metadata::deletion::DeletionMetadata;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::segment::SegmentMetadata;
+use crate::types::{CompactionKey, SegmentKey};
 use crate::utils::common;
+use crate::utils::dirs;
 
 struct CompactionAssessment {
   pub remove_from_candidates: bool,
   pub do_compaction: bool,
   pub old_version: u64,
   pub new_version: u64,
-  pub compacted_n: usize,
-  pub omitted_n: u64,
+  pub all_time_n_to_compact: u32,
+  pub deletion_id: u64,
 }
 
 pub struct CompactionOp {
@@ -90,19 +91,17 @@ impl CompactionOp {
       self.delete_old_versions(&opts.dir, segment_meta.read_version).await?;
     }
 
-    let omitted_n = segment_meta.all_time_deleted_n - segment_meta.staged_deleted_n as u64;
-    let compacted_n = (segment_meta.all_time_n - segment_meta.staged_n as u64 -
-      omitted_n) as usize;
+    let all_time_n_to_compact = segment_meta.all_time_n - segment_meta.staged_n as u32;
     let new_version = segment_meta.read_version + 1;
     let mut res = CompactionAssessment {
       remove_from_candidates: false,
       do_compaction: false,
       old_version: segment_meta.read_version,
       new_version,
-      compacted_n,
-      omitted_n,
+      all_time_n_to_compact,
+      deletion_id: segment_meta.deletion_id,
     };
-    if segment_meta.write_versions.len() > 1 || compacted_n < opts.min_rows_for_compaction {
+    if segment_meta.write_versions.len() > 1 || all_time_n_to_compact < opts.min_rows_for_compaction {
       res.remove_from_candidates = true;
       log::debug!(
         "will not compact {}; already compacting or too few rows",
@@ -128,8 +127,8 @@ impl CompactionOp {
       .clone()
       .unwrap_or_default();
 
-    let n_rows_has_increased = compacted_n > existing_compaction.compacted_n;
-    let n_rows_has_doubled = compacted_n >= 2 * existing_compaction.compacted_n;
+    let n_rows_has_increased = all_time_n_to_compact > existing_compaction.all_time_compacted_n;
+    let n_rows_has_doubled = all_time_n_to_compact >= 2 * existing_compaction.all_time_compacted_n;
     let n_rows_has_been_constant = current_time - segment_meta.last_flush_at > Duration::seconds(opts.compact_as_constant_seconds);
     if n_rows_has_doubled || (n_rows_has_increased && n_rows_has_been_constant) {
       log::debug!(
@@ -147,10 +146,15 @@ impl CompactionOp {
     Ok(res)
   }
 
-  fn plan_compaction(&self, schema: &Schema, assessment: &CompactionAssessment) -> Compaction {
+  fn plan_compaction(
+    &self,
+    augmented_cols: &HashMap<String, ColumnMeta>,
+    assessment: &CompactionAssessment,
+    all_time_omitted_n: u32,
+  ) -> Compaction {
     let mut col_codecs = HashMap::new();
 
-    for (col_name, col_meta) in &schema.columns {
+    for (col_name, col_meta) in augmented_cols {
       col_codecs.insert(
         col_name.to_string(),
         compression::choose_codec(col_meta.dtype.unwrap())
@@ -158,8 +162,8 @@ impl CompactionOp {
     }
 
     Compaction {
-      compacted_n: assessment.compacted_n,
-      omitted_n: assessment.omitted_n,
+      all_time_compacted_n: assessment.all_time_n_to_compact,
+      all_time_omitted_n,
       col_codecs,
     }
   }
@@ -179,7 +183,7 @@ impl CompactionOp {
       col_meta,
       assessment.old_version,
       old_compression_params,
-      assessment.compacted_n,
+      assessment.all_time_n_to_compact as usize,
     ).await?;
     let bytes = compressor.compress(&values, col_meta.nested_list_depth as u8)?;
     let compaction_key = self.key.compaction_key(assessment.new_version);
@@ -190,39 +194,120 @@ impl CompactionOp {
     Ok(())
   }
 
+  // returns all time omitted n
+  async fn execute_deletion_compaction(
+    &self,
+    server: &Server,
+    old_compaction_key: &CompactionKey,
+    new_compaction_key: &CompactionKey,
+    assessment: &CompactionAssessment,
+  ) -> ServerResult<u32> {
+    let old_pre_compaction_deletions = server.read_pre_compaction_deletions(
+      old_compaction_key
+    ).await?;
+    let old_post_compaction_deletions = server.read_post_compaction_deletions(
+      old_compaction_key,
+      assessment.deletion_id,
+    ).await?;
+
+    let n_pre = old_pre_compaction_deletions.len();
+    let n_post = old_post_compaction_deletions.len();
+    if n_pre == 0 && n_post == 0 {
+      return Ok(0);
+    }
+
+    let mut new_pre_compaction_deletions = Vec::new();
+    let mut pre_i = 0;
+    let mut post_i = 0;
+    let mut all_time_omitted_n = 0;
+    while pre_i < n_pre && post_i < n_post {
+      let pre_deleted = pre_i < n_pre && old_pre_compaction_deletions[pre_i];
+      let post_deleted = post_i < n_post && old_post_compaction_deletions[post_i];
+      let is_deleted = pre_deleted || post_deleted;
+      new_pre_compaction_deletions.push(is_deleted);
+      if is_deleted && pre_i < assessment.all_time_n_to_compact as usize {
+        all_time_omitted_n += 1;
+      }
+      if !pre_deleted {
+        post_i += 1
+      }
+      pre_i += 1
+    }
+
+    let deletion_bytes = deletion::compress_deletions(new_pre_compaction_deletions)?;
+
+    fs::write(
+      dirs::pre_compaction_deletions_path(
+        &server.opts.dir,
+        new_compaction_key,
+      ),
+      &deletion_bytes,
+    ).await?;
+    Ok(all_time_omitted_n)
+  }
+
   async fn compact(
     &self,
     server: &Server,
     schema: &Schema,
-    assessment: &CompactionAssessment
+    assessment: &CompactionAssessment,
+    deletion_meta_guard: OwnedRwLockWriteGuard<Option<DeletionMetadata>>,
   ) -> ServerResult<()> {
-    let opts = &server.opts;
-    let compaction = self.plan_compaction(schema, assessment);
-    {
-      let new_compaction_key = self.key.compaction_key(assessment.new_version);
-      let new_compaction_lock = server.compaction_cache
-        .get_lock(&new_compaction_key)
-        .await?;
-      let mut new_compaction_guard = new_compaction_lock.write().await;
-      *new_compaction_guard = Some(compaction.clone());
-      compaction.overwrite(&opts.dir, &new_compaction_key).await?;
-    }
+    let dir = &server.opts.dir;
+    let augmented_cols = common::augmented_columns(schema);
+    let old_compaction_key = self.key.compaction_key(assessment.old_version);
     let old_compaction = {
-      let old_compaction_key = self.key.compaction_key(assessment.old_version);
       let old_compaction_lock = server.compaction_cache
         .get_lock(&old_compaction_key)
         .await?;
       let new_compaction_guard = old_compaction_lock.read().await;
       new_compaction_guard.clone().unwrap_or_default()
     };
+    let new_compaction_key = self.key.compaction_key(assessment.new_version);
 
     log::info!(
       "starting compaction for {} version {} ({} rows)",
       self.key,
       assessment.new_version,
-      assessment.compacted_n,
+      assessment.all_time_n_to_compact,
     );
-    for (col_name, col_meta) in &schema.columns {
+
+    // First compact deletion information, since deletions are locked.
+    // Along the way we'll be able to count the number of rows omitted
+    // We'll compact each column later, since flushes aren't locked.
+    let all_time_omitted_n = self.execute_deletion_compaction(
+      server,
+      &old_compaction_key,
+      &new_compaction_key,
+      assessment,
+    ).await?;
+    drop(deletion_meta_guard);
+    log::debug!(
+      "wrote deletion information for {} version {} deletion id {} all_time_omitted_n {}",
+      self.key,
+      assessment.new_version,
+      assessment.deletion_id,
+      all_time_omitted_n,
+    );
+
+    // Write the compaction metadata
+    let compaction = self.plan_compaction(&augmented_cols, assessment, all_time_omitted_n);
+    {
+      let new_compaction_lock = server.compaction_cache
+        .get_lock(&new_compaction_key)
+        .await?;
+      let mut new_compaction_guard = new_compaction_lock.write().await;
+      *new_compaction_guard = Some(compaction.clone());
+      compaction.overwrite(dir, &new_compaction_key).await?;
+    }
+    log::debug!(
+      "wrote compaction metadata for {} version {}",
+      self.key,
+      assessment.new_version,
+    );
+
+    // Now we compact each column.
+    for (col_name, col_meta) in &augmented_cols {
       let old_compression_params = old_compaction.col_codecs
         .get(col_name);
       let compressor = compression::new_codec(
@@ -237,6 +322,12 @@ impl CompactionOp {
         old_compression_params,
         &*compressor,
       ).await?;
+      log::debug!(
+        "wrote compacted column {} for {} version {}",
+        col_name,
+        self.key,
+        assessment.new_version,
+      );
     }
     log::info!("finished compaction for {} version {}", self.key, assessment.new_version);
 
@@ -264,8 +355,13 @@ impl ServerOp<TableReadLocks> for CompactionOp {
     } = locks;
     let opts = &server.opts;
 
+    let deletion_lock = server.deletion_metadata_cache.get_lock(&self.key)
+      .await?;
     let segment_lock = server.segment_metadata_cache.get_lock(&self.key)
       .await?;
+
+    // we'll manually drop the deletion lock when we don't need it
+    let deletion_meta_guard = deletion_lock.write_owned().await;
 
     // we put this code in a block to scope the first write lock on segment meta
     let assessment = {
@@ -291,7 +387,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
     if assessment.do_compaction {
       // important that segment meta is not locked during compaction
       // otherwise writes would be blocked
-      self.compact(server, &table_meta.schema, &assessment).await?;
+      self.compact(server, &table_meta.schema, &assessment, deletion_meta_guard).await?;
 
       let mut segment_guard = segment_lock.write().await;
       let maybe_segment_meta = &mut *segment_guard;

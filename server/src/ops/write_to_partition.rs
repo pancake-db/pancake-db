@@ -1,18 +1,21 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, Row, FieldValue};
 use tokio::fs;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::partition::PartitionWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::Metadata;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{common, navigation};
 use crate::utils::dirs;
+use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
+use protobuf::well_known_types::Timestamp;
+use pancake_db_idl::dml::field_value::Value;
 
 pub struct WriteToPartitionOp {
   pub req: WriteToPartitionRequest,
@@ -64,13 +67,16 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
       segment_meta = &mut default_segment_meta;
     }
 
-    let staged_bytes = common::rows_to_staged_bytes(&self.req.rows)?;
+    // add DB columns to rows
+    let full_rows = self.full_db_columns(segment_meta);
+
+    let staged_bytes = common::rows_to_staged_bytes(&full_rows)?;
     common::append_to_file(
       dirs::staged_rows_path(&server.opts.dir, &segment_key),
       &staged_bytes,
     ).await?;
 
-    let n_rows = self.req.rows.len();
+    let n_rows = full_rows.len();
     Self::increment_segment_meta_n_rows(n_rows, segment_meta, dir, &segment_key).await?;
 
     server.add_flush_candidate(segment_key).await;
@@ -80,6 +86,31 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
 }
 
 impl WriteToPartitionOp {
+  fn full_db_columns(
+    &self,
+    segment_meta: &SegmentMetadata,
+  ) -> Vec<Row> {
+    let written_at = FieldValue {
+      value: Some(Value::timestamp_val(Timestamp::now())),
+      ..Default::default()
+    };
+    let mut res = Vec::with_capacity(self.req.rows.len());
+    let mut row_id = segment_meta.all_time_n;
+    for row in &self.req.rows {
+      let mut full = row.clone();
+      let row_id_fv = FieldValue {
+        value: Some(Value::int64_val(row_id as i64)),
+        ..Default::default()
+      };
+      full.fields.insert(ROW_ID_COLUMN_NAME.to_string(), row_id_fv);
+      full.fields.insert(WRITTEN_AT_COLUMN_NAME.to_string(), written_at.clone());
+      res.push(full);
+
+      row_id += 1;
+    }
+    res
+  }
+
   async fn increment_segment_meta_n_rows(
     n_rows: usize,
     segment_meta: &mut SegmentMetadata,
@@ -87,8 +118,8 @@ impl WriteToPartitionOp {
     segment_key: &SegmentKey
   ) -> ServerResult<()> {
     if n_rows > 0 {
-      segment_meta.all_time_n += n_rows as u64;
-      segment_meta.staged_n += n_rows;
+      segment_meta.all_time_n += n_rows as u32;
+      segment_meta.staged_n += n_rows as u32;
       segment_meta.overwrite(dir, segment_key).await
     } else {
       Ok(())
@@ -103,7 +134,7 @@ impl WriteToPartitionOp {
     let dir = &server.opts.dir;
     let staged_rows_path = dirs::staged_rows_path(dir, segment_key);
     let staged_rows = common::staged_bytes_to_rows(&fs::read(&staged_rows_path).await?)?;
-    if staged_rows.len() < segment_meta.staged_n {
+    if staged_rows.len() < segment_meta.staged_n as usize {
       return Err(ServerError::internal(&format!(
         "segment {} is in an impossible state with fewer rows ({}) in staged file than in metadata ({})",
         segment_key,
@@ -111,7 +142,7 @@ impl WriteToPartitionOp {
         segment_meta.staged_n,
       )))
     }
-    let n_rows = staged_rows.len() - segment_meta.staged_n;
+    let n_rows = staged_rows.len() - segment_meta.staged_n as usize;
     if n_rows > 0 {
       log::debug!(
         "identified missing staged rows in segment {} metadata; filling them in",

@@ -9,3 +9,5 @@ pub mod flush;
 pub mod read_segment_column;
 pub mod compact;
 pub mod list_tables;
+pub mod delete_from_segment;
+pub mod read_segment_deletions;

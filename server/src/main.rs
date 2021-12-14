@@ -1,3 +1,6 @@
+#![allow(clippy::new_without_default)]
+#![allow(clippy::needless_range_loop)]
+
 use std::net::{SocketAddr, TcpListener};
 
 use hyper::Server as HyperServer;
@@ -18,7 +21,7 @@ mod utils;
 pub mod constants;
 pub mod errors;
 pub mod ops;
-pub mod storage;
+pub mod metadata;
 pub mod locks;
 
 static LOGGER: Logger = Logger;
