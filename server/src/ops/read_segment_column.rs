@@ -128,7 +128,8 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     } = locks;
     let col_name = req.column_name.clone();
 
-    let maybe_col_meta = table_meta.schema.columns
+    let augmented_columns = common::augmented_columns(&table_meta.schema);
+    let maybe_col_meta = augmented_columns
       .get(&col_name);
     if maybe_col_meta.is_none() {
       return Err(ServerError::does_not_exist("column", &col_name));

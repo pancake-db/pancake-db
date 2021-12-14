@@ -90,7 +90,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
 
       let mut version_n_deleted = 0;
       let mut post_i = 0;
-      for i in 0..max_row_id as usize {
+      for i in 0..(max_row_id + 1) as usize {
         let pre_deleted = i < n_pre && pre_compaction_deletions[i];
         if post_i >= post_compaction_deletions.len() {
           post_compaction_deletions.push(false);

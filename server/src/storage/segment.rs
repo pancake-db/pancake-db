@@ -12,6 +12,7 @@ use crate::utils::dirs;
 
 use super::traits::{CacheData, Metadata};
 use pancake_db_idl::schema::Schema;
+use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";
@@ -57,7 +58,11 @@ impl SegmentMetadata {
   }
 
   pub fn new_from_schema(schema: &Schema) -> Self {
-    Self::new(schema.columns.keys().cloned().collect())
+    let mut explicit_columns: HashSet<_> = schema.columns.keys().cloned().collect();
+    explicit_columns.insert(ROW_ID_COLUMN_NAME.to_string());
+    explicit_columns.insert(WRITTEN_AT_COLUMN_NAME.to_string());
+
+    Self::new(explicit_columns)
   }
 }
 
