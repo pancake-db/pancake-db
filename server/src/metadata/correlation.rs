@@ -11,6 +11,8 @@ impl EphemeralMetadata for CorrelationMetadata {}
 
 pub type CorrelationMetadataCache = EphemeralCacheData<String, CorrelationMetadata>;
 
+// clippy doesn't understand that &String is needed here due to type bounds
+#[allow(clippy::ptr_arg)]
 impl CorrelationMetadataCache {
   pub async fn get_correlated_read_version(
     &self,

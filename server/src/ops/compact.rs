@@ -203,10 +203,10 @@ impl CompactionOp {
     assessment: &CompactionAssessment,
   ) -> ServerResult<u32> {
     let old_pre_compaction_deletions = server.read_pre_compaction_deletions(
-      &old_compaction_key
+      old_compaction_key
     ).await?;
     let old_post_compaction_deletions = server.read_post_compaction_deletions(
-      &old_compaction_key,
+      old_compaction_key,
       assessment.deletion_id,
     ).await?;
 
@@ -254,7 +254,7 @@ impl CompactionOp {
     deletion_meta_guard: OwnedRwLockWriteGuard<Option<DeletionMetadata>>,
   ) -> ServerResult<()> {
     let dir = &server.opts.dir;
-    let augmented_cols = common::augmented_columns(&schema);
+    let augmented_cols = common::augmented_columns(schema);
     let old_compaction_key = self.key.compaction_key(assessment.old_version);
     let old_compaction = {
       let old_compaction_lock = server.compaction_cache
@@ -279,7 +279,7 @@ impl CompactionOp {
       server,
       &old_compaction_key,
       &new_compaction_key,
-      &assessment,
+      assessment,
     ).await?;
     drop(deletion_meta_guard);
     log::debug!(

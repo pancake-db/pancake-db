@@ -1,3 +1,6 @@
+#![allow(clippy::new_without_default)]
+#![allow(clippy::needless_range_loop)]
+
 use std::net::{SocketAddr, TcpListener};
 
 use hyper::Server as HyperServer;

@@ -50,9 +50,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
 
     let max_row_id = match self.req.row_ids.iter().max() {
       Some(id) => Ok(*id),
-      None => Err(ServerError::invalid(&format!(
-        "no row ids provided to delete"
-      )))
+      None => Err(ServerError::invalid("no row ids provided to delete"))
     }?;
     let row_ids: HashSet<_> = self.req.row_ids.iter().cloned().collect();
 
