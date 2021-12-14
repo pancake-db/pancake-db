@@ -8,7 +8,7 @@ use crate::impl_metadata_serde_json;
 use crate::types::CompactionKey;
 use crate::utils::dirs;
 
-use super::traits::{CacheData, Metadata, MetadataKey};
+use super::traits::{PersistentCacheData, PersistentMetadata, MetadataKey};
 
 impl MetadataKey for CompactionKey {
   const ENTITY_NAME: &'static str = "compaction";
@@ -38,10 +38,10 @@ impl Default for Compaction {
   }
 }
 
-impl Metadata<CompactionKey> for Compaction {
+impl PersistentMetadata<CompactionKey> for Compaction {
   fn relative_path(key: &CompactionKey) -> PathBuf {
     dirs::relative_version_dir(key).join("compaction.json")
   }
 }
 
-pub type CompactionCache = CacheData<CompactionKey, Compaction>;
+pub type CompactionCache = PersistentCacheData<CompactionKey, Compaction>;

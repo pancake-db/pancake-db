@@ -5,8 +5,8 @@ use crate::errors::{ServerError, ServerResult};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::table::TableMetadata;
-use crate::storage::global::GlobalMetadata;
+use crate::metadata::table::TableMetadata;
+use crate::metadata::global::GlobalMetadata;
 
 pub struct GlobalTableReadLocks {
   pub global_meta: GlobalMetadata,

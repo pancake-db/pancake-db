@@ -42,7 +42,12 @@ impl ServerOp<DeletionReadLocks> for ReadSegmentDeletionsOp {
       segment_meta,
       segment_key,
     } = locks;
-    let compaction_key = segment_key.compaction_key(segment_meta.read_version);
+    let version = server.correlation_metadata_cache.get_correlated_read_version(
+      &req.correlation_id,
+      &segment_key,
+      segment_meta.read_version
+    ).await?;
+    let compaction_key = segment_key.compaction_key(version);
 
     let io_res = fs::read(dirs::post_compaction_deletions_path(
       &server.opts.dir,

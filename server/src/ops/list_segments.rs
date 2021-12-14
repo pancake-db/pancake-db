@@ -9,7 +9,7 @@ use crate::errors::ServerResult;
 use crate::locks::table::GlobalTableReadLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartition, PartitionKey};
 use crate::utils::{common, navigation, sharding};
 
@@ -22,7 +22,6 @@ impl ListSegmentsOp {
     MessageField::from_option(maybe_segment_meta.map(|meta| {
       let row_count = (meta.all_time_n - meta.all_time_deleted_n) as u32;
       PbSegmentMetadata {
-        latest_version: meta.read_version,
         row_count,
         ..Default::default()
       }

@@ -10,7 +10,7 @@ use crate::errors::{ServerError, ServerResult};
 use crate::locks::deletion::DeletionWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::Metadata;
+use crate::metadata::PersistentMetadata;
 use crate::types::{SegmentKey, NormalizedPartition};
 use crate::utils::common;
 use crate::utils::dirs;

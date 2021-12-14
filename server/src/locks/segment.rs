@@ -4,10 +4,10 @@ use crate::errors::{ServerError, ServerResult};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::SegmentKey;
 use tokio::sync::OwnedRwLockWriteGuard;
-use crate::storage::table::TableMetadata;
+use crate::metadata::table::TableMetadata;
 
 pub struct SegmentWriteLocks {
   pub table_meta: TableMetadata,

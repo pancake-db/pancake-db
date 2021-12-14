@@ -120,6 +120,9 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     common::validate_entity_name_for_read("table name", &req.table_name)?;
     common::validate_segment_id(&req.segment_id)?;
     common::validate_entity_name_for_read("column name", &req.column_name)?;
+    if self.req.correlation_id.is_empty() && self.req.continuation_token.is_empty() {
+      return Err(ServerError::invalid("must provide either a correlation id or a continuation token"))
+    }
 
     let SegmentReadLocks {
       table_meta,
@@ -138,10 +141,15 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
 
     let is_explicit_column = segment_meta.explicit_columns.contains(&col_name);
     let continuation = if req.continuation_token.is_empty() {
+      let version = server.correlation_metadata_cache.get_correlated_read_version(
+        &req.correlation_id,
+        &segment_key,
+        segment_meta.read_version
+      ).await?;
+
       // If the segment explicitly contains this column and version > 0,
       // it probably has compacted data.
       // Otherwise it definitely doesn't, and we can skip to flushed+staged data.
-      let version = segment_meta.read_version;
       if is_explicit_column && version > 0 {
         SegmentColumnContinuation::new(FileType::Compact, version)
       } else {

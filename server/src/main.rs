@@ -18,7 +18,7 @@ mod utils;
 pub mod constants;
 pub mod errors;
 pub mod ops;
-pub mod storage;
+pub mod metadata;
 pub mod locks;
 
 static LOGGER: Logger = Logger;

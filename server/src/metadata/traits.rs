@@ -21,7 +21,7 @@ pub trait MetadataJson: Clone + Send + Sync {
 #[macro_export]
 macro_rules! impl_metadata_serde_json {
   ($T:ident) => {
-    impl $crate::storage::traits::MetadataJson for $T {
+    impl $crate::metadata::traits::MetadataJson for $T {
       fn to_json_string(&self) -> ServerResult<String> {
         Ok(serde_json::to_string(&self)?)
       }
@@ -32,8 +32,10 @@ macro_rules! impl_metadata_serde_json {
   }
 }
 
+pub trait EphemeralMetadata: Clone + Send + Sync {}
+
 #[async_trait]
-pub trait Metadata<K: MetadataKey>: MetadataJson {
+pub trait PersistentMetadata<K: MetadataKey>: MetadataJson {
   fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &Path, k: &K) -> PathBuf {
@@ -70,14 +72,14 @@ pub trait MetadataKey: Clone + Debug + Eq + Hash + Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct CacheData<K, M> where M: Metadata<K>, K: MetadataKey {
+pub struct PersistentCacheData<K, M> where M: PersistentMetadata<K>, K: MetadataKey {
   dir: PathBuf,
   data: Arc<SharedHashMap<K, Option<M>>>,
 }
 
-impl<K, M> CacheData<K, M> where M: Metadata<K>, K: MetadataKey  {
+impl<K, M> PersistentCacheData<K, M> where M: PersistentMetadata<K>, K: MetadataKey  {
   pub fn new(dir: &Path) -> Self {
-    CacheData {
+    PersistentCacheData {
       dir: dir.to_path_buf(),
       data: Arc::new(SharedHashMap::new()),
     }
@@ -91,6 +93,32 @@ impl<K, M> CacheData<K, M> where M: Metadata<K>, K: MetadataKey  {
 
   pub async fn prune<F>(&self, f: F)
   where F: Fn(&K) -> bool {
+    self.data.prune(f).await
+  }
+}
+
+#[derive(Clone)]
+pub struct EphemeralCacheData<K, M> where M: EphemeralMetadata, K: MetadataKey {
+  data: Arc<SharedHashMap<K, Option<M>>>,
+}
+
+async fn async_none<M: EphemeralMetadata>() -> ServerResult<Option<M>> {
+  Ok(None)
+}
+
+impl<K, M> EphemeralCacheData<K, M> where M: EphemeralMetadata, K: MetadataKey  {
+  pub fn new() -> Self {
+    EphemeralCacheData {
+      data: Arc::new(SharedHashMap::new()),
+    }
+  }
+
+  pub async fn get_lock(&self, k: &K) -> ServerResult<Arc<RwLock<Option<M>>>> {
+    self.data.get_lock_or(k, async_none).await
+  }
+
+  pub async fn prune<F>(&self, f: F)
+    where F: Fn(&K) -> bool {
     self.data.prune(f).await
   }
 }

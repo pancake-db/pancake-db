@@ -5,11 +5,11 @@ use crate::errors::{ServerResult, ServerError};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::storage::deletion::DeletionMetadata;
-use crate::storage::table::TableMetadata;
+use crate::metadata::deletion::DeletionMetadata;
+use crate::metadata::table::TableMetadata;
 use crate::types::SegmentKey;
 use crate::utils::common;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::segment::SegmentMetadata;
 
 pub struct DeletionWriteLocks {
   pub table_meta: TableMetadata,

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::errors::ServerResult;
-use crate::storage::MetadataKey;
+use crate::metadata::MetadataKey;
 
 const HASH_BUCKETS: usize = 16;
 

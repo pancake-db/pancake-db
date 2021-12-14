@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
-use crate::storage::traits::MetadataKey;
+use crate::metadata::traits::MetadataKey;
 use crate::types::SegmentKey;
 use crate::utils::dirs;
 
-use super::traits::{CacheData, Metadata};
+use super::traits::{PersistentCacheData, PersistentMetadata};
 use pancake_db_idl::schema::Schema;
 use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 
@@ -34,7 +34,7 @@ pub struct SegmentMetadata {
 
 impl_metadata_serde_json!(SegmentMetadata);
 
-impl Metadata<SegmentKey> for SegmentMetadata {
+impl PersistentMetadata<SegmentKey> for SegmentMetadata {
   fn relative_path(key: &SegmentKey) -> PathBuf {
     dirs::relative_segment_dir(key)
       .join("segment_metadata.json")
@@ -66,4 +66,4 @@ impl SegmentMetadata {
   }
 }
 
-pub type SegmentMetadataCache = CacheData<SegmentKey, SegmentMetadata>;
+pub type SegmentMetadataCache = PersistentCacheData<SegmentKey, SegmentMetadata>;

@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::constants::SHARD_ID_BYTE_LENGTH;
 use crate::errors::{ServerError, ServerResult};
 use crate::utils::{common, sharding};
-use crate::storage::table::TableMetadata;
+use crate::metadata::table::TableMetadata;
 use pancake_db_idl::dml::PartitionFieldValue;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -399,4 +399,3 @@ pub struct InternalTableInfo {
   pub name: String,
   pub meta: TableMetadata,
 }
-

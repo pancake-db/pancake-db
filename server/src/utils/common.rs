@@ -26,9 +26,9 @@ use warp::Reply;
 
 use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 use crate::errors::{ServerError, ServerResult};
-use crate::storage::{Metadata, MetadataKey};
-use crate::storage::compaction::Compaction;
-use crate::storage::segment::SegmentMetadata;
+use crate::metadata::{PersistentMetadata, MetadataKey};
+use crate::metadata::compaction::Compaction;
+use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 use pancake_db_idl::dml::partition_field_comparison::Operator;
 
@@ -487,7 +487,7 @@ pub fn flush_only_n(segment_meta: &SegmentMetadata, compaction: &Compaction) -> 
   segment_meta.all_time_n - segment_meta.staged_n - compaction.all_time_compacted_n
 }
 
-pub fn unwrap_metadata<K: MetadataKey, M: Metadata<K>>(
+pub fn unwrap_metadata<K: MetadataKey, M: PersistentMetadata<K>>(
   key: &K,
   metadata: &Option<M>,
 ) -> ServerResult<M> {
