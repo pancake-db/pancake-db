@@ -27,6 +27,8 @@ pub struct PartitionMetadata {
 impl_metadata_serde_json!(PartitionMetadata);
 
 impl PersistentMetadata<PartitionKey> for PartitionMetadata {
+  const CACHE_SIZE_LIMIT: usize = 65536;
+
   fn relative_path(key: &PartitionKey) -> PathBuf {
     dirs::relative_partition_dir(key)
       .join("partition_metadata.json")

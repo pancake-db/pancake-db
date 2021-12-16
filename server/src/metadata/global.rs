@@ -19,6 +19,8 @@ pub struct GlobalMetadata {
 impl_metadata_serde_json!(GlobalMetadata);
 
 impl PersistentMetadata<()> for GlobalMetadata {
+  const CACHE_SIZE_LIMIT: usize = 1;
+
   fn relative_path(_: &()) -> PathBuf {
     "global_metadata.json".into()
   }

@@ -78,6 +78,9 @@ impl MetadataJson for TableMetadata {
 }
 
 impl PersistentMetadata<TableKey> for TableMetadata {
+  // no one should have more tables than this anyway
+  const CACHE_SIZE_LIMIT: usize = 16384;
+
   fn relative_path(table_name: &TableKey) -> PathBuf {
     dirs::relative_table_dir(table_name)
       .join(TABLE_METADATA_FILENAME)

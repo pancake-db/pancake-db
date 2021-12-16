@@ -7,7 +7,9 @@ pub struct CorrelationMetadata {
   pub compaction_key: CompactionKey,
 }
 
-impl EphemeralMetadata for CorrelationMetadata {}
+impl EphemeralMetadata for CorrelationMetadata {
+  const CACHE_SIZE_LIMIT: usize = 16384;
+}
 
 pub type CorrelationMetadataCache = EphemeralCacheData<String, CorrelationMetadata>;
 
