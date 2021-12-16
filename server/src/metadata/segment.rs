@@ -35,6 +35,8 @@ pub struct SegmentMetadata {
 impl_metadata_serde_json!(SegmentMetadata);
 
 impl PersistentMetadata<SegmentKey> for SegmentMetadata {
+  const CACHE_SIZE_LIMIT: usize = 65536;
+
   fn relative_path(key: &SegmentKey) -> PathBuf {
     dirs::relative_segment_dir(key)
       .join("segment_metadata.json")

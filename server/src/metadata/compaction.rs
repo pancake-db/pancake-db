@@ -39,6 +39,8 @@ impl Default for Compaction {
 }
 
 impl PersistentMetadata<CompactionKey> for Compaction {
+  const CACHE_SIZE_LIMIT: usize = 65536;
+
   fn relative_path(key: &CompactionKey) -> PathBuf {
     dirs::relative_version_dir(key).join("compaction.json")
   }

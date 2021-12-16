@@ -32,10 +32,14 @@ macro_rules! impl_metadata_serde_json {
   }
 }
 
-pub trait EphemeralMetadata: Clone + Send + Sync {}
+pub trait EphemeralMetadata: Clone + Send + Sync {
+  const CACHE_SIZE_LIMIT: usize;
+}
 
 #[async_trait]
 pub trait PersistentMetadata<K: MetadataKey>: MetadataJson {
+  const CACHE_SIZE_LIMIT: usize;
+
   fn relative_path(k: &K) -> PathBuf;
 
   fn path(dir: &Path, k: &K) -> PathBuf {
@@ -81,7 +85,7 @@ impl<K, M> PersistentCacheData<K, M> where M: PersistentMetadata<K>, K: Metadata
   pub fn new(dir: &Path) -> Self {
     PersistentCacheData {
       dir: dir.to_path_buf(),
-      data: Arc::new(SharedHashMap::new()),
+      data: Arc::new(SharedHashMap::new(M::CACHE_SIZE_LIMIT)),
     }
   }
 
@@ -93,7 +97,7 @@ impl<K, M> PersistentCacheData<K, M> where M: PersistentMetadata<K>, K: Metadata
 
   pub async fn prune<F>(&self, f: F)
   where F: Fn(&K) -> bool {
-    self.data.prune(f).await
+    self.data.prune_unsafe(f).await
   }
 }
 
@@ -109,7 +113,7 @@ async fn async_none<M: EphemeralMetadata>() -> ServerResult<Option<M>> {
 impl<K, M> EphemeralCacheData<K, M> where M: EphemeralMetadata, K: MetadataKey  {
   pub fn new() -> Self {
     EphemeralCacheData {
-      data: Arc::new(SharedHashMap::new()),
+      data: Arc::new(SharedHashMap::new(M::CACHE_SIZE_LIMIT)),
     }
   }
 
@@ -119,6 +123,6 @@ impl<K, M> EphemeralCacheData<K, M> where M: EphemeralMetadata, K: MetadataKey  
 
   pub async fn prune<F>(&self, f: F)
     where F: Fn(&K) -> bool {
-    self.data.prune(f).await
+    self.data.prune_unsafe(f).await
   }
 }
