@@ -29,12 +29,12 @@ impl TryFrom<&Timestamp> for PartitionMinute {
 
   fn try_from(t: &Timestamp) -> ServerResult<PartitionMinute> {
     if t.nanos != 0 {
-      Err(ServerError::invalid(&format!(
+      Err(ServerError::invalid(format!(
         "whole minute expected but {} nanoseconds found in timestamp",
         t.nanos,
       )))
     } else if t.seconds % 60 != 0 {
-      Err(ServerError::invalid(&format!(
+      Err(ServerError::invalid(format!(
         "whole minute expected but {} extra seconds found in timestamp",
         t.seconds,
       )))
@@ -96,7 +96,7 @@ impl NormalizedPartitionField {
         let minute = PartitionMinute::try_from(x)?;
         Ok(NormalizedPartitionValue::Minute(minute))
       },
-      None => Err(ServerError::invalid(&format!("partition field value for {} is empty", name))),
+      None => Err(ServerError::invalid(format!("partition field value for {} is empty", name))),
     };
     let value = value_result?;
     Ok(NormalizedPartitionField {
@@ -136,7 +136,7 @@ impl NormalizedPartition {
     for (partition_name, partition_meta) in &schema.partitioning {
       let maybe_field = field_map.get(partition_name);
       if maybe_field.is_none() {
-        return Err(ServerError::invalid(&format!("partition field {} is missing", partition_name)));
+        return Err(ServerError::invalid(format!("partition field {} is missing", partition_name)));
       }
       let field = *maybe_field.unwrap();
       if !common::partition_dtype_matches_field(

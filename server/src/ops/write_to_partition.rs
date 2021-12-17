@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, Row, FieldValue};
 use tokio::fs;
 
-use crate::errors::{ServerError, ServerResult};
+use crate::errors::{ServerError, ServerResult, Contextable};
 use crate::locks::partition::PartitionWriteLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
@@ -70,7 +70,8 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
     // add DB columns to rows
     let full_rows = self.full_db_columns(segment_meta);
 
-    let staged_bytes = common::rows_to_staged_bytes(&full_rows)?;
+    let staged_bytes = common::rows_to_staged_bytes(&full_rows)
+      .with_context(|| "while writing staged rows to bytes")?;
     common::append_to_file(
       dirs::staged_rows_path(&server.opts.dir, &segment_key),
       &staged_bytes,
@@ -135,7 +136,7 @@ impl WriteToPartitionOp {
     let staged_rows_path = dirs::staged_rows_path(dir, segment_key);
     let staged_rows = common::staged_bytes_to_rows(&fs::read(&staged_rows_path).await?)?;
     if staged_rows.len() < segment_meta.staged_n as usize {
-      return Err(ServerError::internal(&format!(
+      return Err(ServerError::internal(format!(
         "segment {} is in an impossible state with fewer rows ({}) in staged file than in metadata ({})",
         segment_key,
         staged_rows.len(),

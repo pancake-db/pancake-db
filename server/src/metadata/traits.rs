@@ -47,16 +47,18 @@ pub trait PersistentMetadata<K: MetadataKey>: MetadataJson {
   }
 
   async fn load(dir: &Path, k: &K) -> ServerResult<Option<Self>> {
-    return match fs::read_to_string(Self::path(dir, k)).await {
+    let path = Self::path(dir, k);
+    return match fs::read_to_string(&path).await {
       Ok(json_string) => {
         Ok(Some(Self::from_json_str(&json_string)?))
       },
       Err(e) => {
         match e.kind() {
           io::ErrorKind::NotFound => Ok(None),
-          _ => Err(ServerError::internal(&format!(
-            "unable to read {}: {:?}",
+          _ => Err(ServerError::corrupt(format!(
+            "unable to read {} at {:?}: {}",
             K::ENTITY_NAME,
+            path,
             e,
           )))
         }

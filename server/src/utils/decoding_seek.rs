@@ -13,7 +13,7 @@ pub fn byte_idx_for_row_idx(
   let decoder = encoding::new_byte_idx_decoder(dtype, nested_list_depth);
   let byte_idxs = decoder.decode_limited(bytes, idx)?;
   if byte_idxs.len() != idx {
-    return Err(ServerError::internal(&format!(
+    return Err(ServerError::internal(format!(
       "expected at least {} rows in flush file but found {}",
       idx,
       byte_idxs.len(),

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tokio::sync::OwnedRwLockWriteGuard;
 
-use crate::errors::ServerResult;
+use crate::errors::{ServerResult, ServerError};
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
@@ -88,7 +88,11 @@ impl ServerOpLocks for PartitionWriteLocks {
     let mut segment_guard = segment_lock.write_owned().await;
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
-      navigation::create_segment_dirs(&dirs::segment_dir(&server.opts.dir, &segment_key)).await?;
+      navigation::create_segment_dirs(&dirs::segment_dir(&server.opts.dir, &segment_key)).await
+        .map_err(|e| ServerError::from(e).with_context(format!(
+          "while creating new segment dirs for {}",
+          segment_key,
+        )))?;
       let segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
       *maybe_segment_meta = Some(segment_meta);
     }

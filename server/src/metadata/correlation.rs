@@ -32,7 +32,7 @@ impl CorrelationMetadataCache {
       if prev_segment_key == this_segment_key {
         Ok(meta.compaction_key.version)
       } else {
-        Err(ServerError::invalid(&format!(
+        Err(ServerError::invalid(format!(
           "correlation id {} originally used for segment {} now used for segment {}",
           correlation_id,
           prev_segment_key,

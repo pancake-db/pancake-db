@@ -77,7 +77,7 @@ fn parse_field_value(field_value: &Value) -> ServerResult<FieldValue> {
       value_pb.set_list_val(repeated_value_pb);
       Ok(value_pb)
     },
-    _ => Err(ServerError::invalid(&format!(
+    _ => Err(ServerError::invalid(format!(
       "Unsupported type for field value: {}",
       field_value
     ))),

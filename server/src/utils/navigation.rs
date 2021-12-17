@@ -7,7 +7,7 @@ use pancake_db_idl::schema::PartitionMeta;
 use tokio::fs;
 use uuid::Uuid;
 
-use crate::errors::ServerResult;
+use crate::errors::{ServerResult, ServerError, Contextable};
 use crate::types::PartitionKey;
 use crate::utils::{common, dirs};
 
@@ -17,7 +17,11 @@ pub async fn list_segment_ids(
 ) -> ServerResult<Vec<Uuid>> {
   let partition_dir = dirs::partition_dir(dir, partition_key);
   let mut res = Vec::new();
-  let mut read_dir = fs::read_dir(partition_dir).await?;
+  let mut read_dir = fs::read_dir(&partition_dir).await
+    .map_err(|e| ServerError::from(e).with_context(format!(
+      "while reading directory {:?} for listing segments",
+      partition_dir
+    )))?;
   while let Ok(Some(entry)) = read_dir.next_entry().await {
     if !entry.file_type().await.unwrap().is_dir() {
       continue;
@@ -37,7 +41,14 @@ pub async fn list_segment_ids(
       continue;
     }
 
-    res.push(Uuid::from_str(parts[1])?);
+    res.push(Uuid::from_str(parts[1])
+      .map_err(
+        |e| ServerError::from(e).with_context(format!(
+          "while parsing segment id {} found in directory for {}",
+          parts[1],
+          partition_key,
+        ))
+      )?);
   }
   Ok(res)
 }
@@ -48,7 +59,11 @@ pub async fn list_subpartitions(
   meta: &PartitionMeta,
 ) -> ServerResult<Vec<PartitionFieldValue>> {
   let mut res = Vec::new();
-  let mut read_dir = fs::read_dir(&dir).await?;
+  let mut read_dir = fs::read_dir(&dir).await
+    .map_err(|e| ServerError::from(e).with_context(format!(
+      "while reading directory {:?} for listing subpartitions",
+      dir
+    )))?;
   while let Ok(Some(entry)) = read_dir.next_entry().await {
     if !entry.file_type().await.unwrap().is_dir() {
       continue;
@@ -70,7 +85,11 @@ pub async fn list_subpartitions(
     let parsed = common::partition_field_value_from_string(
       parts[1],
       meta.dtype.unwrap(),
-    )?;
+    ).with_context(|| format!(
+      "while parsing partition value {} in {:?}",
+      parts[1],
+      dir,
+    ))?;
     res.push(parsed);
   }
   Ok(res)

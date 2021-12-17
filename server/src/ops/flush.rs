@@ -48,7 +48,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
 
     let n_rows = segment_meta.staged_n;
     if n_rows == 0 {
-      return Err(ServerError::internal(&format!("tried to flush {} with 0 rows", segment_key)));
+      return Err(ServerError::internal(format!("tried to flush {} with 0 rows", segment_key)));
     }
     log::debug!(
       "flushing {} rows for segment {}",

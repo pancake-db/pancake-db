@@ -64,7 +64,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
     };
 
     if max_row_id >= segment_meta.all_time_n {
-      return Err(ServerError::invalid(&format!(
+      return Err(ServerError::invalid(format!(
         "requested to deleted row id of {} when max row id in segment is {}",
         max_row_id,
         segment_meta.all_time_n - 1,
@@ -106,7 +106,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
 
       match maybe_n_deleted {
         Some(n) if n == version_n_deleted => Ok(()),
-        Some(n) => Err(ServerError::internal(&format!(
+        Some(n) => Err(ServerError::internal(format!(
           "number of rows deleted did not agree among versions; {} vs {} for {}",
           n,
           version_n_deleted,

@@ -46,7 +46,7 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     let total_n_cols = all_column_names.len();
     common::check_no_duplicate_names("column", all_column_names)?;
     if total_n_cols > MAX_N_COLUMNS {
-      return Err(ServerError::invalid(&format!(
+      return Err(ServerError::invalid(format!(
         "number of columns must not exceed {} but was {}+{}={}; rethink your data model",
         MAX_N_COLUMNS,
         table_meta.schema.columns.len(),
@@ -57,7 +57,7 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     for (col_name, col_meta) in &req.new_columns {
       common::validate_entity_name_for_write("column name", col_name)?;
       if col_meta.nested_list_depth > MAX_NESTED_LIST_DEPTH {
-        return Err(ServerError::invalid(&format!(
+        return Err(ServerError::invalid(format!(
           "nested_list_depth may not exceed {} but was {} for {}",
           MAX_NESTED_LIST_DEPTH,
           col_meta.nested_list_depth,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::errors::ServerResult;
+use crate::errors::{ServerResult, Contextable};
 use crate::metadata::MetadataKey;
 use rand::Rng;
 
@@ -61,7 +61,10 @@ impl<K, V> SharedHashMap<K, V> where K: MetadataKey {
     // otherwise we need to obtain a write lock and then prune and/or add the
     // loaded value into the cache
     let maybe_loaded_value = if needs_insert {
-      Some(load_fn().await?)
+      Some(load_fn().await.with_context(|| format!(
+        "while getting RwLock from {} SharedHashMap",
+        K::ENTITY_NAME,
+      ))?)
     } else {
       None
     };
