@@ -236,7 +236,7 @@ impl CompactionOp {
 
     let deletion_bytes = deletion::compress_deletions(new_pre_compaction_deletions)?;
 
-    fs::write(
+    common::overwrite_file(
       dirs::pre_compaction_deletions_path(
         &server.opts.dir,
         new_compaction_key,

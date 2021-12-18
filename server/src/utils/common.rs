@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::convert::TryInto;
 use std::io::{ErrorKind, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use hyper::body::Bytes;
@@ -23,7 +23,7 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
+use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME, FS_BLOCK_SIZE};
 use crate::errors::{ServerError, ServerResult};
 use crate::metadata::{PersistentMetadata, MetadataKey};
 use crate::metadata::compaction::Compaction;
@@ -126,16 +126,54 @@ pub async fn create_if_new(dir: impl AsRef<Path>) -> ServerResult<bool> {
   }
 }
 
-pub async fn overwrite_file(path: impl AsRef<Path>, contents: &[u8]) -> ServerResult<()> {
-  let mut file = fs::File::create(path.as_ref()).await
+pub async fn overwrite_file_atomic(
+  path: impl AsRef<Path>,
+  contents: impl AsRef<[u8]>,
+  dir: &Path,
+) -> ServerResult<()> {
+  let path = path.as_ref();
+  let use_temp_path = contents.as_ref().len() > FS_BLOCK_SIZE;
+  let initial_write_path = if use_temp_path {
+    PathBuf::from(path)
+  } else {
+    dir.join(format!("tmp/{}", Uuid::new_v4().to_string()))
+  };
+  fs::write(
+    &initial_write_path,
+    contents,
+  ).await
     .map_err(|e| ServerError::from(e).with_context(format!(
-      "while opening to overwrite {:?}",
-      path.as_ref(),
+      "while writing {:?} for atomic overwrite of {:?}",
+      initial_write_path,
+      path,
     )))?;
-  file.write_all(contents).await
+
+  if use_temp_path {
+    fs::rename(
+      &initial_write_path,
+      path,
+    ).await
+      .map_err(|e| ServerError::from(e).with_context(format!(
+        "while moving {:?} to {:?} for atomic overwrite",
+        initial_write_path,
+        path,
+      )))?;
+  }
+
+  Ok(())
+}
+
+pub async fn overwrite_file(
+  path: impl AsRef<Path>,
+  contents: impl AsRef<[u8]>,
+) -> ServerResult<()> {
+  fs::write(
+    path.as_ref(),
+    contents,
+  ).await
     .map_err(|e| ServerError::from(e).with_context(format!(
-      "while writing to overwriting {:?}",
-      path.as_ref()
+      "during non-atomic overwrite of {:?}",
+      path.as_ref(),
     )))
 }
 

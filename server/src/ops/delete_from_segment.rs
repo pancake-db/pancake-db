@@ -4,7 +4,6 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use pancake_db_core::{deletion};
 use pancake_db_idl::dml::{DeleteFromSegmentRequest, DeleteFromSegmentResponse};
-use tokio::fs;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::deletion::DeletionWriteLocks;
@@ -118,7 +117,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
         }
       }?;
 
-      fs::write(
+      common::overwrite_file(
         dirs::post_compaction_deletions_path(
           dir,
           &compaction_key,
@@ -126,7 +125,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
         ),
         deletion::compress_deletions(
           post_compaction_deletions
-        )?
+        )?,
       ).await?;
     }
 

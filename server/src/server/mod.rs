@@ -8,19 +8,20 @@ use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
 use crate::errors::{ServerErrorKind, ServerResult};
+use crate::metadata::compaction::CompactionCache;
+use crate::metadata::correlation::CorrelationMetadataCache;
+use crate::metadata::deletion::DeletionMetadataCache;
+use crate::metadata::global::GlobalMetadata;
+use crate::metadata::partition::PartitionMetadataCache;
+use crate::metadata::PersistentMetadata;
+use crate::metadata::segment::SegmentMetadataCache;
+use crate::metadata::table::TableMetadataCache;
 use crate::ops::compact::CompactionOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::traits::ServerOp;
 use crate::opt::Opt;
-use crate::metadata::compaction::CompactionCache;
-use crate::metadata::partition::PartitionMetadataCache;
-use crate::metadata::segment::SegmentMetadataCache;
-use crate::metadata::table::TableMetadataCache;
 use crate::types::SegmentKey;
-use crate::metadata::global::GlobalMetadata;
-use crate::metadata::PersistentMetadata;
-use crate::metadata::deletion::DeletionMetadataCache;
-use crate::metadata::correlation::CorrelationMetadataCache;
+use crate::utils::common;
 
 mod create_table;
 mod delete;
@@ -133,6 +134,8 @@ impl Server {
 
   pub async fn init(&self) -> ServerResult<(impl Future<Output=()> + '_, impl Future<Output=()> + '_)> {
     self.bootstrap().await?;
+
+    common::create_if_new(self.opts.dir.join("tmp")).await?;
 
     let flush_clone = self.clone();
     let flush_forever_future = async move {
