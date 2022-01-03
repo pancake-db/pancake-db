@@ -2,11 +2,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Formatter, Display};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use pancake_db_idl::dml::partition_field_value::Value;
+use pancake_db_idl::dml::PartitionFieldValue;
 use pancake_db_idl::schema::Schema;
 use protobuf::well_known_types::Timestamp;
 use rand::Rng;
@@ -15,9 +16,20 @@ use uuid::Uuid;
 
 use crate::constants::SHARD_ID_BYTE_LENGTH;
 use crate::errors::{ServerError, ServerResult};
-use crate::utils::{common, sharding};
 use crate::metadata::table::TableMetadata;
-use pancake_db_idl::dml::PartitionFieldValue;
+use crate::utils::{common, sharding};
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct EmptyKey;
+
+impl Display for EmptyKey {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "(null key)"
+    )
+  }
+}
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct PartitionMinute {
@@ -56,7 +68,7 @@ pub enum NormalizedPartitionValue {
   Minute(PartitionMinute),
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartitionField {
   pub name: String,
   pub value: NormalizedPartitionValue,
@@ -106,7 +118,7 @@ impl NormalizedPartitionField {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartition {
   fields: Vec<NormalizedPartitionField>
 }
@@ -168,7 +180,7 @@ impl NormalizedPartition {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct PartitionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -203,7 +215,7 @@ impl PartitionKey {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct ShardId {
   pub n_shards_log: u32,
   pub replication_factor: u32,
@@ -312,7 +324,7 @@ impl Display for ShardId {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct ShardKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -340,7 +352,7 @@ impl ShardKey {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct SegmentKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -377,12 +389,25 @@ impl SegmentKey {
   }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct CompactionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
   pub segment_id: Uuid,
   pub version: u64,
+}
+
+impl Display for CompactionKey {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "{}/{} segment {} version {}",
+      self.table_name,
+      self.partition,
+      self.segment_id,
+      self.version,
+    )
+  }
 }
 
 impl CompactionKey {

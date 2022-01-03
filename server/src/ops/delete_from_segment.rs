@@ -117,12 +117,14 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
         }
       }?;
 
+      let new_deletions_path = dirs::post_compaction_deletions_path(
+        dir,
+        &compaction_key,
+        new_deletion_id,
+      );
+      log::debug!("writing new deletion {} for {}", new_deletion_id, compaction_key);
       common::overwrite_file(
-        dirs::post_compaction_deletions_path(
-          dir,
-          &compaction_key,
-          new_deletion_id,
-        ),
+        new_deletions_path,
         deletion::compress_deletions(
           post_compaction_deletions
         )?,

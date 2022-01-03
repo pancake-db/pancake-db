@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Debug};
 use std::io;
 
 use warp::http::StatusCode;
@@ -56,9 +56,9 @@ impl ServerError {
     }
   }
 
-  pub fn does_not_exist(entity_name: &'static str, value: impl AsRef<str>) -> ServerError {
+  pub fn does_not_exist(entity_name: &'static str, value: &impl Display) -> ServerError {
     ServerError::new(
-      format!("{} with name {} does not exist", entity_name, value.as_ref()),
+      format!("{} with name {} does not exist", entity_name, value),
       ServerErrorKind::DoesNotExist,
     )
   }

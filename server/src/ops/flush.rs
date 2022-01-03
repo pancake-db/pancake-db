@@ -163,7 +163,7 @@ impl FlushOp {
         *compaction_guard = Some(compaction.clone());
 
         log::info!(
-          "asserting explicit compaction column file for {:?} column {} with {} rows",
+          "asserting explicit compaction column file for {} column {} with {} rows",
           compaction_key,
           col_name,
           compacted_n,
@@ -182,7 +182,7 @@ impl FlushOp {
       let encoder = encoding::new_encoder(dtype, nested_list_depth);
       let flushed_null_bytes = encoder.encode_count(flushed_n as u32);
       log::info!(
-        "asserting explicit flush column file for {:?} column {} with {} rows",
+        "asserting explicit flush column file for {} column {} with {} rows",
         compaction_key,
         col_name,
         flushed_n,
@@ -227,7 +227,7 @@ impl FlushOp {
       if let Err(e) = &bytes_result {
         if matches!(e.kind(), io::ErrorKind::NotFound) {
           log::debug!(
-            "flush file for {:?} column {} does not yet exist; skipping trim",
+            "flush file for {} column {} does not yet exist; skipping trim",
             compaction_key,
             col_name,
           );

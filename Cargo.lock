@@ -851,6 +851,8 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 [[package]]
 name = "pancake-db-core"
 version = "0.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51ef074697d01526184435da9a8a54c8c49607cc0b720905705f603d1e99859d"
 dependencies = [
  "pancake-db-idl",
  "protobuf",
@@ -861,6 +863,8 @@ dependencies = [
 [[package]]
 name = "pancake-db-idl"
 version = "0.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b0a4fd1b0ab4b9272fb41283d10f1308993599d3523d5ce236c4360297e3af4"
 dependencies = [
  "protobuf",
 ]
@@ -1032,9 +1036,9 @@ checksum = "9d5ef59c35c7472ce5e1b6c5924b87585143d1fc2cf39eae0009bba6c4df62f1"
 
 [[package]]
 name = "q_compress"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b0c420884ad82995fb846e4efec99310344a790a0a61a9f164955129338b8a5"
+checksum = "91cb012c38b74c2ad38a4cdfbd6dd7b42cafcae8c07935474a80743a38f11475"
 
 [[package]]
 name = "quick-error"

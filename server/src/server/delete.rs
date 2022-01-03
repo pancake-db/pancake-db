@@ -38,7 +38,7 @@ impl Server {
     Self::log_request(DELETE_FROM_SEGMENT_ROUTE_NAME, &body);
     common::pancake_result_into_warp(
       server.delete_from_segment_from_bytes(body).await,
-      DROP_ROUTE_NAME,
+      DELETE_FROM_SEGMENT_ROUTE_NAME,
     )
   }
 

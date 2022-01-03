@@ -1,5 +1,5 @@
 
-use std::fmt::Debug;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -77,7 +77,7 @@ pub trait PersistentMetadata<K: MetadataKey>: MetadataJson {
   }
 }
 
-pub trait MetadataKey: Clone + Debug + Eq + Hash + Send + Sync {
+pub trait MetadataKey: Clone + Display + Eq + Hash + Send + Sync {
   const ENTITY_NAME: &'static str;
 }
 

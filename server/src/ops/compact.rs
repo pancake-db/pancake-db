@@ -266,9 +266,8 @@ impl CompactionOp {
     let new_compaction_key = self.key.compaction_key(assessment.new_version);
 
     log::info!(
-      "starting compaction for {} version {} ({} rows)",
-      self.key,
-      assessment.new_version,
+      "starting compaction for {} ({} rows)",
+      new_compaction_key,
       assessment.all_time_n_to_compact,
     );
 
@@ -283,9 +282,8 @@ impl CompactionOp {
     ).await?;
     drop(deletion_meta_guard);
     log::debug!(
-      "wrote deletion information for {} version {} deletion id {} all_time_omitted_n {}",
-      self.key,
-      assessment.new_version,
+      "wrote deletion information for {} deletion id {} all_time_omitted_n {}",
+      new_compaction_key,
       assessment.deletion_id,
       all_time_omitted_n,
     );
@@ -301,9 +299,8 @@ impl CompactionOp {
       compaction.overwrite(dir, &new_compaction_key).await?;
     }
     log::debug!(
-      "wrote compaction metadata for {} version {}",
-      self.key,
-      assessment.new_version,
+      "wrote compaction metadata for {}",
+      new_compaction_key,
     );
 
     // Now we compact each column.
@@ -323,13 +320,12 @@ impl CompactionOp {
         &*compressor,
       ).await?;
       log::debug!(
-        "wrote compacted column {} for {} version {}",
+        "wrote compacted column {} for {}",
         col_name,
-        self.key,
-        assessment.new_version,
+        new_compaction_key,
       );
     }
-    log::info!("finished compaction for {} version {}", self.key, assessment.new_version);
+    log::info!("finished compaction for {}", new_compaction_key);
 
     Ok(())
   }
@@ -368,7 +364,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
       let mut segment_guard = segment_lock.write().await;
       let maybe_segment_meta = &mut *segment_guard;
       if maybe_segment_meta.is_none() {
-        return Err(ServerError::does_not_exist("segment", &self.key.to_string()));
+        return Err(ServerError::does_not_exist("segment", &self.key));
       }
       let segment_meta = maybe_segment_meta.as_mut().unwrap();
 
@@ -392,7 +388,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
       let mut segment_guard = segment_lock.write().await;
       let maybe_segment_meta = &mut *segment_guard;
       if maybe_segment_meta.is_none() {
-        return Err(ServerError::does_not_exist("segment", &self.key.to_string()));
+        return Err(ServerError::does_not_exist("segment", &self.key));
       }
       let segment_meta = maybe_segment_meta.as_mut().unwrap();
       segment_meta.read_version = assessment.new_version;

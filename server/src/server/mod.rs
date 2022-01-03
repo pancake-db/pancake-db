@@ -20,7 +20,7 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::traits::ServerOp;
 use crate::opt::Opt;
-use crate::types::SegmentKey;
+use crate::types::{SegmentKey, EmptyKey};
 use crate::utils::common;
 
 mod create_table;
@@ -123,10 +123,10 @@ pub struct Server {
 
 impl Server {
   async fn bootstrap(&self) -> ServerResult<()> {
-    let maybe_existing_global = GlobalMetadata::load(&self.opts.dir, &()).await?;
+    let maybe_existing_global = GlobalMetadata::load(&self.opts.dir, &EmptyKey).await?;
     if let Some(existing_global) = maybe_existing_global {
       let mut global_meta_guard = self.global_metadata_lock.write().await;
-      existing_global.overwrite(&self.opts.dir, &()).await?;
+      existing_global.overwrite(&self.opts.dir, &EmptyKey).await?;
       *global_meta_guard = existing_global;
     }
     Ok(())

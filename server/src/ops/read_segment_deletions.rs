@@ -2,17 +2,15 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use pancake_db_idl::dml::{ReadSegmentDeletionsRequest, ReadSegmentDeletionsResponse};
-use tokio::fs;
 use uuid::Uuid;
 
-use crate::errors::ServerResult;
+use crate::errors::{ServerResult, ServerError};
 use crate::locks::deletion::DeletionReadLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
 use crate::types::{NormalizedPartition, SegmentKey};
 use crate::utils::common;
 use crate::utils::dirs;
-use std::io::ErrorKind;
 
 pub struct ReadSegmentDeletionsOp {
   pub req: ReadSegmentDeletionsRequest,
@@ -35,6 +33,9 @@ impl ServerOp<DeletionReadLocks> for ReadSegmentDeletionsOp {
     let req = &self.req;
     common::validate_entity_name_for_read("table name", &req.table_name)?;
     common::validate_segment_id(&req.segment_id)?;
+    if req.correlation_id.is_empty() {
+      return Err(ServerError::invalid("must provide correlation id"))
+    }
 
     let DeletionReadLocks {
       table_meta: _,
@@ -49,16 +50,12 @@ impl ServerOp<DeletionReadLocks> for ReadSegmentDeletionsOp {
     ).await?;
     let compaction_key = segment_key.compaction_key(version);
 
-    let io_res = fs::read(dirs::post_compaction_deletions_path(
+    let post_deletions_path = dirs::post_compaction_deletions_path(
       &server.opts.dir,
       &compaction_key,
       segment_meta.deletion_id,
-    )).await;
-    let data = match io_res {
-      Ok(data) => Ok(data),
-      Err(e) if matches!(e.kind(), ErrorKind::NotFound) => Ok(Vec::new()),
-      Err(e) => Err(e),
-    }?;
+    );
+    let data = common::read_or_empty(post_deletions_path).await?;
 
     let response = ReadSegmentDeletionsResponse {
       data,

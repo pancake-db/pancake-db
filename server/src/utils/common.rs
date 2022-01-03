@@ -7,12 +7,13 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFilter, Row, PartitionFieldValue, PartitionFieldComparison};
+use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFieldComparison, PartitionFieldValue, PartitionFilter, Row};
 use pancake_db_idl::dml::field_value::Value;
+use pancake_db_idl::dml::partition_field_comparison::Operator;
 use pancake_db_idl::dml::partition_field_value::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
-use pancake_db_idl::schema::{Schema, ColumnMeta};
+use pancake_db_idl::schema::{ColumnMeta, Schema};
 use protobuf::{Message, ProtobufEnumOrUnknown};
 use protobuf::well_known_types::Timestamp;
 use serde::Serialize;
@@ -23,13 +24,12 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME, FS_BLOCK_SIZE};
+use crate::constants::{FS_BLOCK_SIZE, LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 use crate::errors::{ServerError, ServerResult};
-use crate::metadata::{PersistentMetadata, MetadataKey};
+use crate::metadata::{MetadataKey, PersistentMetadata};
 use crate::metadata::compaction::Compaction;
 use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
-use pancake_db_idl::dml::partition_field_comparison::Operator;
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> ServerResult<bool> {
   match fs::File::open(fname.as_ref()).await {
@@ -134,10 +134,16 @@ pub async fn overwrite_file_atomic(
   let path = path.as_ref();
   let use_temp_path = contents.as_ref().len() > FS_BLOCK_SIZE;
   let initial_write_path = if use_temp_path {
-    PathBuf::from(path)
-  } else {
     dir.join(format!("tmp/{}", Uuid::new_v4().to_string()))
+  } else {
+    PathBuf::from(path)
   };
+  log::debug!(
+    "atomically overwriting {:?} by first writing to {:?} (use_temp_path? {})",
+    path,
+    initial_write_path,
+    use_temp_path,
+  );
   fs::write(
     &initial_write_path,
     contents,
@@ -194,16 +200,14 @@ pub async fn append_to_file(path: impl AsRef<Path>, contents: &[u8]) -> ServerRe
     )))
 }
 
-pub async fn read_or_empty(path: &Path) -> ServerResult<Vec<u8>> {
-  match fs::read(path).await {
+pub async fn read_or_empty(path: impl AsRef<Path>) -> ServerResult<Vec<u8>> {
+  match fs::read(path.as_ref()).await {
     Ok(bytes) => Ok(bytes),
-    Err(e) => match e.kind() {
-      ErrorKind::NotFound => Ok(Vec::new()),
-      _ => Err(ServerError::from(e).with_context(format!(
-        "while reading {:?} (if it exists)",
-        path
-      ))),
-    },
+    Err(e) if matches!(e.kind(), ErrorKind::NotFound) => Ok(Vec::new()),
+    Err(e) => Err(ServerError::from(e).with_context(format!(
+      "while reading {:?} (if it exists)",
+      path.as_ref()
+    )))
   }
 }
 
@@ -576,7 +580,7 @@ pub fn unwrap_metadata<K: MetadataKey, M: PersistentMetadata<K>>(
 ) -> ServerResult<M> {
   match metadata {
     Some(m) => Ok(m.clone()),
-    None => Err(ServerError::does_not_exist(K::ENTITY_NAME, format!("{:?}", key)))
+    None => Err(ServerError::does_not_exist(K::ENTITY_NAME, key))
   }
 }
 
