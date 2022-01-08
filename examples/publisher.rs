@@ -148,7 +148,7 @@ fn make_performance_schema() -> Schema {
 
 fn truncate_to_time_bucket(t: Timestamp) -> Timestamp {
   let time_bucketing = 5 * 86400; // 5 days
-  let truncated_seconds = (t.seconds % time_bucketing) * time_bucketing;
+  let truncated_seconds = (t.seconds / time_bucketing) * time_bucketing;
   Timestamp {
     seconds: truncated_seconds,
     ..Default::default()
