@@ -9,14 +9,12 @@ use pancake_db_idl::dml::{WriteToPartitionRequest, Row, PartitionFieldValue};
 use tokio::time::{Instant, Duration};
 use std::collections::HashMap;
 use protobuf::well_known_types::Timestamp;
-use std::time::SystemTime;
 use pancake_db_idl::ddl::CreateTableRequest;
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use protobuf::{ProtobufEnumOrUnknown, MessageField};
 use pancake_db_idl::schema::{Schema, PartitionMeta, ColumnMeta};
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::dtype::DataType;
-use chrono::{DateTime, Utc, DurationRound, Timelike};
 
 const TABLE_NAME: &str = "publisher_test";
 const PERFORMANCE_TABLE_NAME: &str = "publisher_performance";
@@ -148,9 +146,11 @@ fn make_performance_schema() -> Schema {
   schema
 }
 
-fn truncate_to_day(t: Timestamp) -> Timestamp {
+fn truncate_to_time_bucket(t: Timestamp) -> Timestamp {
+  let time_bucketing = 5 * 86400; // 5 days
+  let truncated_seconds = (t.seconds % time_bucketing) * time_bucketing;
   Timestamp {
-    seconds: t.seconds % 86400,
+    seconds: truncated_seconds,
     ..Default::default()
   }
 }
@@ -160,7 +160,6 @@ async fn main() -> ClientResult<()> {
   let opt: Opt = Opt::from_args();
   let client = Client::from_ip_port(opt.host, opt.port);
   let mut rng = rand::thread_rng();
-  let mut write_start_at = Instant::now();
 
   let delay_seconds = (opt.max_concurrency as f32 + 1.0) /
     (2.0 * opt.target_rows_per_second);
@@ -191,17 +190,27 @@ async fn main() -> ClientResult<()> {
     .map(|s| s.to_string())
     .collect();
 
-
+  let mut iter = 0;
+  let mut write_start_at = Instant::now();
   loop {
     let mut write_reqs = Vec::new();
     let concurrency = 1 + rng.gen_range(0..opt.max_concurrency);
     let sleep_until = write_start_at + delay;
+    let current_instant = Instant::now();
+    if sleep_until < current_instant {
+      println!(
+        "publisher is lagging; iter={}, current time={:?}, planned write time={:?}",
+        iter,
+        current_instant,
+        sleep_until,
+      );
+    }
     tokio::time::sleep_until(sleep_until).await;
     write_start_at = Instant::now();
     let timestamp = Timestamp::now();
     let mut partition = HashMap::new();
     partition.insert("time_bucket".to_string(), PartitionFieldValue {
-      value: Some(partition_field_value::Value::timestamp_val(truncate_to_day(timestamp.clone()))),
+      value: Some(partition_field_value::Value::timestamp_val(truncate_to_time_bucket(timestamp.clone()))),
       ..Default::default()
     });
     for _ in 0..concurrency {
@@ -241,5 +250,6 @@ async fn main() -> ClientResult<()> {
         println!("error while reporting performance: {}", e);
       }
     }
+    iter += 1;
   }
 }
