@@ -11,7 +11,7 @@ pub struct Opt {
   #[structopt(long)]
   pub dir: PathBuf,
 
-  #[structopt(long, default_value = "1337")]
+  #[structopt(long, default_value = "3841")]
   pub port: u16,
 
   #[structopt(long, default_value = "INFO")]

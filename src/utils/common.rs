@@ -211,7 +211,7 @@ pub async fn read_or_empty(path: impl AsRef<Path>) -> ServerResult<Vec<u8>> {
   }
 }
 
-pub fn dtype_matches_field(dtype: &DataType, fv: &FieldValue) -> bool {
+pub fn field_matches_meta(fv: &FieldValue, dtype: DataType, nested_list_depth: u32) -> bool {
   let checker = match dtype {
     DataType::STRING => |v: &FieldValue| v.has_string_val(),
     DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
@@ -221,19 +221,26 @@ pub fn dtype_matches_field(dtype: &DataType, fv: &FieldValue) -> bool {
     DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
     DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
   };
-  traverse_field_value(fv, &checker)
+  traverse_check_field(fv, &checker, nested_list_depth)
 }
 
-fn traverse_field_value(value: &FieldValue, f: &dyn Fn(&FieldValue) -> bool) -> bool {
+fn traverse_check_field(
+  value: &FieldValue,
+  f: &dyn Fn(&FieldValue) -> bool,
+  expected_remaining_depth: u32,
+) -> bool {
   if value.has_list_val() {
+    if expected_remaining_depth == 0 {
+      return false;
+    }
     for v in &value.get_list_val().vals {
-      if !f(v) {
+      if !traverse_check_field(v, f, expected_remaining_depth - 1) {
         return false;
       }
     }
     true
   } else {
-    f(value)
+    f(value) && expected_remaining_depth == 0
   }
 }
 
@@ -507,11 +514,12 @@ pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
       let mut err_msgs = Vec::new();
       match schema.columns.get(col_name) {
         Some(col) => {
-          if !dtype_matches_field(&col.dtype.unwrap(), fv) {
+          if !field_matches_meta(fv, col.dtype.unwrap(), col.nested_list_depth) {
             err_msgs.push(format!(
-              "invalid field value for column {} with dtype {:?}: {:?}",
+              "invalid field value for column {} with dtype {:?} and depth {}: {:?}",
               col_name,
               col.dtype,
+              col.nested_list_depth,
               fv,
             ));
           }

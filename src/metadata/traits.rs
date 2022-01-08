@@ -69,11 +69,11 @@ pub trait PersistentMetadata<K: MetadataKey>: MetadataJson {
   async fn overwrite(&self, dir: &Path, k: &K) -> ServerResult<()> {
     let path = Self::path(dir, k);
     let metadata_str = self.to_json_string()?;
-    return Ok(common::overwrite_file_atomic(
+    common::overwrite_file_atomic(
       &path,
       metadata_str.as_bytes(),
       dir,
-    ).await?);
+    ).await
   }
 }
 

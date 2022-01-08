@@ -132,14 +132,16 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
                   result.columns_added.push(col_name.to_string());
                 }
               }
-              let alter_table_op = AlterTableOp {
-                req: AlterTableRequest {
-                  table_name: req.table_name.to_string(),
-                  new_columns,
-                  ..Default::default()
-                }
-              };
-              alter_table_op.execute_with_locks(server, locks).await?;
+              if !new_columns.is_empty() {
+                let alter_table_op = AlterTableOp {
+                  req: AlterTableRequest {
+                    table_name: req.table_name.to_string(),
+                    new_columns,
+                    ..Default::default()
+                  }
+                };
+                alter_table_op.execute_with_locks(server, locks).await?;
+              }
               Ok(result)
             } else {
               Err(ServerError::invalid("existing schema contains columns not in declared schema"))

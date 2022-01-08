@@ -18,11 +18,11 @@ mod opt;
 mod server;
 mod types;
 mod utils;
-pub mod constants;
-pub mod errors;
-pub mod ops;
-pub mod metadata;
-pub mod locks;
+mod constants;
+mod errors;
+mod ops;
+mod metadata;
+mod locks;
 
 static LOGGER: Logger = Logger;
 
