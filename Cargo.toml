@@ -1,8 +1,15 @@
 [package]
 name = "pancake-db-server"
-version = "0.0.0"
-authors = ["mwlon <m.w.loncaric@gmail.com>"]
+version = "0.0.0-alpha.1"
 edition = "2018"
+
+authors = ["PancakeDB <inquiries@pancakedb.com>"]
+description = "PancakeDB server binary crate"
+homepage = "https://pancakedb.com"
+keywords = ["pancake", "db", "server"]
+license = "BUSL-1.1"
+repository = "https://github.com/pancake-db/pancake-db"
+
 
 [dependencies]
 async-std = "1.9.0"
