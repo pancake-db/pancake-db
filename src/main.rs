@@ -9,6 +9,7 @@ use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
+use crate::errors::{ServerResult, Contextable};
 use crate::logging::Logger;
 use crate::opt::Opt;
 use crate::server::Server;
@@ -27,7 +28,7 @@ mod locks;
 static LOGGER: Logger = Logger;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ServerResult<()> {
   let opts: Opt = Opt::from_args();
   opts.validate();
   log::set_max_level(opts.log_level);
@@ -37,11 +38,11 @@ async fn main() {
   let server = Server::new(opts.clone());
   server.recover()
     .await
-    .expect("unable to recover server state");
+    .with_context(|| "while recovering server state")?;
 
   let backgrounds = server.init()
     .await
-    .expect("unable to initialize server");
+    .with_context(|| "while initializing background processes")?;
   log::info!("initialized server background processes in dir {:?}", opts.dir);
 
   let filter = server.warp_filter();
@@ -64,4 +65,5 @@ async fn main() {
     .await;
 
   outcomes.0.expect("server crashed");
+  Ok(())
 }

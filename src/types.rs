@@ -420,6 +420,7 @@ impl CompactionKey {
   }
 }
 
+#[derive(Clone, Debug)]
 pub struct InternalTableInfo {
   pub name: String,
   pub meta: TableMetadata,

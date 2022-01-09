@@ -15,13 +15,13 @@ use crate::constants::TABLE_METADATA_FILENAME;
 
 type TableKey = String;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct TableMetadataSerde {
   pub schema_string: String,
   pub dropped: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TableMetadata {
   pub schema: Schema,
   pub dropped: bool,

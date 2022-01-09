@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use tokio::fs;
 use uuid::Uuid;
 
+use crate::errors::Contextable;
 use crate::errors::ServerResult;
 use crate::ops::compact::CompactionOp;
 use crate::ops::drop_table::DropTableOp;
@@ -48,8 +49,13 @@ impl Server {
   pub async fn recover(&self) -> ServerResult<()> {
     log::info!("recovering to clean state");
 
-    for table_info in self.internal_list_tables().await? {
-      self.recover_table(table_info).await?;
+    let table_infos = self.internal_list_tables()
+      .await
+      .with_context(|| "while listing tables")?;
+    for table_info in &table_infos {
+      self.recover_table(table_info.clone())
+        .await
+        .with_context(|| format!("while recovering table {}", table_info.name))?;
     }
     Ok(())
   }
@@ -63,7 +69,9 @@ impl Server {
     } = table_info;
 
     if table_meta.dropped {
-      DropTableOp::recover(self, &table_name, &table_meta).await?;
+      DropTableOp::recover(self, &table_name, &table_meta)
+        .await
+        .with_context(|| "while completing drop table op")?;
       return Ok(());
     }
 
@@ -72,25 +80,32 @@ impl Server {
       &table_name,
       &table_meta.schema.partitioning,
       &Vec::new(),
-    ).await? {
-      let normalized = NormalizedPartition::from_raw_fields(partition)?;
+    ).await.with_context(|| "while listing partitions")? {
+      let normalized = NormalizedPartition::from_raw_fields(partition)
+        .with_context(|| format!("while normalizing partition {:?}", partition))?;
       let partition_key = PartitionKey {
         table_name: table_name.clone(),
-        partition: normalized
+        partition: normalized.clone(),
       };
       let maybe_partition_meta = PartitionMetadata::load(dir, &partition_key)
-        .await?;
+        .await
+        .with_context(|| format!("while loading partition meta {}", normalized))?;
 
       if maybe_partition_meta.is_none() {
         continue;
       }
       let partition_meta = maybe_partition_meta.unwrap();
-      let all_segment_ids = navigation::list_segment_ids(dir, &partition_key).await?;
-      let active_segment_ids: HashSet<Uuid> = partition_meta.active_segment_ids.into_iter().collect();
+      let all_segment_ids = navigation::list_segment_ids(dir, &partition_key)
+        .await
+        .with_context(|| format!("while listing segment ids for {}", normalized))?;
+      let active_segment_ids: HashSet<Uuid> = partition_meta.active_segment_ids
+        .into_iter()
+        .collect();
 
       for segment_id in &all_segment_ids {
         let segment_key = partition_key.segment_key(*segment_id);
-        let mut maybe_segment_meta = SegmentMetadata::load(dir, &segment_key).await?;
+        let mut maybe_segment_meta = SegmentMetadata::load(dir, &segment_key).await
+          .with_context(|| format!("while loading segment metadata for {}", segment_key))?;
 
         if maybe_segment_meta.is_none() {
           continue;

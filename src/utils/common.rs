@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::convert::TryInto;
 use std::io::{ErrorKind, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 use hyper::body::Bytes;
@@ -24,7 +24,7 @@ use uuid::Uuid;
 use warp::http::Response;
 use warp::Reply;
 
-use crate::constants::{FS_BLOCK_SIZE, LIST_LENGTH_BYTES, MAX_FIELD_BYTE_SIZE, MAX_NAME_LENGTH, ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
+use crate::constants::*;
 use crate::errors::{ServerError, ServerResult};
 use crate::metadata::{MetadataKey, PersistentMetadata};
 use crate::metadata::compaction::Compaction;
@@ -126,23 +126,20 @@ pub async fn create_if_new(dir: impl AsRef<Path>) -> ServerResult<bool> {
   }
 }
 
+// at first I thought I could do this by an ordinary write when the
+// size of contents < file system block size, but apparently that's
+// not actually atomic, and much slower
 pub async fn overwrite_file_atomic(
   path: impl AsRef<Path>,
   contents: impl AsRef<[u8]>,
   dir: &Path,
 ) -> ServerResult<()> {
   let path = path.as_ref();
-  let use_temp_path = contents.as_ref().len() > FS_BLOCK_SIZE;
-  let initial_write_path = if use_temp_path {
-    dir.join(format!("tmp/{}", Uuid::new_v4().to_string()))
-  } else {
-    PathBuf::from(path)
-  };
+  let initial_write_path = dir.join(format!("tmp/{}", Uuid::new_v4().to_string()));
   log::debug!(
-    "atomically overwriting {:?} by first writing to {:?} (use_temp_path? {})",
+    "atomically overwriting {:?} by first writing to {:?}",
     path,
     initial_write_path,
-    use_temp_path,
   );
   fs::write(
     &initial_write_path,
@@ -154,17 +151,15 @@ pub async fn overwrite_file_atomic(
       path,
     )))?;
 
-  if use_temp_path {
-    fs::rename(
-      &initial_write_path,
+  fs::rename(
+    &initial_write_path,
+    path,
+  ).await
+    .map_err(|e| ServerError::from(e).with_context(format!(
+      "while moving {:?} to {:?} for atomic overwrite",
+      initial_write_path,
       path,
-    ).await
-      .map_err(|e| ServerError::from(e).with_context(format!(
-        "while moving {:?} to {:?} for atomic overwrite",
-        initial_write_path,
-        path,
-      )))?;
-  }
+    )))?;
 
   Ok(())
 }

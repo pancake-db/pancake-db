@@ -33,7 +33,7 @@ mod recovery;
 mod alter_table;
 mod list_tables;
 
-const FLUSH_SECONDS: u64 = 1;
+const FLUSH_SECONDS: u64 = 10;
 const FLUSH_NANOS: u32 = 0;
 
 #[derive(Default, Clone)]
