@@ -18,8 +18,10 @@ use super::Server;
 const ROUTE_NAME: &str = "write_to_partition_simple";
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WriteToPartitionSimpleRequest {
   table_name: String,
+  #[serde(default)]
   partition: HashMap<String, Value>,
   rows: Vec<HashMap<String, Value>>,
 }
@@ -88,7 +90,7 @@ pub fn parse_pb_from_simple_json(body: Bytes) -> ServerResult<WriteToPartitionRe
   let body_string = String::from_utf8(body.to_vec())
     .map_err(|_| ServerError::invalid("body bytes do not parse to string"))?;
   let req_simple: WriteToPartitionSimpleRequest = serde_json::from_str(&body_string)
-    .map_err(|_| ServerError::invalid("body string does not parse to json"))?;
+    .map_err(|_| ServerError::invalid("body string does not parse to the correct request format"))?;
   let mut pb_req = WriteToPartitionRequest::new();
   pb_req.table_name = req_simple.table_name;
   for (partition_name, partition_field) in &req_simple.partition {

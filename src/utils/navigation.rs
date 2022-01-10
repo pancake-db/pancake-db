@@ -1,4 +1,3 @@
-use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -95,8 +94,8 @@ pub async fn list_subpartitions(
   Ok(res)
 }
 
-pub async fn create_segment_dirs(segment_dir: &Path) -> io::Result<()> {
-  fs::create_dir(segment_dir).await?;
-  fs::create_dir(segment_dir.join("v0")).await?;
+pub async fn create_segment_dirs(segment_dir: &Path) -> ServerResult<()> {
+  common::create_if_new(segment_dir).await?;
+  common::create_if_new(segment_dir.join("v0")).await?;
   Ok(())
 }

@@ -24,7 +24,7 @@ pub struct Opt {
 
   // the fewest number of rows in a segment before compaction
   // will be considered
-  #[structopt(long, default_value = "10000")]
+  #[structopt(long, default_value = "30000")]
   pub min_rows_for_compaction: u32,
 
   // how often the background loop will check each partition and

@@ -1,6 +1,6 @@
 [package]
 name = "pancake-db-server"
-version = "0.0.0-alpha.1"
+version = "0.0.0"
 edition = "2018"
 
 authors = ["PancakeDB <inquiries@pancakedb.com>"]
@@ -18,8 +18,8 @@ chrono = {version="0.4", features=["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
 log = "0.4.14"
-pancake-db-core = "=0.0.0-alpha.1"
-pancake-db-idl = "=0.0.0-alpha.1"
+pancake-db-core = "0.1.0"
+pancake-db-idl = "0.1.0"
 protobuf = "=3.0.0-alpha.2"
 rand = "0.8.4"
 serde_json = "1.0.59"

@@ -3,8 +3,7 @@
 PancakeDB is an event ingestion solution.
 It is simple to set up and computationally cheaper than alternatives.
 A 1-node instance of PancakeDB can handle >10k writes per second.
-You can run batch processing and ad-hoc queries using Spark to read from PancakeDB,
-even faster than from Parquet.
+Reading from PancakeDB into Spark is even faster than reading from Parquet files.
 PancakeDB is causally consistent, so the data you write is available in real time.
 
 ## Getting Started
