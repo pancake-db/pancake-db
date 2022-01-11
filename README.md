@@ -44,7 +44,7 @@ curl -XPOST -H ContentType:application/json localhost:3841/rest/write_to_partiti
 }'
 ```
 
-If you have Spark installed, you can set up a project depending on [the PancakeDB Spark connector]() and access the tables efficiently.
+If you have Spark installed, you can set up a project depending on [the PancakeDB Spark connector](https://github.com/pancake-db/spark-pancake-connector) and access the tables efficiently.
 For instance,
 ```
 spark-shell --jars $MY_SPARK_PROJECT_UBERJAR
