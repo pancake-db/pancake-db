@@ -69,6 +69,10 @@ scala> spark.sql("select count(*) from t").show()
 +--------+
 ```
 
+## Documentation
+
+See [the website's page](https://pancakedb.com/documentation/).
+
 ## Contributing
 
 To get involved, [join the Discord](https://discord.gg/f6eRXgMP8w) or submit a GitHub issue.
