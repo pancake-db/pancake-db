@@ -1,3 +1,7 @@
+// version information to ensure the database is only upgraded by minor version
+pub const MAJOR_VERSION: u32 = 0;
+pub const MINOR_VERSION: u32 = 0;
+
 pub const MAX_FIELD_BYTE_SIZE: usize = 4096;
 pub const LIST_LENGTH_BYTES: usize = 2;
 pub const MAX_NESTED_LIST_DEPTH: u32 = 3;

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::types::{CompactionKey, PartitionKey, SegmentKey};
+use crate::types::{CompactionKey, PartitionKey, SegmentKey, ShardId};
 use crate::constants::DATA_SUBDIR;
 
 pub fn relative_table_dir(table_name: &str) -> PathBuf {
@@ -73,4 +73,17 @@ pub fn post_compaction_deletions_path(
   version_dir(dir, compaction_key).join(
     format!("post_compaction_deletions_{}.qco", deletion_id)
   )
+}
+
+pub fn relative_shard_dir(
+  shard_id: &ShardId,
+) -> PathBuf {
+  format!("shards/{}", shard_id).into()
+}
+
+pub fn shard_dir(
+  dir: &Path,
+  shard_id: &ShardId,
+) -> PathBuf {
+  dir.join(relative_shard_dir(shard_id))
 }

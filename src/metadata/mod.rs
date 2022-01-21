@@ -8,3 +8,5 @@ pub mod partition;
 pub mod global;
 pub mod deletion;
 pub mod correlation;
+pub mod raft;
+pub mod immutable;

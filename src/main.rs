@@ -24,6 +24,7 @@ mod errors;
 mod ops;
 mod metadata;
 mod locks;
+mod raft;
 
 static LOGGER: Logger = Logger;
 

@@ -11,6 +11,9 @@ pub struct Opt {
   #[structopt(long)]
   pub dir: PathBuf,
 
+  #[structopt(long)]
+  pub cluster_name: Option<String>,
+
   #[structopt(long, default_value = "3841")]
   pub port: u16,
 

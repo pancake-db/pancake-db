@@ -3,15 +3,18 @@ use std::sync::Arc;
 
 use futures::Future;
 use hyper::body::Bytes;
+use rand::Rng;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
-use crate::errors::{ServerErrorKind, ServerResult};
+use crate::constants::{MAJOR_VERSION, MINOR_VERSION};
+use crate::errors::{Contextable, ServerError, ServerErrorKind, ServerResult};
 use crate::metadata::compaction::CompactionCache;
 use crate::metadata::correlation::CorrelationMetadataCache;
 use crate::metadata::deletion::DeletionMetadataCache;
 use crate::metadata::global::GlobalMetadata;
+use crate::metadata::immutable::ImmutableMetadata;
 use crate::metadata::partition::PartitionMetadataCache;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadataCache;
@@ -20,7 +23,7 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::traits::ServerOp;
 use crate::opt::Opt;
-use crate::types::{SegmentKey, EmptyKey};
+use crate::types::{EmptyKey, SegmentKey};
 use crate::utils::common;
 
 mod create_table;
@@ -32,6 +35,7 @@ mod write_simple;
 mod recovery;
 mod alter_table;
 mod list_tables;
+mod upgrades;
 
 const FLUSH_SECONDS: u64 = 10;
 const FLUSH_NANOS: u32 = 0;
@@ -109,6 +113,7 @@ impl Background {
 
 #[derive(Clone)]
 pub struct Server {
+  immutable_metadata: ImmutableMetadata,
   pub opts: Opt,
   background: Background,
   activity: Activity,
@@ -122,17 +127,39 @@ pub struct Server {
 }
 
 impl Server {
-  async fn bootstrap(&self) -> ServerResult<()> {
-    let maybe_existing_global = GlobalMetadata::load(&self.opts.dir, &EmptyKey).await?;
-    if let Some(existing_global) = maybe_existing_global {
-      let mut global_meta_guard = self.global_metadata_lock.write().await;
-      existing_global.overwrite(&self.opts.dir, &EmptyKey).await?;
-      *global_meta_guard = existing_global;
-    }
+  async fn load_immutable_metadata(&mut self) -> ServerResult<()> {
+    let path = self.opts.dir.join("immutable_metadata.json");
+    let bytes = common::read_or_empty(&path).await?;
+    self.immutable_metadata = if bytes.is_empty() {
+      log::warn!(
+        "initializing immutable metadata; this should only happen the first time the server is initialized on this machine.",
+      );
+      let meta = ImmutableMetadata::try_generate_prod(&self.opts)?;
+      common::overwrite_file(path, meta.to_json_string()?.as_bytes()).await?;
+      meta
+    } else {
+      let content = String::from_utf8(bytes)?;
+      let meta = ImmutableMetadata::from_json_str(&content)?;
+      meta.validate(&self.opts)?;
+      meta
+    };
     Ok(())
   }
 
-  pub async fn init(&self) -> ServerResult<(impl Future<Output=()> + '_, impl Future<Output=()> + '_)> {
+  async fn bootstrap(&mut self) -> ServerResult<()> {
+    self.load_immutable_metadata()
+      .await
+      .with_context(|| "while bootstrapping node id")?;
+    let maybe_existing_global = GlobalMetadata::load(&self.opts.dir, &EmptyKey).await?;
+    if let Some(existing_global) = maybe_existing_global {
+      let mut global_meta_guard = self.global_metadata_lock.write().await;
+      *global_meta_guard = existing_global;
+    }
+    self.upgrade_to_minor_version().await?;
+    Ok(())
+  }
+
+  pub async fn init(&mut self) -> ServerResult<(impl Future<Output=()> + '_, impl Future<Output=()> + '_)> {
     self.bootstrap().await?;
 
     common::create_if_new(self.opts.dir.join("tmp")).await?;
@@ -227,6 +254,7 @@ impl Server {
     let segment_metadata_cache = SegmentMetadataCache::new(dir);
     let compaction_cache = CompactionCache::new(dir);
     Server {
+      immutable_metadata: ImmutableMetadata::default(), // a non-prod instance
       opts,
       global_metadata_lock,
       table_metadata_cache,
