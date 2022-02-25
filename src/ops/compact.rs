@@ -234,7 +234,7 @@ impl CompactionOp {
       pre_i += 1
     }
 
-    let deletion_bytes = deletion::compress_deletions(new_pre_compaction_deletions)?;
+    let deletion_bytes = deletion::compress_deletions(&new_pre_compaction_deletions)?;
 
     common::overwrite_file(
       dirs::pre_compaction_deletions_path(

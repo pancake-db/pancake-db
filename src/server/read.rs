@@ -43,7 +43,7 @@ impl Server {
       Ok(Vec::new())
     } else {
       let decompressor = compression::new_codec(col_meta.dtype.unwrap(), codec)?;
-      let decoded = decompressor.decompress(bytes, col_meta.nested_list_depth as u8)?;
+      let decoded = decompressor.decompress(&bytes, col_meta.nested_list_depth as u8)?;
       let limited= if limit < decoded.len() {
         Vec::from(&decoded[0..limit])
       } else {
@@ -140,7 +140,7 @@ impl Server {
   ) -> ServerResult<Vec<bool>> {
     match fs::read(path).await {
       Ok(bytes) => {
-        Ok(deletion::decompress_deletions(bytes)?)
+        Ok(deletion::decompress_deletions(&bytes)?)
       },
       Err(e) if matches!(e.kind(), ErrorKind::NotFound) => {
         Ok(Vec::new())

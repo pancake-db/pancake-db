@@ -126,7 +126,7 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
       common::overwrite_file(
         new_deletions_path,
         deletion::compress_deletions(
-          post_compaction_deletions
+          &post_compaction_deletions
         )?,
       ).await?;
     }

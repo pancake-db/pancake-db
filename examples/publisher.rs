@@ -1,20 +1,21 @@
-use pancake_db_client::errors::ClientResult;
-use structopt::StructOpt;
-use std::net::IpAddr;
-use pancake_db_client::Client;
-use rand::rngs::ThreadRng;
-use rand::Rng;
-use pancake_db_idl::dml::{partition_field_value, field_value, FieldValue, RepeatedFieldValue};
-use pancake_db_idl::dml::{WriteToPartitionRequest, Row, PartitionFieldValue};
-use tokio::time::{Instant, Duration};
 use std::collections::HashMap;
-use protobuf::well_known_types::Timestamp;
-use pancake_db_idl::ddl::CreateTableRequest;
+use std::net::IpAddr;
+
+use pancake_db_client::Client;
+use pancake_db_client::errors::ClientResult;
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
-use protobuf::{ProtobufEnumOrUnknown, MessageField};
-use pancake_db_idl::schema::{Schema, PartitionMeta, ColumnMeta};
-use pancake_db_idl::partition_dtype::PartitionDataType;
+use pancake_db_idl::ddl::CreateTableRequest;
+use pancake_db_idl::dml::{field_value, FieldValue, partition_field_value, RepeatedFieldValue};
+use pancake_db_idl::dml::{PartitionFieldValue, Row, WriteToPartitionRequest};
 use pancake_db_idl::dtype::DataType;
+use pancake_db_idl::partition_dtype::PartitionDataType;
+use pancake_db_idl::schema::{ColumnMeta, PartitionMeta, Schema};
+use protobuf::{MessageField, ProtobufEnumOrUnknown};
+use protobuf::well_known_types::Timestamp;
+use rand::Rng;
+use rand::rngs::ThreadRng;
+use structopt::StructOpt;
+use tokio::time::{Duration, Instant};
 
 const TABLE_NAME: &str = "publisher_test";
 const PERFORMANCE_TABLE_NAME: &str = "publisher_performance";

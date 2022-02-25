@@ -850,13 +850,13 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "pancake-db-client"
-version = "0.0.0-alpha.1"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9710aeee4878988be4af496e3b1dde827ef5ba1a42aad99ae98a9858797eed59"
+checksum = "a9bf4fb557478be5a0ea226f66d13ba979436d93a76e0f643301ba5bfefb68d7"
 dependencies = [
  "hyper",
- "pancake-db-core 0.0.0-alpha.1",
- "pancake-db-idl 0.0.0-alpha.1",
+ "pancake-db-core",
+ "pancake-db-idl",
  "protobuf",
  "tokio",
  "uuid",
@@ -864,35 +864,14 @@ dependencies = [
 
 [[package]]
 name = "pancake-db-core"
-version = "0.0.0-alpha.1"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51ef074697d01526184435da9a8a54c8c49607cc0b720905705f603d1e99859d"
+checksum = "52b8af99d2388ac76ffc6b012e83ac2115f6342050e5688a2fede60e1dad197d"
 dependencies = [
- "pancake-db-idl 0.0.0-alpha.1",
+ "pancake-db-idl",
  "protobuf",
  "q_compress",
  "zstd",
-]
-
-[[package]]
-name = "pancake-db-core"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90cc0e6fab53cc9fb1c33a7b3486ec6812bf68cb7588fdecfee92920791bc17f"
-dependencies = [
- "pancake-db-idl 0.1.0",
- "protobuf",
- "q_compress",
- "zstd",
-]
-
-[[package]]
-name = "pancake-db-idl"
-version = "0.0.0-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b0a4fd1b0ab4b9272fb41283d10f1308993599d3523d5ce236c4360297e3af4"
-dependencies = [
- "protobuf",
 ]
 
 [[package]]
@@ -916,8 +895,8 @@ dependencies = [
  "hyper",
  "log",
  "pancake-db-client",
- "pancake-db-core 0.1.0",
- "pancake-db-idl 0.1.0",
+ "pancake-db-core",
+ "pancake-db-idl",
  "protobuf",
  "rand 0.8.4",
  "serde",
@@ -1072,9 +1051,9 @@ checksum = "9d5ef59c35c7472ce5e1b6c5924b87585143d1fc2cf39eae0009bba6c4df62f1"
 
 [[package]]
 name = "q_compress"
-version = "0.4.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91cb012c38b74c2ad38a4cdfbd6dd7b42cafcae8c07935474a80743a38f11475"
+checksum = "b00bc41cea97abceaece6d5be978d7179591f1931bd2f8812104718ffae1bc16"
 
 [[package]]
 name = "quick-error"
