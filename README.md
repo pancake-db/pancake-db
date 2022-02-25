@@ -33,7 +33,7 @@ curl -XPOST -H ContentType:application/json localhost:3841/rest/create_table -d 
 
 # write a row
 curl -XPOST -H ContentType:application/json localhost:3841/rest/write_to_partition_simple -d '{
-  "table_name": "my_purchase_table",
+  "tableName": "my_purchase_table",
   "partition": {
     "day": {"timestamp": "2022-01-01T00:00:00Z"}
   },
