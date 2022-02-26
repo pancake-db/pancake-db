@@ -34,7 +34,7 @@ warp = "0.3.1"
 base64 = "0.13.0"
 
 [dev-dependencies]
-pancake-db-client = "=0.0.0-alpha.1"
+pancake-db-client = "0.1.0"
 
 [[example]]
 name = "publisher"

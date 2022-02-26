@@ -850,28 +850,16 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "pancake-db-client"
-version = "0.0.0-alpha.1"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9710aeee4878988be4af496e3b1dde827ef5ba1a42aad99ae98a9858797eed59"
+checksum = "ed885b5c1ae2de7219b1d36f345a608796c4e5502f7fd30bfe86268703d98c9b"
 dependencies = [
  "hyper",
- "pancake-db-core 0.0.0-alpha.1",
- "pancake-db-idl 0.0.0-alpha.1",
+ "pancake-db-core",
+ "pancake-db-idl",
  "protobuf",
  "tokio",
  "uuid",
-]
-
-[[package]]
-name = "pancake-db-core"
-version = "0.0.0-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51ef074697d01526184435da9a8a54c8c49607cc0b720905705f603d1e99859d"
-dependencies = [
- "pancake-db-idl 0.0.0-alpha.1",
- "protobuf",
- "q_compress",
- "zstd",
 ]
 
 [[package]]
@@ -880,19 +868,10 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90cc0e6fab53cc9fb1c33a7b3486ec6812bf68cb7588fdecfee92920791bc17f"
 dependencies = [
- "pancake-db-idl 0.1.0",
+ "pancake-db-idl",
  "protobuf",
  "q_compress",
  "zstd",
-]
-
-[[package]]
-name = "pancake-db-idl"
-version = "0.0.0-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b0a4fd1b0ab4b9272fb41283d10f1308993599d3523d5ce236c4360297e3af4"
-dependencies = [
- "protobuf",
 ]
 
 [[package]]
@@ -916,8 +895,8 @@ dependencies = [
  "hyper",
  "log",
  "pancake-db-client",
- "pancake-db-core 0.1.0",
- "pancake-db-idl 0.1.0",
+ "pancake-db-core",
+ "pancake-db-idl",
  "protobuf",
  "rand 0.8.4",
  "serde",
