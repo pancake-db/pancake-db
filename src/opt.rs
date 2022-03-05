@@ -2,7 +2,7 @@ use structopt::StructOpt;
 use std::path::PathBuf;
 use log::LevelFilter;
 
-const MIN_DIR_LEN: usize = 10;
+const MIN_DIR_LEN: usize = 5;
 
 #[derive(Clone, Debug, StructOpt)]
 #[structopt(name = "PancakeDB Server")]

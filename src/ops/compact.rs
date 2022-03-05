@@ -22,7 +22,6 @@ use crate::utils::common;
 use crate::utils::dirs;
 
 struct CompactionAssessment {
-  pub remove_from_candidates: bool,
   pub do_compaction: bool,
   pub old_version: u64,
   pub new_version: u64,
@@ -82,7 +81,7 @@ impl CompactionOp {
     let opts = &server.opts;
     let current_time = Utc::now();
     if current_time - segment_meta.read_version_since > Duration::seconds(opts.delete_stale_compaction_seconds) {
-      log::info!(
+      log::debug!(
         "checking for old versions for {} version {} (current as of {:?}",
         self.key,
         segment_meta.read_version,
@@ -94,7 +93,6 @@ impl CompactionOp {
     let all_time_n_to_compact = segment_meta.all_time_n - segment_meta.staged_n as u32;
     let new_version = segment_meta.read_version + 1;
     let mut res = CompactionAssessment {
-      remove_from_candidates: false,
       do_compaction: false,
       old_version: segment_meta.read_version,
       new_version,
@@ -102,7 +100,6 @@ impl CompactionOp {
       deletion_id: segment_meta.deletion_id,
     };
     if segment_meta.write_versions.len() > 1 || all_time_n_to_compact < opts.min_rows_for_compaction {
-      res.remove_from_candidates = true;
       log::debug!(
         "will not compact {}; already compacting or too few rows",
         self.key,
@@ -135,7 +132,6 @@ impl CompactionOp {
         "will compact {}",
         self.key,
       );
-      res.remove_from_candidates = true;
       res.do_compaction = true;
     } else {
       log::debug!(
@@ -217,21 +213,21 @@ impl CompactionOp {
     }
 
     let mut new_pre_compaction_deletions = Vec::new();
-    let mut pre_i = 0;
+    let mut row_id = 0;
     let mut post_i = 0;
     let mut all_time_omitted_n = 0;
-    while pre_i < n_pre && post_i < n_post {
-      let pre_deleted = pre_i < n_pre && old_pre_compaction_deletions[pre_i];
+    while row_id < n_pre || post_i < n_post {
+      let pre_deleted = row_id < n_pre && old_pre_compaction_deletions[row_id];
       let post_deleted = post_i < n_post && old_post_compaction_deletions[post_i];
       let is_deleted = pre_deleted || post_deleted;
       new_pre_compaction_deletions.push(is_deleted);
-      if is_deleted && pre_i < assessment.all_time_n_to_compact as usize {
+      if is_deleted && row_id < assessment.all_time_n_to_compact as usize {
         all_time_omitted_n += 1;
       }
       if !pre_deleted {
         post_i += 1
       }
-      pre_i += 1
+      row_id += 1
     }
 
     let deletion_bytes = deletion::compress_deletions(&new_pre_compaction_deletions)?;
@@ -333,7 +329,7 @@ impl CompactionOp {
 
 #[async_trait]
 impl ServerOp<TableReadLocks> for CompactionOp {
-  type Response = bool;
+  type Response = ();
 
   fn get_key(&self) -> ServerResult<String> {
     Ok(self.key.table_name.clone())
@@ -397,7 +393,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
       segment_meta.overwrite(&opts.dir, &self.key).await?;
     }
 
-    Ok(assessment.remove_from_candidates)
+    Ok(())
   }
 }
 

@@ -19,7 +19,7 @@ use crate::errors::{ServerError, ServerResult};
 use crate::metadata::table::TableMetadata;
 use crate::utils::{common, sharding};
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EmptyKey;
 
 impl Display for EmptyKey {
@@ -68,7 +68,7 @@ pub enum NormalizedPartitionValue {
   Minute(PartitionMinute),
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartitionField {
   pub name: String,
   pub value: NormalizedPartitionValue,
@@ -118,7 +118,7 @@ impl NormalizedPartitionField {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct NormalizedPartition {
   fields: Vec<NormalizedPartitionField>
 }
@@ -126,7 +126,11 @@ pub struct NormalizedPartition {
 impl Display for NormalizedPartition {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     for field in &self.fields {
-      field.fmt(f)?;
+      write!(
+        f,
+        "{}",
+        field,
+      )?;
     }
     Ok(())
   }
@@ -180,7 +184,7 @@ impl NormalizedPartition {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct PartitionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -215,7 +219,7 @@ impl PartitionKey {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ShardId {
   pub n_shards_log: u32,
   pub replication_factor: u32,
@@ -324,7 +328,7 @@ impl Display for ShardId {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ShardKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -352,7 +356,7 @@ impl ShardKey {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct SegmentKey {
   pub table_name: String,
   pub partition: NormalizedPartition,
@@ -389,7 +393,7 @@ impl SegmentKey {
   }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CompactionKey {
   pub table_name: String,
   pub partition: NormalizedPartition,

@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use futures::Future;
+use futures::{Future, pin_mut};
+use futures::StreamExt;
 use hyper::body::Bytes;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
-use crate::errors::{ServerErrorKind, ServerResult};
+use crate::errors::ServerResult;
 use crate::metadata::compaction::CompactionCache;
 use crate::metadata::correlation::CorrelationMetadataCache;
 use crate::metadata::deletion::DeletionMetadataCache;
@@ -20,7 +21,7 @@ use crate::ops::compact::CompactionOp;
 use crate::ops::flush::FlushOp;
 use crate::ops::traits::ServerOp;
 use crate::opt::Opt;
-use crate::types::{SegmentKey, EmptyKey};
+use crate::types::{EmptyKey, SegmentKey};
 use crate::utils::common;
 
 mod create_table;
@@ -32,9 +33,9 @@ mod write_simple;
 mod recovery;
 mod alter_table;
 mod list_tables;
+mod misc;
 
 const FLUSH_SECONDS: u64 = 10;
-const FLUSH_NANOS: u32 = 0;
 
 #[derive(Default, Clone)]
 pub struct Activity {
@@ -68,7 +69,6 @@ pub struct Background {
 #[derive(Default)]
 pub struct BackgroundState {
   flush_candidates: HashSet<SegmentKey>,
-  compaction_candidates: HashSet<SegmentKey>,
 }
 
 impl Background {
@@ -84,26 +84,6 @@ impl Background {
     let res = state.flush_candidates.clone();
     state.flush_candidates = HashSet::new();
     res
-  }
-
-  pub async fn add_compaction_candidate(&self, segment_key: SegmentKey) {
-    let mut mux_guard = self.mutex.lock().await;
-    let state = &mut *mux_guard;
-    state.compaction_candidates.insert(segment_key);
-  }
-
-  pub async fn get_compaction_candidates(&self) -> HashSet<SegmentKey> {
-    let mut mux_guard = self.mutex.lock().await;
-    let state = &mut *mux_guard;
-    state.compaction_candidates.clone()
-  }
-
-  pub async fn remove_compaction_candidates(&self, keys: &[SegmentKey]) {
-    let mut mux_guard = self.mutex.lock().await;
-    let state = &mut *mux_guard;
-    for key in keys {
-      state.compaction_candidates.remove(key);
-    }
   }
 }
 
@@ -137,10 +117,9 @@ impl Server {
 
     common::create_if_new(self.opts.dir.join("tmp")).await?;
 
-    let flush_clone = self.clone();
     let flush_forever_future = async move {
       let mut last_t = Instant::now();
-      let flush_interval = Duration::new(FLUSH_SECONDS, FLUSH_NANOS);
+      let flush_interval = Duration::from_secs(FLUSH_SECONDS);
       loop {
         let cur_t = Instant::now();
         let planned_t = last_t + flush_interval;
@@ -148,21 +127,13 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let candidates = flush_clone.background.pop_flush_candidates().await;
+        let candidates = self.background.pop_flush_candidates().await;
         for candidate in &candidates {
           let flush_result = FlushOp { segment_key: candidate.clone() }
             .execute(self)
             .await;
           if let Err(err) = flush_result {
-            let remove = if matches!(err.kind, ServerErrorKind::Internal) {
-              self.background.add_compaction_candidate(candidate.clone()).await;
-              false
-            } else {
-              true
-            };
-            log::error!("flushing {} failed (will give up? {}): {}", candidate, remove, err);
-          } else {
-            self.background.add_compaction_candidate(candidate.clone()).await;
+            log::error!("flushing {} failed: {}", candidate, err);
           }
         }
 
@@ -173,10 +144,9 @@ impl Server {
       }
     };
 
-    let compact_clone = self.clone();
     let compact_forever_future = async move {
       let mut last_t = Instant::now();
-      let compact_interval = Duration::new(self.opts.compaction_loop_seconds, 0);
+      let compact_interval = Duration::from_secs(self.opts.compaction_loop_seconds);
       loop {
         let cur_t = Instant::now();
         let planned_t = last_t + compact_interval;
@@ -184,24 +154,23 @@ impl Server {
           tokio::time::sleep_until(planned_t).await;
         }
         last_t = cur_t;
-        let compaction_candidates = compact_clone.background
-          .get_compaction_candidates()
-          .await;
-        let mut segment_keys_to_remove = Vec::new();
-        for segment_key in &compaction_candidates {
-          let remove = CompactionOp { key: segment_key.clone() }.execute(self).await
-            .unwrap_or_else(|e| {
-              let remove = !matches!(e.kind, ServerErrorKind::Internal);
-              log::error!("compacting {} failed (will give up? {}): {}", segment_key, remove, e);
-              remove
-            });
-          if remove {
-            segment_keys_to_remove.push(segment_key.clone());
+        let segment_key_stream = self.stream_all_segment_keys();
+        pin_mut!(segment_key_stream);
+        while let Some(segment_key_result) = segment_key_stream.next().await {
+          // The CompactionOp uses heuristics to determine whether a compaction
+          // is needed, so we don't do any of those heuristics here.
+          match segment_key_result {
+            Ok(segment_key) => {
+              let compact_result = CompactionOp { key: segment_key.clone() }.execute(self).await;
+              if let Err(e) = compact_result {
+                log::error!("compaction failed: {}", e);
+              }
+            },
+            Err(e) => {
+              log::error!("compaction loop failed: {}", e);
+            },
           }
         }
-        compact_clone.background
-          .remove_compaction_candidates(&segment_keys_to_remove)
-          .await;
 
         let is_active = self.activity.is_active().await;
         if !is_active {
