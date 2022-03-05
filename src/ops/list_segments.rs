@@ -1,6 +1,7 @@
 use std::collections::{HashSet, HashMap};
 
 use async_trait::async_trait;
+use futures::{pin_mut, StreamExt};
 use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, Segment};
 use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
 use protobuf::MessageField;
@@ -45,12 +46,14 @@ impl ListSegmentsOp {
         partition: normalized_partition,
       };
 
-      let all_segment_ids = navigation::list_segment_ids(
+      let segment_id_stream = navigation::stream_segment_ids_for_partition(
         &server.opts.dir,
-        &partition_key,
-      ).await?;
+        partition_key.clone(),
+      );
+      pin_mut!(segment_id_stream);
+      while let Some(segment_id_result) = segment_id_stream.next().await {
+        let segment_id = segment_id_result?;
 
-      for &segment_id in &all_segment_ids {
         if !shards.contains(&sharding::segment_id_to_shard(n_shards_log, segment_id)) {
           continue;
         }
@@ -97,7 +100,8 @@ impl ServerOp<GlobalTableReadLocks> for ListSegmentsOp {
     } = locks;
 
     let partitioning = table_meta.schema.partitioning.clone();
-    let partitions = server.list_partitions(
+    let partitions = navigation::partitions_for_table(
+      &server.opts.dir,
       table_name,
       &partitioning,
       &req.partition_filter,

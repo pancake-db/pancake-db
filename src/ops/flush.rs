@@ -1,27 +1,27 @@
 use std::collections::HashSet;
+use std::io;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use pancake_db_core::{encoding, compression};
+use pancake_db_core::{compression, encoding};
 use pancake_db_idl::dml::FieldValue;
+use pancake_db_idl::schema::ColumnMeta;
 use tokio::fs;
 use tokio::fs::OpenOptions;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::segment::SegmentWriteLocks;
-use crate::ops::traits::ServerOp;
-use crate::server::Server;
 use crate::metadata::compaction::Compaction;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadata;
 use crate::metadata::table::TableMetadata;
+use crate::ops::traits::ServerOp;
+use crate::server::Server;
 use crate::types::{CompactionKey, SegmentKey};
 use crate::utils::common;
 use crate::utils::decoding_seek;
 use crate::utils::dirs;
-use pancake_db_idl::schema::ColumnMeta;
-use std::io;
 
 pub struct FlushOp {
   pub segment_key: SegmentKey,

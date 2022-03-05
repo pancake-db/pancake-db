@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use std::convert::Infallible;
+use std::io::ErrorKind;
 use std::path::Path;
 
 use hyper::body::Bytes;
 use pancake_db_core::{compression, deletion, encoding};
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, PartitionFilter, ReadSegmentColumnRequest, ReadSegmentColumnResponse, ReadSegmentDeletionsResponse, ReadSegmentDeletionsRequest};
-use pancake_db_idl::schema::{ColumnMeta, PartitionMeta};
+use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, ReadSegmentDeletionsRequest, ReadSegmentDeletionsResponse};
+use pancake_db_idl::schema::ColumnMeta;
 use tokio::fs;
 use warp::{Filter, Rejection, Reply};
 use warp::http::Response;
@@ -13,14 +13,13 @@ use warp::http::Response;
 use crate::errors::ServerResult;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::read_segment_column::ReadSegmentColumnOp;
+use crate::ops::read_segment_deletions::ReadSegmentDeletionsOp;
 use crate::ops::traits::ServerOp;
-use crate::types::{CompactionKey, NormalizedPartition, PartitionKey, SegmentKey};
-use crate::utils::{dirs, navigation};
+use crate::types::{CompactionKey, SegmentKey};
 use crate::utils::common;
+use crate::utils::dirs;
 
 use super::Server;
-use std::io::ErrorKind;
-use crate::ops::read_segment_deletions::ReadSegmentDeletionsOp;
 
 const LIST_ROUTE_NAME: &str = "list_segments";
 const READ_COLUMN_ROUTE_NAME: &str = "read_segment_column";
@@ -260,45 +259,5 @@ impl Server {
         .body(resp_bytes)
         .expect("unable to build response")
     ))
-  }
-
-  pub async fn list_partitions(
-    &self,
-    table_name: &str,
-    partitioning: &HashMap<String, PartitionMeta>,
-    filters: &[PartitionFilter],
-  ) -> ServerResult<Vec<HashMap<String, PartitionFieldValue>>> {
-    let mut partitions: Vec<HashMap<String, PartitionFieldValue>> = vec![HashMap::new()];
-    let mut partition_names: Vec<_> = partitioning.keys().cloned().collect();
-    partition_names.sort();
-    for partition_name in &partition_names {
-      let meta = partitioning[partition_name].clone();
-      let mut new_partitions: Vec<HashMap<String, PartitionFieldValue>> = Vec::new();
-      for partition in &partitions {
-        let subdir = dirs::partition_dir(
-          &self.opts.dir,
-          &PartitionKey {
-            table_name: table_name.to_string(),
-            partition: NormalizedPartition::from_raw_fields(partition)?
-          }
-        );
-        let subpartitions = navigation::list_subpartitions(
-          &subdir,
-          partition_name,
-          &meta
-        )
-          .await?;
-
-        for leaf in subpartitions {
-          let mut new_partition = partition.clone();
-          new_partition.insert(partition_name.to_string(), leaf);
-          if common::satisfies_filters(&new_partition, filters)? {
-            new_partitions.push(new_partition);
-          }
-        }
-      }
-      partitions = new_partitions;
-    }
-    Ok(partitions)
   }
 }

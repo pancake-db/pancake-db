@@ -87,14 +87,14 @@ impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
 
       let mut version_n_deleted = 0;
       let mut post_i = 0;
-      for i in 0..(max_row_id + 1) as usize {
-        let pre_deleted = i < n_pre && pre_compaction_deletions[i];
+      for row_id in 0..(max_row_id + 1) as usize {
+        let pre_deleted = row_id < n_pre && pre_compaction_deletions[row_id];
         if post_i >= post_compaction_deletions.len() {
           post_compaction_deletions.push(false);
         }
 
         if !pre_deleted {
-          if row_ids.contains(&(i as u32)) && !post_compaction_deletions[post_i]{
+          if row_ids.contains(&(row_id as u32)) && !post_compaction_deletions[post_i]{
             post_compaction_deletions[post_i] = true;
             version_n_deleted += 1;
           }
