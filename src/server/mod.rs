@@ -157,6 +157,8 @@ impl Server {
         let segment_key_stream = self.stream_all_segment_keys();
         pin_mut!(segment_key_stream);
         while let Some(segment_key_result) = segment_key_stream.next().await {
+          // The CompactionOp uses heuristics to determine whether a compaction
+          // is needed, so we don't do any of those heuristics here.
           match segment_key_result {
             Ok(segment_key) => {
               let compact_result = CompactionOp { key: segment_key.clone() }.execute(self).await;
