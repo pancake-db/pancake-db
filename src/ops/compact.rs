@@ -27,6 +27,7 @@ struct CompactionAssessment {
   pub new_version: u64,
   pub all_time_n_to_compact: u32,
   pub deletion_id: u64,
+  pub warrants_object_storage: bool,
 }
 
 pub struct CompactionOp {
@@ -98,6 +99,7 @@ impl CompactionOp {
       new_version,
       all_time_n_to_compact,
       deletion_id: segment_meta.deletion_id,
+      warrants_object_storage: false,
     };
     if segment_meta.write_versions.len() > 1 || all_time_n_to_compact < opts.min_rows_for_compaction {
       log::debug!(
@@ -133,6 +135,7 @@ impl CompactionOp {
         self.key,
       );
       res.do_compaction = true;
+      res.warrants_object_storage = segment_meta.is_cold;
     } else {
       log::debug!(
         "will not compact {}; recently active without enough new rows",

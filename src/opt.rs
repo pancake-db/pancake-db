@@ -1,6 +1,9 @@
 use structopt::StructOpt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use log::LevelFilter;
+use crate::errors::ServerError;
+use crate::ServerResult;
 
 const MIN_DIR_LEN: usize = 5;
 
@@ -16,6 +19,9 @@ pub struct Opt {
 
   #[structopt(long, default_value = "INFO")]
   pub log_level: LevelFilter,
+
+  #[structopt(flatten)]
+  pub cloud_opts: CloudOpt,
 
   // a target number of rows for each segment of data
   // Segments should complete slightly after this row count
@@ -50,6 +56,36 @@ pub struct Opt {
 
   #[structopt(long, default_value = "4194304")]
   pub read_page_byte_size: usize,
+}
+
+#[derive(Clone, Copy, Debug, StructOpt)]
+pub enum CloudProvider {
+  None,
+  Aws,
+}
+
+#[derive(Clone, Debug, StructOpt)]
+pub struct CloudOpt {
+  #[structopt(long, default_value = "NONE")]
+  pub cloud_provider: CloudProvider,
+
+  #[structopt(long)]
+  pub aws_s3_bucket: Option<String>,
+}
+
+impl FromStr for CloudProvider {
+  type Err = ServerError;
+
+  fn from_str(s: &str) -> ServerResult<Self> {
+    match s.to_lowercase().as_str() {
+      "none" => Ok(CloudProvider::None),
+      "aws" => Ok(CloudProvider::Aws),
+      invalid => Err(ServerError::invalid(format!(
+        "invalid cloud provider {}",
+        invalid,
+      ))),
+    }
+  }
 }
 
 impl Opt {

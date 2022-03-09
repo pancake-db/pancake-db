@@ -29,6 +29,7 @@ use crate::errors::{ServerError, ServerResult};
 use crate::metadata::{MetadataKey, PersistentMetadata};
 use crate::metadata::compaction::Compaction;
 use crate::metadata::segment::SegmentMetadata;
+use crate::Opt;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> ServerResult<bool> {
@@ -659,3 +660,5 @@ pub fn augmented_columns(schema: &Schema) -> HashMap<String, ColumnMeta> {
   );
   res
 }
+
+

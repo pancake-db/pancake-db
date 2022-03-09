@@ -2,8 +2,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
+use pancake_db_idl::schema::Schema;
 use serde::{Deserialize, Serialize};
 
+use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 use crate::metadata::traits::MetadataKey;
@@ -11,8 +13,6 @@ use crate::types::SegmentKey;
 use crate::utils::dirs;
 
 use super::traits::{PersistentCacheData, PersistentMetadata};
-use pancake_db_idl::schema::Schema;
-use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
 
 impl MetadataKey for SegmentKey {
   const ENTITY_NAME: &'static str = "segment";
@@ -30,6 +30,7 @@ pub struct SegmentMetadata {
   pub flushing: bool, // used for recovery purposes
   pub explicit_columns: HashSet<String>,
   pub deletion_id: u64,
+  pub is_cold: bool, // future writes will not go to cold segments
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -56,6 +57,7 @@ impl SegmentMetadata {
       flushing: false,
       explicit_columns,
       deletion_id: 0,
+      is_cold: false,
     }
   }
 
