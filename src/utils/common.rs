@@ -29,7 +29,6 @@ use crate::errors::{ServerError, ServerResult};
 use crate::metadata::{MetadataKey, PersistentMetadata};
 use crate::metadata::compaction::Compaction;
 use crate::metadata::segment::SegmentMetadata;
-use crate::Opt;
 use crate::types::{NormalizedPartitionField, NormalizedPartitionValue};
 
 pub async fn file_exists(fname: impl AsRef<Path>) -> ServerResult<bool> {
@@ -136,7 +135,7 @@ pub async fn overwrite_file_atomic(
   dir: &Path,
 ) -> ServerResult<()> {
   let path = path.as_ref();
-  let initial_write_path = dir.join(format!("tmp/{}", Uuid::new_v4().to_string()));
+  let initial_write_path = dir.join(format!("tmp/{}", Uuid::new_v4()));
   log::debug!(
     "atomically overwriting {:?} by first writing to {:?}",
     path,
@@ -310,8 +309,7 @@ fn cmp_partition_field_values(v0: &PartitionValue, v1: &PartitionValue) -> Serve
 
 fn field_satisfies_comparison_filter(name: &str, field: &PartitionFieldValue, comparison: &PartitionFieldComparison) -> ServerResult<bool> {
   let flat_comparison_value = comparison.value.as_ref()
-    .map(|v| v.value.clone())
-    .flatten();
+    .and_then(|v| v.value.clone());
   if flat_comparison_value.is_none() {
     return Err(ServerError::invalid(format!(
       "partition filter for {} has no value",
@@ -660,5 +658,3 @@ pub fn augmented_columns(schema: &Schema) -> HashMap<String, ColumnMeta> {
   );
   res
 }
-
-

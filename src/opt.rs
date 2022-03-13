@@ -1,7 +1,9 @@
-use structopt::StructOpt;
 use std::path::PathBuf;
 use std::str::FromStr;
+
 use log::LevelFilter;
+use structopt::StructOpt;
+
 use crate::errors::ServerError;
 use crate::ServerResult;
 

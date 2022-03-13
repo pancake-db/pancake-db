@@ -1,22 +1,20 @@
-use std::path::Path;
-
 use async_trait::async_trait;
-use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, Row, FieldValue};
+use pancake_db_idl::dml::{FieldValue, Row, WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::field_value::Value;
+use protobuf::well_known_types::Timestamp;
 use tokio::fs;
 
-use crate::errors::{ServerError, ServerResult, Contextable};
+use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
+use crate::errors::{Contextable, ServerError, ServerResult};
 use crate::locks::partition::PartitionWriteLocks;
-use crate::ops::traits::ServerOp;
-use crate::server::Server;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadata;
+use crate::ops::traits::ServerOp;
+use crate::Opt;
+use crate::server::Server;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{common, navigation};
 use crate::utils::dirs;
-use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
-use protobuf::well_known_types::Timestamp;
-use pancake_db_idl::dml::field_value::Value;
-use crate::Opt;
 
 pub struct WriteToPartitionOp {
   pub req: WriteToPartitionRequest,
