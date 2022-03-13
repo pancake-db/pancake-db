@@ -22,6 +22,7 @@ impl MetadataKey for SegmentKey {
 pub struct SegmentMetadata {
   pub all_time_n: u32, // only increases, includes deleted
   pub all_time_deleted_n: u32, // only increases
+  pub all_time_uncompressed_size: u64, // only increases, includes deleted
   pub staged_n: u32, // includes deleted
   pub write_versions: Vec<u64>,
   pub read_version: u64,
@@ -49,6 +50,7 @@ impl SegmentMetadata {
     SegmentMetadata {
       all_time_n: 0,
       all_time_deleted_n: 0,
+      all_time_uncompressed_size: 0,
       staged_n: 0,
       read_version: 0,
       write_versions: vec![0],

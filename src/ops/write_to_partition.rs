@@ -76,13 +76,7 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
       &staged_bytes,
     ).await?;
 
-    let n_rows = full_rows.len();
-    Self::increment_segment_meta_n_rows(
-      n_rows,
-      segment_meta,
-      &server.opts,
-      &segment_key,
-    ).await?;
+    Self::increment_segment_size(&full_rows, segment_meta, &server.opts, &segment_key).await?;
 
     server.add_flush_candidate(segment_key).await;
 
@@ -116,16 +110,24 @@ impl WriteToPartitionOp {
     res
   }
 
-  async fn increment_segment_meta_n_rows(
-    n_rows: usize,
+  async fn increment_segment_size(
+    full_rows: &[Row],
     segment_meta: &mut SegmentMetadata,
     opts: &Opt,
     segment_key: &SegmentKey
   ) -> ServerResult<()> {
+    let n_rows = full_rows.len();
     if n_rows > 0 {
+      let uncompressed_size = full_rows.iter()
+        .map(|row| row.fields.values()
+          .map(common::byte_size_of_field)
+          .sum::<usize>())
+        .sum::<usize>() as u64;
       segment_meta.all_time_n += n_rows as u32;
       segment_meta.staged_n += n_rows as u32;
-      if segment_meta.all_time_n >= opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
+      segment_meta.all_time_uncompressed_size += uncompressed_size;
+      if segment_meta.all_time_n >= opts.target_rows_per_segment + segment_meta.all_time_deleted_n ||
+        segment_meta.all_time_uncompressed_size >= opts.target_uncompressed_bytes_per_segment {
         segment_meta.is_cold = true;
       }
       segment_meta.overwrite(&opts.dir, segment_key).await
@@ -157,11 +159,6 @@ impl WriteToPartitionOp {
         segment_key,
       )
     }
-    Self::increment_segment_meta_n_rows(
-      n_rows,
-      segment_meta,
-      &server.opts,
-      segment_key,
-    ).await
+    Self::increment_segment_size(&staged_rows, segment_meta, &server.opts, segment_key).await
   }
 }
