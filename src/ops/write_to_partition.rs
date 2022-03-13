@@ -1,21 +1,20 @@
-use std::path::Path;
-
 use async_trait::async_trait;
-use pancake_db_idl::dml::{WriteToPartitionRequest, WriteToPartitionResponse, Row, FieldValue};
+use pancake_db_idl::dml::{FieldValue, Row, WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::field_value::Value;
+use protobuf::well_known_types::Timestamp;
 use tokio::fs;
 
-use crate::errors::{ServerError, ServerResult, Contextable};
+use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
+use crate::errors::{Contextable, ServerError, ServerResult};
 use crate::locks::partition::PartitionWriteLocks;
-use crate::ops::traits::ServerOp;
-use crate::server::Server;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadata;
+use crate::ops::traits::ServerOp;
+use crate::Opt;
+use crate::server::Server;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{common, navigation};
 use crate::utils::dirs;
-use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
-use protobuf::well_known_types::Timestamp;
-use pancake_db_idl::dml::field_value::Value;
 
 pub struct WriteToPartitionOp {
   pub req: WriteToPartitionRequest,
@@ -52,7 +51,7 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
     common::validate_rows(&table_meta.schema, &self.req.rows)?;
 
     let mut default_segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
-    if segment_meta.all_time_n >= server.opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
+    if segment_meta.is_cold {
       let new_segment_id = shard_id.generate_segment_id();
       let key = SegmentKey {
         table_name: segment_key.table_name.clone(),
@@ -78,7 +77,12 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
     ).await?;
 
     let n_rows = full_rows.len();
-    Self::increment_segment_meta_n_rows(n_rows, segment_meta, dir, &segment_key).await?;
+    Self::increment_segment_meta_n_rows(
+      n_rows,
+      segment_meta,
+      &server.opts,
+      &segment_key,
+    ).await?;
 
     server.add_flush_candidate(segment_key).await;
 
@@ -115,13 +119,16 @@ impl WriteToPartitionOp {
   async fn increment_segment_meta_n_rows(
     n_rows: usize,
     segment_meta: &mut SegmentMetadata,
-    dir: &Path,
+    opts: &Opt,
     segment_key: &SegmentKey
   ) -> ServerResult<()> {
     if n_rows > 0 {
       segment_meta.all_time_n += n_rows as u32;
       segment_meta.staged_n += n_rows as u32;
-      segment_meta.overwrite(dir, segment_key).await
+      if segment_meta.all_time_n >= opts.default_rows_per_segment + segment_meta.all_time_deleted_n {
+        segment_meta.is_cold = true;
+      }
+      segment_meta.overwrite(&opts.dir, segment_key).await
     } else {
       Ok(())
     }
@@ -150,6 +157,11 @@ impl WriteToPartitionOp {
         segment_key,
       )
     }
-    Self::increment_segment_meta_n_rows(n_rows, segment_meta, dir, segment_key).await
+    Self::increment_segment_meta_n_rows(
+      n_rows,
+      segment_meta,
+      &server.opts,
+      segment_key,
+    ).await
   }
 }

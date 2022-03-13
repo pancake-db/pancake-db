@@ -10,11 +10,11 @@ keywords = ["pancake", "db", "server"]
 license = "BUSL-1.1"
 repository = "https://github.com/pancake-db/pancake-db"
 
-
 [dependencies]
 async-std = "1.9.0"
 async-stream = "0.3.2"
 async-trait = "0.1.48"
+aws-sdk-s3 = {version="0.8.0", optional=true}
 chrono = {version="0.4", features=["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
@@ -33,6 +33,9 @@ tower-http = {version="0.1.1", features=["add-extension"]}
 uuid = {version="0.8.2", features=["serde", "v4"]}
 warp = "0.3.1"
 base64 = "0.13.0"
+
+[features]
+aws = ["aws-sdk-s3"]
 
 [dev-dependencies]
 pancake-db-client = "0.1.1"
