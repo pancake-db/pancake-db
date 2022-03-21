@@ -5,10 +5,8 @@ use futures::{Future, pin_mut};
 use futures::StreamExt;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
-use warp::{Filter, Rejection, Reply};
 
 use crate::errors::ServerResult;
-use crate::utils::rest;
 use crate::metadata::compaction::CompactionCache;
 use crate::metadata::correlation::CorrelationMetadataCache;
 use crate::metadata::deletion::DeletionMetadataCache;
@@ -18,12 +16,8 @@ use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadataCache;
 use crate::metadata::table::TableMetadataCache;
 use crate::ops::compact::CompactionOp;
-use crate::ops::create_table_rest::CreateTableRestOp;
-use crate::ops::drop_table_rest::DropTableRestOp;
 use crate::ops::flush::FlushOp;
-use crate::ops::list_tables_rest::ListTablesRestOp;
 use crate::ops::traits::ServerOp;
-use crate::ops::write_to_partition_rest::WriteToPartitionRestOp;
 use crate::opt::Opt;
 use crate::types::{EmptyKey, SegmentKey};
 use crate::utils::common;
@@ -36,6 +30,7 @@ mod write;
 mod recovery;
 mod alter_table;
 mod misc;
+mod grpc;
 
 const FLUSH_SECONDS: u64 = 10;
 
@@ -209,16 +204,6 @@ impl Server {
       background: Background::default(),
       activity: Activity::default(),
     }
-  }
-
-  pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path("api")
-      .and(
-        rest::warp_sub_filter::<CreateTableRestOp>()
-          .or(rest::warp_sub_filter::<DropTableRestOp>())
-          .or(rest::warp_sub_filter::<ListTablesRestOp>())
-          .or(rest::warp_sub_filter::<WriteToPartitionRestOp>())
-      )
   }
 
   pub async fn add_flush_candidate(&self, key: SegmentKey) {

@@ -1,13 +1,28 @@
+use std::convert::Infallible;
+
 use hyper::body::Bytes;
 use hyper::Response;
-use serde::Serialize;
-use std::convert::Infallible;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use warp::{Filter, Rejection, Reply};
 
 use crate::{Server, ServerResult};
 use crate::errors::ServerError;
+use crate::ops::create_table_rest::CreateTableRestOp;
+use crate::ops::drop_table_rest::DropTableRestOp;
+use crate::ops::list_tables_rest::ListTablesRestOp;
 use crate::ops::traits::RestRoute;
+use crate::ops::write_to_partition_rest::WriteToPartitionRestOp;
+
+pub fn warp_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+  warp::path("api")
+    .and(
+      warp_sub_filter::<CreateTableRestOp>()
+        .or(warp_sub_filter::<DropTableRestOp>())
+        .or(warp_sub_filter::<ListTablesRestOp>())
+        .or(warp_sub_filter::<WriteToPartitionRestOp>())
+    )
+}
 
 pub fn warp_sub_filter<Route>() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone
   where Route: RestRoute, Route::Response: Serialize {

@@ -5,6 +5,7 @@ use chrono::format::ParseError;
 
 use warp::http::StatusCode;
 use pancake_db_core::errors::{CoreError, CoreErrorKind};
+use tonic::{Code, Status};
 
 #[derive(Clone, Debug)]
 pub struct ServerError {
@@ -191,5 +192,18 @@ impl<T> Contextable for ServerResult<T> {
       },
     }
     self
+  }
+}
+
+impl From<ServerError> for Status {
+  fn from(err: ServerError) -> Self {
+    let code = match err.kind {
+      ServerErrorKind::Invalid => Code::InvalidArgument,
+      ServerErrorKind::DoesNotExist => Code::NotFound,
+      ServerErrorKind::TooManyRequests => Code::Unavailable,
+      ServerErrorKind::Corrupt => Code::Internal,
+      ServerErrorKind::Internal => Code::Internal,
+    };
+    Status::new(code, err.message)
   }
 }
