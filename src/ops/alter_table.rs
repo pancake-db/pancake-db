@@ -14,7 +14,8 @@ pub struct AlterTableOp {
 }
 
 #[async_trait]
-impl ServerOp<TableWriteLocks> for AlterTableOp {
+impl ServerOp for AlterTableOp {
+  type Locks = TableWriteLocks;
   type Response = AlterTableResponse;
 
   fn get_key(&self) -> ServerResult<String> {
@@ -39,7 +40,8 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     if req.new_columns.is_empty() {
       return Err(ServerError::invalid("alter table request contains 0 alterations"))
     }
-    let all_column_names: Vec<String> = table_meta.schema.columns.keys()
+    let schema = table_meta.schema();
+    let all_column_names: Vec<String> = schema.columns.keys()
       .chain(req.new_columns.keys())
       .cloned()
       .collect();
@@ -49,7 +51,7 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
       return Err(ServerError::invalid(format!(
         "number of columns must not exceed {} but was {}+{}={}; rethink your data model",
         MAX_N_COLUMNS,
-        table_meta.schema.columns.len(),
+        schema.columns.len(),
         req.new_columns.len(),
         total_n_cols,
       )));
@@ -67,7 +69,7 @@ impl ServerOp<TableWriteLocks> for AlterTableOp {
     }
 
     let mut new_table_meta = table_meta.clone();
-    new_table_meta.schema.columns.extend(req.new_columns.clone());
+    new_table_meta.extend_columns(&req.new_columns);
     new_table_meta.overwrite(dir, table_name).await?;
     *maybe_table_guard = Some(new_table_meta);
 

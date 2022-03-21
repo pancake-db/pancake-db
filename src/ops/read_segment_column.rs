@@ -5,6 +5,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use pancake_db_core::encoding;
 use pancake_db_idl::dml::{FieldValue, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
+use pancake_db_idl::dtype::DataType;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -103,7 +104,8 @@ pub struct ReadSegmentColumnOp {
 }
 
 #[async_trait]
-impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
+impl ServerOp for ReadSegmentColumnOp {
+  type Locks = SegmentReadLocks;
   type Response = ReadSegmentColumnResponse;
 
   fn get_key(&self) -> ServerResult<SegmentKey> {
@@ -131,7 +133,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     } = locks;
     let col_name = req.column_name.clone();
 
-    let augmented_columns = common::augmented_columns(&table_meta.schema);
+    let augmented_columns = common::augmented_columns(&table_meta.schema());
     let maybe_col_meta = augmented_columns
       .get(&col_name);
     if maybe_col_meta.is_none() {
@@ -263,7 +265,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
             .map(|row| row.fields.get(&col_name).cloned().unwrap_or_default())
             .collect::<Vec<FieldValue>>();
           let encoder = encoding::new_encoder(
-            col_meta.dtype.enum_value_or_default(),
+            DataType::from_i32(col_meta.dtype).ok_or(ServerError::internal("unknown dtype"))?,
             col_meta.nested_list_depth as u8
           );
           let staged_bytes = encoder.encode(&staged_values)?;

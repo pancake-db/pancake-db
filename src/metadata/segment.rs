@@ -6,7 +6,6 @@ use pancake_db_idl::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
-use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 use crate::metadata::traits::MetadataKey;
 use crate::types::SegmentKey;

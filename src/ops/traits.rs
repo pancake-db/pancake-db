@@ -1,26 +1,38 @@
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 
-use crate::errors::ServerResult;
+use crate::{Server, ServerResult};
 use crate::locks::traits::ServerOpLocks;
-use crate::server::Server;
 
 #[async_trait]
-pub trait ServerOp<Locks: ServerOpLocks>: Sync {
+pub trait ServerOp: Sync {
+  type Locks: ServerOpLocks;
   type Response;
 
-  fn get_key(&self) -> ServerResult<<Locks as ServerOpLocks>::Key>;
+  fn get_key(&self) -> ServerResult<<Self::Locks as ServerOpLocks>::Key>;
   async fn execute_with_locks(
     &self,
     server: &Server,
-    locks: Locks,
-  ) -> ServerResult<Self::Response> where Locks: 'async_trait;
+    locks: Self::Locks,
+  ) -> ServerResult<Self::Response> where Self::Locks: 'async_trait;
 
   async fn execute(&self, server: &Server) -> ServerResult<Self::Response> where Self: Sized {
-    <Locks as ServerOpLocks>::execute(server, self).await
+    <Self::Locks as ServerOpLocks>::execute(server, self).await
   }
 }
 
 #[async_trait]
-pub trait ServerWriteOp<Locks: ServerOpLocks>: ServerOp<Locks> {
-  async fn recover(server: &Server, locks: Locks) -> ServerResult<()>;
+pub trait ServerWriteOp: ServerOp<Locks=<Self as ServerWriteOp>::Locks> {
+  type Locks: ServerOpLocks;
+
+  async fn recover(server: &Server, locks: <Self as ServerWriteOp>::Locks) -> ServerResult<()>;
+}
+
+#[async_trait::async_trait]
+pub trait RestRoute: ServerOp + Send + Sync {
+  type Req: DeserializeOwned + Send + Sync;
+
+  const ROUTE_NAME: &'static str;
+
+  fn new_op(req: Self::Req) -> Self;
 }

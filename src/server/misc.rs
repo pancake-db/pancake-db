@@ -41,10 +41,11 @@ impl Server {
     try_stream! {
       let tables = self.internal_list_tables().await?;
       for table in &tables {
+        let schema = table.meta.schema();
         let partitions = navigation::partitions_for_table(
           &self.opts.dir,
           &table.name,
-          &table.meta.schema.partitioning,
+          &schema.partitioning,
           &Vec::new(),
         ).await?;
         for partition in &partitions {

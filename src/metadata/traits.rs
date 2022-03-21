@@ -1,4 +1,3 @@
-
 use std::fmt::Display;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
@@ -22,10 +21,10 @@ pub trait MetadataJson: Clone + Send + Sync {
 macro_rules! impl_metadata_serde_json {
   ($T:ident) => {
     impl $crate::metadata::traits::MetadataJson for $T {
-      fn to_json_string(&self) -> ServerResult<String> {
+      fn to_json_string(&self) -> crate::errors::ServerResult<String> {
         Ok(serde_json::to_string(&self)?)
       }
-      fn from_json_str(s: &str) -> ServerResult<Self> {
+      fn from_json_str(s: &str) -> crate::errors::ServerResult<Self> {
         Ok(serde_json::from_str(s)?)
       }
     }

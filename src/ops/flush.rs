@@ -28,7 +28,8 @@ pub struct FlushOp {
 }
 
 #[async_trait]
-impl ServerOp<SegmentWriteLocks> for FlushOp {
+impl ServerOp for FlushOp {
+  type Locks = SegmentWriteLocks;
   type Response = ();
 
   fn get_key(&self) -> ServerResult<SegmentKey> {
@@ -63,7 +64,8 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     // if any columns in the request have never been explicitly flushed to this
     // segment before, we need to initialize them
     let mut new_explicit_columns = HashSet::new();
-    for col_name in table_meta.schema.columns.keys() {
+    let schema = table_meta.schema();
+    for col_name in schema.columns.keys() {
       if !segment_meta.explicit_columns.contains(col_name) {
         new_explicit_columns.insert(col_name.to_string());
       }
@@ -75,7 +77,7 @@ impl ServerOp<SegmentWriteLocks> for FlushOp {
     segment_meta.overwrite(dir, &segment_key).await?;
 
     let augmented_cols = common::augmented_columns(
-      &table_meta.schema
+      &schema
     );
 
     for &version in &segment_meta.write_versions {
@@ -137,7 +139,7 @@ impl FlushOp {
     server: &Server,
   ) -> ServerResult<()> {
     let dir = &server.opts.dir;
-    let dtype = col_meta.dtype.enum_value_or_default();
+    let dtype = common::unwrap_dtype(col_meta.dtype)?;
     let nested_list_depth = col_meta.nested_list_depth as u8;
 
     // compacted data
@@ -155,7 +157,7 @@ impl FlushOp {
         let codec = compression::new_codec(dtype, &codec_name)?;
         let mut compacted_nulls = Vec::with_capacity(compacted_n as usize);
         for _ in 0..compacted_n {
-          compacted_nulls.push(FieldValue::new());
+          compacted_nulls.push(FieldValue::default());
         }
         let compacted_null_bytes = codec.compress(&compacted_nulls, nested_list_depth)?;
         compaction.col_codecs.insert(col_name.to_string(), codec_name);
@@ -220,7 +222,7 @@ impl FlushOp {
       .unwrap_or_default();
 
     let trim_idx = common::flush_only_n(segment_meta, &compaction) as usize;
-    for (col_name, col_meta) in &table_meta.schema.columns {
+    for (col_name, col_meta) in &table_meta.schema().columns {
       let flush_file = dirs::flush_col_file(dir, compaction_key, col_name);
       let bytes_result = fs::read(&flush_file).await;
 
@@ -238,7 +240,7 @@ impl FlushOp {
       log::debug!("determining where to truncate {:?}", flush_file);
       let bytes = bytes_result?;
       let trim_byte_idx = decoding_seek::byte_idx_for_row_idx(
-        col_meta.dtype.enum_value_or_default(),
+        common::unwrap_dtype(col_meta.dtype)?,
         col_meta.nested_list_depth as u8,
         &bytes,
         trim_idx,

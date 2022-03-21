@@ -1,53 +1,97 @@
-use std::convert::TryFrom;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use pancake_db_idl::schema::Schema;
-use protobuf::json;
-use protobuf::json::{ParseError, PrintError};
+use pancake_db_idl::schema::{Schema, ColumnMeta, PartitionMeta};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::dirs;
-use crate::errors::{ServerError, ServerResult};
-use crate::metadata::traits::{MetadataJson, MetadataKey};
+use crate::metadata::traits::MetadataKey;
 
 use super::traits::{PersistentCacheData, PersistentMetadata};
 use crate::constants::TABLE_METADATA_FILENAME;
 
 type TableKey = String;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct TableMetadataSerde {
-  pub schema_string: String,
-  pub dropped: bool,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PartitionMetaSerde {
+  pub dtype: i32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ColumnMetaSerde {
+  pub dtype: i32,
+  pub nested_list_depth: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchemaSerde {
+  pub partitioning: HashMap<String, PartitionMetaSerde>,
+  pub columns: HashMap<String, ColumnMetaSerde>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TableMetadata {
-  pub schema: Schema,
+  schema: SchemaSerde,
   pub dropped: bool,
 }
 
-impl TryFrom<TableMetadata> for TableMetadataSerde {
-  type Error = PrintError;
-
-  fn try_from(value: TableMetadata) -> Result<Self, Self::Error> {
-    let schema_string = json::print_to_string(&value.schema)?;
-    Ok(TableMetadataSerde {
-      schema_string,
-      dropped: value.dropped,
-    })
+impl From<&ColumnMeta> for ColumnMetaSerde {
+  fn from(meta: &ColumnMeta) -> Self {
+    ColumnMetaSerde {
+      nested_list_depth: meta.nested_list_depth,
+      dtype: meta.dtype,
+    }
   }
 }
 
-impl TryFrom<TableMetadataSerde> for TableMetadata {
-  type Error = ParseError;
+impl From<&ColumnMetaSerde> for ColumnMeta {
+  fn from(meta: &ColumnMetaSerde) -> Self {
+    ColumnMeta {
+      dtype: meta.dtype,
+      nested_list_depth: meta.nested_list_depth,
+    }
+  }
+}
 
-  fn try_from(value: TableMetadataSerde) -> Result<Self, Self::Error> {
-    let schema = json::parse_from_str(&value.schema_string)?;
-    Ok(TableMetadata {
-      schema,
-      dropped: value.dropped,
-    })
+impl From<&PartitionMeta> for PartitionMetaSerde {
+  fn from(meta: &PartitionMeta) -> Self {
+    PartitionMetaSerde {
+      dtype: meta.dtype
+    }
+  }
+}
+
+impl From<&PartitionMetaSerde> for PartitionMeta {
+  fn from(meta: &PartitionMetaSerde) -> Self {
+    PartitionMeta {
+      dtype: meta.dtype
+    }
+  }
+}
+
+impl From<&Schema> for SchemaSerde {
+  fn from(schema: &Schema) -> Self {
+    SchemaSerde {
+      columns: schema.columns.iter()
+        .map(|(k, v)| (k.to_string(), ColumnMetaSerde::from(v)))
+        .collect(),
+      partitioning: schema.partitioning.iter()
+        .map(|(k, v)| (k.to_string(), PartitionMetaSerde::from(v)))
+        .collect(),
+    }
+  }
+}
+
+impl From<&SchemaSerde> for Schema {
+  fn from(schema: &SchemaSerde) -> Self {
+    Schema {
+      columns: schema.columns.iter()
+        .map(|(k, v)| (k.to_string(), ColumnMeta::from(v)))
+        .collect(),
+      partitioning: schema.partitioning.iter()
+        .map(|(k, v)| (k.to_string(), PartitionMeta::from(v)))
+        .collect(),
+    }
   }
 }
 
@@ -56,26 +100,26 @@ impl MetadataKey for TableKey {
 }
 
 impl TableMetadata {
-  pub fn new(schema: Schema) -> Self {
+  pub fn new(schema: &Schema) -> Self {
     TableMetadata {
-      schema,
+      schema: SchemaSerde::from(schema),
       dropped: false,
     }
   }
-}
 
-impl MetadataJson for TableMetadata {
-  fn to_json_string(&self) -> ServerResult<String> {
-    let table_meta_serde = TableMetadataSerde::try_from(self.clone())
-      .map_err(|_| ServerError::internal("unable to print schema to json string"))?;
-    Ok(serde_json::to_string(&table_meta_serde)?)
+  pub fn schema(&self) -> Schema {
+    Schema::from(&self.schema)
   }
 
-  fn from_json_str(s: &str) -> ServerResult<Self> {
-    let table_meta_serde: TableMetadataSerde = serde_json::from_str::<'_, TableMetadataSerde>(s)?;
-    Ok(TableMetadata::try_from(table_meta_serde)?)
+  pub fn extend_columns(&mut self, columns: &HashMap<String, ColumnMeta>) {
+    self.schema.columns.extend(
+      columns.iter()
+        .map(|(k, v)| (k.to_string(), ColumnMetaSerde::from(v)))
+    )
   }
 }
+
+crate::impl_metadata_serde_json!(TableMetadata);
 
 impl PersistentMetadata<TableKey> for TableMetadata {
   // no one should have more tables than this anyway

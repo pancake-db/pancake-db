@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use pancake_db_idl::ddl::{GetSchemaRequest, GetSchemaResponse};
-use protobuf::MessageField;
 
 use crate::errors::ServerResult;
 use crate::locks::table::TableReadLocks;
@@ -13,7 +12,8 @@ pub struct GetSchemaOp {
 }
 
 #[async_trait]
-impl ServerOp<TableReadLocks> for GetSchemaOp {
+impl ServerOp for GetSchemaOp {
+  type Locks = TableReadLocks;
   type Response = GetSchemaResponse;
 
   fn get_key(&self) -> ServerResult<String> {
@@ -23,7 +23,7 @@ impl ServerOp<TableReadLocks> for GetSchemaOp {
   async fn execute_with_locks(&self, _server: &Server, locks: TableReadLocks) -> ServerResult<GetSchemaResponse> {
     let TableReadLocks { table_meta } = locks;
     Ok(GetSchemaResponse {
-      schema: MessageField::some(table_meta.schema),
+      schema: Some(table_meta.schema()),
       ..Default::default()
     })
   }

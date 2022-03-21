@@ -20,7 +20,8 @@ pub struct DeleteFromSegmentOp {
 }
 
 #[async_trait]
-impl ServerOp<DeletionWriteLocks> for DeleteFromSegmentOp {
+impl ServerOp for DeleteFromSegmentOp {
+  type Locks = DeletionWriteLocks;
   type Response = DeleteFromSegmentResponse;
 
   fn get_key(&self) -> ServerResult<SegmentKey> {

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::dirs;
-use crate::errors::ServerResult;
 use crate::impl_metadata_serde_json;
 use crate::metadata::traits::MetadataKey;
 use crate::types::{PartitionKey, ShardId};

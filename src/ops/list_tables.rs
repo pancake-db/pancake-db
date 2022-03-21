@@ -11,7 +11,8 @@ pub struct ListTablesOp {
 }
 
 #[async_trait]
-impl ServerOp<TrivialLocks> for ListTablesOp {
+impl ServerOp for ListTablesOp {
+  type Locks = TrivialLocks;
   type Response = ListTablesResponse;
 
   fn get_key(&self) -> ServerResult<()> {

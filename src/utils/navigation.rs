@@ -85,7 +85,7 @@ async fn subpartitions(
     }
     let parsed = common::partition_field_value_from_string(
       parts[1],
-      meta.dtype.unwrap(),
+      common::unwrap_partition_dtype(meta.dtype)?,
     ).with_context(|| format!(
       "while parsing partition value {} in {:?}",
       parts[1],

@@ -1,7 +1,8 @@
+use std::time::SystemTime;
 use async_trait::async_trait;
 use pancake_db_idl::dml::{FieldValue, Row, WriteToPartitionRequest, WriteToPartitionResponse};
 use pancake_db_idl::dml::field_value::Value;
-use protobuf::well_known_types::Timestamp;
+use prost_types::Timestamp;
 use tokio::fs;
 
 use crate::constants::{ROW_ID_COLUMN_NAME, WRITTEN_AT_COLUMN_NAME};
@@ -21,7 +22,8 @@ pub struct WriteToPartitionOp {
 }
 
 #[async_trait]
-impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
+impl ServerOp for WriteToPartitionOp {
+  type Locks = PartitionWriteLocks;
   type Response = WriteToPartitionResponse;
 
   fn get_key(&self) -> ServerResult<PartitionKey> {
@@ -48,9 +50,10 @@ impl ServerOp<PartitionWriteLocks> for WriteToPartitionOp {
     let partition_meta = definitely_partition_guard.as_mut().unwrap();
     let mut segment_meta = definitely_segment_guard.as_mut().unwrap();
 
-    common::validate_rows(&table_meta.schema, &self.req.rows)?;
+    let schema = table_meta.schema();
+    common::validate_rows(&schema, &self.req.rows)?;
 
-    let mut default_segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
+    let mut default_segment_meta = SegmentMetadata::new_from_schema(&schema);
     if segment_meta.is_cold {
       let new_segment_id = shard_id.generate_segment_id();
       let key = SegmentKey {
@@ -90,15 +93,14 @@ impl WriteToPartitionOp {
     segment_meta: &SegmentMetadata,
   ) -> Vec<Row> {
     let written_at = FieldValue {
-      value: Some(Value::timestamp_val(Timestamp::now())),
-      ..Default::default()
+      value: Some(Value::TimestampVal(Timestamp::from(SystemTime::now()))),
     };
     let mut res = Vec::with_capacity(self.req.rows.len());
     let mut row_id = segment_meta.all_time_n;
     for row in &self.req.rows {
       let mut full = row.clone();
       let row_id_fv = FieldValue {
-        value: Some(Value::int64_val(row_id as i64)),
+        value: Some(Value::Int64Val(row_id as i64)),
         ..Default::default()
       };
       full.fields.insert(ROW_ID_COLUMN_NAME.to_string(), row_id_fv);

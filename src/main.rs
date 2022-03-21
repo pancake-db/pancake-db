@@ -9,7 +9,7 @@ use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
-use crate::errors::{ServerResult, Contextable};
+use crate::errors::{Contextable, ServerResult};
 use crate::logging::Logger;
 use crate::opt::Opt;
 use crate::server::Server;
@@ -24,6 +24,7 @@ mod errors;
 mod ops;
 mod metadata;
 mod locks;
+mod serde_models;
 
 static LOGGER: Logger = Logger;
 
@@ -50,13 +51,17 @@ async fn main() -> ServerResult<()> {
   let tower_service = ServiceBuilder::new()
     .layer(AddExtensionLayer::new(server.clone()))
     .service(warp_service);
-  let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], opts.port)))
+  let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], opts.http_port)))
     .expect("port busy");
-  log::info!("bound TCP listener to port {}", opts.port);
   let hyper_future = HyperServer::from_tcp(listener)
     .unwrap()
     .serve(Shared::new(tower_service));
+  log::info!("bound HTTP listener to port {}", opts.http_port);
+
+  log::info!("bound GRPC listener to port {}", opts.grpc_port);
+
   log::info!("ready to serve requests");
+
   let outcomes = futures::future::join3(
     hyper_future,
     backgrounds.0,

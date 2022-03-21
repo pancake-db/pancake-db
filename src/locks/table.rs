@@ -25,25 +25,30 @@ pub struct TableWriteLocks {
 impl ServerOpLocks for GlobalTableReadLocks {
   type Key = String;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> where Self: Sized {
+    let locks = GlobalTableReadLocks::obtain(server, &op.get_key()?).await?;
+    op.execute_with_locks(server, locks).await
+  }
+}
+
+impl GlobalTableReadLocks {
+  pub async fn obtain(server: &Server, key: &String) -> ServerResult<Self> {
     let global_guard = server.global_metadata_lock.read().await;
 
-    let table_name = op.get_key()?;
-    let lock = server.table_metadata_cache.get_lock(&table_name).await?;
+    let lock = server.table_metadata_cache.get_lock(key).await?;
     let guard = lock.read().await;
     let maybe_table = guard.clone();
     if maybe_table.is_none() {
-      return Err(ServerError::does_not_exist("table", &table_name))
+      return Err(ServerError::does_not_exist("table", key))
     }
 
-    let locks = GlobalTableReadLocks {
+    Ok(GlobalTableReadLocks {
       global_meta: global_guard.clone(),
       table_meta: maybe_table.unwrap(),
-    };
-    op.execute_with_locks(server, locks).await
+    })
   }
 }
 
@@ -51,7 +56,7 @@ impl ServerOpLocks for GlobalTableReadLocks {
 impl ServerOpLocks for TableReadLocks {
   type Key = String;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> where Self: Sized {
@@ -74,7 +79,7 @@ impl ServerOpLocks for TableReadLocks {
 impl ServerOpLocks for TableWriteLocks {
   type Key = String;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {

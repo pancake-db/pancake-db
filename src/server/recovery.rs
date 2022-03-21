@@ -51,7 +51,7 @@ impl Server {
     for partition in navigation::partitions_for_table(
       dir,
       &table_name,
-      &table_meta.schema.partitioning,
+      &table_meta.schema().partitioning,
       &Vec::new(),
     ).await.with_context(|| "while listing partitions")? {
       let normalized = NormalizedPartition::from_raw_fields(&partition)

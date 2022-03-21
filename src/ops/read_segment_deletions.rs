@@ -17,7 +17,8 @@ pub struct ReadSegmentDeletionsOp {
 }
 
 #[async_trait]
-impl ServerOp<DeletionReadLocks> for ReadSegmentDeletionsOp {
+impl ServerOp for ReadSegmentDeletionsOp {
+  type Locks = DeletionReadLocks;
   type Response = ReadSegmentDeletionsResponse;
 
   fn get_key(&self) -> ServerResult<SegmentKey> {

@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use futures::{Future, pin_mut};
 use futures::StreamExt;
-use hyper::body::Bytes;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection, Reply};
 
 use crate::errors::ServerResult;
+use crate::utils::rest;
 use crate::metadata::compaction::CompactionCache;
 use crate::metadata::correlation::CorrelationMetadataCache;
 use crate::metadata::deletion::DeletionMetadataCache;
@@ -18,8 +18,12 @@ use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadataCache;
 use crate::metadata::table::TableMetadataCache;
 use crate::ops::compact::CompactionOp;
+use crate::ops::create_table_rest::CreateTableRestOp;
+use crate::ops::drop_table_rest::DropTableRestOp;
 use crate::ops::flush::FlushOp;
+use crate::ops::list_tables_rest::ListTablesRestOp;
 use crate::ops::traits::ServerOp;
+use crate::ops::write_to_partition_rest::WriteToPartitionRestOp;
 use crate::opt::Opt;
 use crate::types::{EmptyKey, SegmentKey};
 use crate::utils::common;
@@ -29,10 +33,8 @@ mod delete;
 mod get_schema;
 mod read;
 mod write;
-mod write_simple;
 mod recovery;
 mod alter_table;
-mod list_tables;
 mod misc;
 
 const FLUSH_SECONDS: u64 = 10;
@@ -209,28 +211,13 @@ impl Server {
     }
   }
 
-  fn log_request(route_name: &str, body: &Bytes) {
-    log::info!(
-      "received REST request for {} containing {} bytes",
-      route_name,
-      body.len(),
-    );
-  }
-
   pub fn warp_filter(&self) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path("rest")
+    warp::path("api")
       .and(
-        Self::create_table_filter()
-          .or(Self::alter_table_filter())
-          .or(Self::write_to_partition_filter())
-          .or(Self::write_to_partition_simple_filter())
-          .or(Self::read_segment_column_filter())
-          .or(Self::list_segments_filter())
-          .or(Self::get_schema_filter())
-          .or(Self::list_tables_filter())
-          .or(Self::drop_table_filter())
-          .or(Self::delete_from_segment_filter())
-          .or(Self::read_segment_deletions_filter())
+        rest::warp_sub_filter::<CreateTableRestOp>()
+          .or(rest::warp_sub_filter::<DropTableRestOp>())
+          .or(rest::warp_sub_filter::<ListTablesRestOp>())
+          .or(rest::warp_sub_filter::<WriteToPartitionRestOp>())
       )
   }
 
