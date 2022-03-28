@@ -620,3 +620,10 @@ pub fn augmented_columns(schema: &Schema) -> HashMap<String, ColumnMeta> {
   res
 }
 
+pub fn grpc_result<T>(pancake_result: ServerResult<T>) -> Result<tonic::Response<T>, tonic::Status> {
+  match pancake_result {
+    Ok(resp) => Ok(tonic::Response::new(resp)),
+    Err(err) => Err(err.into()),
+  }
+}
+

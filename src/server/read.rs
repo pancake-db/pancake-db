@@ -2,15 +2,11 @@ use std::io::ErrorKind;
 use std::path::Path;
 
 use pancake_db_core::{compression, deletion, encoding};
-use pancake_db_idl::dml::{FieldValue, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, ReadSegmentDeletionsRequest, ReadSegmentDeletionsResponse};
+use pancake_db_idl::dml::FieldValue;
 use pancake_db_idl::schema::ColumnMeta;
 use tokio::fs;
 
 use crate::errors::ServerResult;
-use crate::ops::list_segments::ListSegmentsOp;
-use crate::ops::read_segment_column::ReadSegmentColumnOp;
-use crate::ops::read_segment_deletions::ReadSegmentDeletionsOp;
-use crate::ops::traits::ServerOp;
 use crate::types::{CompactionKey, SegmentKey};
 use crate::utils::common;
 use crate::utils::dirs;
@@ -141,17 +137,5 @@ impl Server {
       },
       Err(e) => Err(e.into()),
     }
-  }
-
-  async fn list_segments(&self, req: ListSegmentsRequest) -> ServerResult<ListSegmentsResponse> {
-    ListSegmentsOp { req }.execute(self).await
-  }
-
-  async fn read_segment_deletions(&self, req: ReadSegmentDeletionsRequest) -> ServerResult<ReadSegmentDeletionsResponse> {
-    ReadSegmentDeletionsOp { req }.execute(self).await
-  }
-
-  async fn read_segment_column(&self, req: ReadSegmentColumnRequest) -> ServerResult<ReadSegmentColumnResponse> {
-    ReadSegmentColumnOp { req }.execute(self).await
   }
 }

@@ -1,9 +1,9 @@
 use pancake_db_idl::ddl::{AlterTableRequest, AlterTableResponse, CreateTableRequest, CreateTableResponse, DropTableRequest, DropTableResponse, GetSchemaRequest, GetSchemaResponse, ListTablesRequest, ListTablesResponse};
-use pancake_db_idl::dml::{DeleteFromSegmentRequest, DeleteFromSegmentResponse, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentColumnResponse, ReadSegmentDeletionsRequest, ReadSegmentDeletionsResponse, WriteToPartitionRequest, WriteToPartitionResponse};
+use pancake_db_idl::dml::{DeleteFromSegmentRequest, DeleteFromSegmentResponse, ListSegmentsRequest, ListSegmentsResponse, ReadSegmentColumnRequest, ReadSegmentDeletionsRequest, ReadSegmentDeletionsResponse, WriteToPartitionRequest, WriteToPartitionResponse};
 use pancake_db_idl::service::pancake_db_server::PancakeDb;
 use tonic::{Request, Response, Status};
 
-use crate::{Server, ServerResult};
+use crate::Server;
 use crate::ops::alter_table::AlterTableOp;
 use crate::ops::create_table::CreateTableOp;
 use crate::ops::delete_from_segment::DeleteFromSegmentOp;
@@ -11,17 +11,12 @@ use crate::ops::drop_table::DropTableOp;
 use crate::ops::get_schema::GetSchemaOp;
 use crate::ops::list_segments::ListSegmentsOp;
 use crate::ops::list_tables::ListTablesOp;
-use crate::ops::read_segment_column::ReadSegmentColumnOp;
 use crate::ops::read_segment_deletions::ReadSegmentDeletionsOp;
 use crate::ops::traits::ServerOp;
 use crate::ops::write_to_partition::WriteToPartitionOp;
-
-fn grpc_result<T>(pancake_result: ServerResult<T>) -> Result<Response<T>, Status> {
-  match pancake_result {
-    Ok(resp) => Ok(Response::new(resp)),
-    Err(err) => Err(err.into()),
-  }
-}
+use crate::utils::common::grpc_result;
+use crate::utils::read_segment_column_stream;
+use crate::utils::read_segment_column_stream::ReadSegmentColumnStream;
 
 #[async_trait::async_trait]
 impl PancakeDb for Server {
@@ -53,8 +48,10 @@ impl PancakeDb for Server {
     grpc_result(ListSegmentsOp { req: request.into_inner() }.execute(&self).await)
   }
 
-  async fn read_segment_column(&self, request: Request<ReadSegmentColumnRequest>) -> Result<Response<ReadSegmentColumnResponse>, Status> {
-    grpc_result(ReadSegmentColumnOp { req: request.into_inner() }.execute(&self).await)
+  type ReadSegmentColumnStream = ReadSegmentColumnStream;
+
+  async fn read_segment_column(&self, request: Request<ReadSegmentColumnRequest>) -> Result<Response<Self::ReadSegmentColumnStream>, Status> {
+    Ok(Response::new(read_segment_column_stream::create_stream(request.into_inner(), self.clone())))
   }
 
   async fn read_segment_deletions(&self, request: Request<ReadSegmentDeletionsRequest>) -> Result<Response<ReadSegmentDeletionsResponse>, Status> {

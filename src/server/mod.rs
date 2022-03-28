@@ -22,13 +22,8 @@ use crate::opt::Opt;
 use crate::types::{EmptyKey, SegmentKey};
 use crate::utils::common;
 
-mod create_table;
-mod delete;
-mod get_schema;
 mod read;
-mod write;
 mod recovery;
-mod alter_table;
 mod misc;
 mod grpc;
 
