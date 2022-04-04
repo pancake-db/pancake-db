@@ -28,7 +28,7 @@ pub struct DeletionReadLocks {
 impl ServerOpLocks for DeletionWriteLocks {
   type Key = SegmentKey;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
@@ -38,7 +38,7 @@ impl ServerOpLocks for DeletionWriteLocks {
     let table_guard = table_lock.read().await;
     let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
 
-    key.partition.check_against_schema(&table_meta.schema)?;
+    key.partition.check_against_schema(&table_meta.schema())?;
 
     let deletion_lock = server.deletion_metadata_cache.get_lock(&key).await?;
     let deletion_guard = deletion_lock.write_owned().await;
@@ -57,7 +57,7 @@ impl ServerOpLocks for DeletionWriteLocks {
 impl ServerOpLocks for DeletionReadLocks {
   type Key = SegmentKey;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
@@ -67,7 +67,7 @@ impl ServerOpLocks for DeletionReadLocks {
     let table_guard = table_lock.read().await;
     let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
 
-    key.partition.check_against_schema(&table_meta.schema)?;
+    key.partition.check_against_schema(&table_meta.schema())?;
 
     let deletion_lock = server.deletion_metadata_cache.get_lock(&key).await?;
     let deletion_guard = deletion_lock.read().await;

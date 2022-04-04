@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use futures::{pin_mut, StreamExt};
 use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, Segment};
 use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
-use protobuf::MessageField;
 
 use crate::errors::ServerResult;
 use crate::locks::table::GlobalTableReadLocks;
@@ -19,14 +18,14 @@ pub struct ListSegmentsOp {
 }
 
 impl ListSegmentsOp {
-  fn pb_segment_meta_from_option(maybe_segment_meta: Option<SegmentMetadata>) -> MessageField<PbSegmentMetadata> {
-    MessageField::from_option(maybe_segment_meta.map(|meta| {
+  fn pb_segment_meta_from_option(maybe_segment_meta: Option<SegmentMetadata>) -> Option<PbSegmentMetadata> {
+    maybe_segment_meta.map(|meta| {
       let row_count = (meta.all_time_n - meta.all_time_deleted_n) as u32;
       PbSegmentMetadata {
         row_count,
         ..Default::default()
       }
-    }))
+    })
   }
 
   async fn list_shards_segments(
@@ -67,7 +66,7 @@ impl ListSegmentsOp {
           let maybe_segment_meta = segment_guard.clone();
           Self::pb_segment_meta_from_option(maybe_segment_meta)
         } else {
-          MessageField::none()
+          None
         };
         segments.push(Segment {
           partition: partition.clone(),
@@ -82,7 +81,8 @@ impl ListSegmentsOp {
 }
 
 #[async_trait]
-impl ServerOp<GlobalTableReadLocks> for ListSegmentsOp {
+impl ServerOp for ListSegmentsOp {
+  type Locks = GlobalTableReadLocks;
   type Response = ListSegmentsResponse;
 
   fn get_key(&self) -> ServerResult<String> {
@@ -99,7 +99,7 @@ impl ServerOp<GlobalTableReadLocks> for ListSegmentsOp {
       table_meta,
     } = locks;
 
-    let partitioning = table_meta.schema.partitioning.clone();
+    let partitioning = table_meta.schema().partitioning.clone();
     let partitions = navigation::partitions_for_table(
       &server.opts.dir,
       table_name,

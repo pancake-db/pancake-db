@@ -14,31 +14,33 @@ repository = "https://github.com/pancake-db/pancake-db"
 async-std = "1.9.0"
 async-stream = "0.3.2"
 async-trait = "0.1.48"
-aws-sdk-s3 = {version="0.8.0", optional=true}
-chrono = {version="0.4", features=["serde"]}
+aws-sdk-s3 = {version = "0.8.0", optional = true}
+base64 = "0.13.0"
+chrono = {version = "0.4", features = ["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
 log = "0.4.14"
-pancake-db-core = "0.1.2"
-pancake-db-idl = "0.1.0"
-protobuf = "=3.0.0-alpha.2"
+pancake-db-core = {path = "../pancake-core/core"}
+pancake-db-idl = {path = "../pancake-idl/rust", features = ["service"]}
+prost = "0.9.0"
+prost-types = "0.9.0"
 rand = "0.8.4"
 serde_json = "1.0.59"
-serde = {version="1.0.117", features=["derive"]}
+serde = {version = "1.0.117", features = ["derive"]}
 structopt = "0.3.22"
-tokio = {version="1.2.0", features=["full"]}
+tokio = {version = "1.2.0", features = ["full"]}
 tokio-stream = "0.1.7"
-tower = {version="0.4.6", features=["make"]}
-tower-http = {version="0.1.1", features=["add-extension"]}
-uuid = {version="0.8.2", features=["serde", "v4"]}
+tonic = "0.6.2"
+tower = {version = "0.4.6", features = ["make"]}
+tower-http = {version = "0.1.1", features = ["add-extension"]}
+uuid = {version = "0.8.2", features = ["serde", "v4"]}
 warp = "0.3.1"
-base64 = "0.13.0"
 
 [features]
 aws = ["aws-sdk-s3"]
 
 [dev-dependencies]
-pancake-db-client = "0.1.1"
+pancake-db-client = {path = "../pancake-core/client"}
 
 [[example]]
 name = "publisher"

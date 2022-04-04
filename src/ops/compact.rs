@@ -156,7 +156,7 @@ impl CompactionOp {
     for (col_name, col_meta) in augmented_cols {
       col_codecs.insert(
         col_name.to_string(),
-        compression::choose_codec(col_meta.dtype.unwrap())
+        compression::choose_codec(col_meta.dtype())
       );
     }
 
@@ -307,7 +307,7 @@ impl CompactionOp {
       let old_compression_params = old_compaction.col_codecs
         .get(col_name);
       let compressor = compression::new_codec(
-        col_meta.dtype.unwrap(),
+        common::unwrap_dtype(col_meta.dtype)?,
         compaction.col_codecs.get(col_name).unwrap()
       )?;
       self.execute_col_compaction(
@@ -331,7 +331,8 @@ impl CompactionOp {
 }
 
 #[async_trait]
-impl ServerOp<TableReadLocks> for CompactionOp {
+impl ServerOp for CompactionOp {
+  type Locks = TableReadLocks;
   type Response = ();
 
   fn get_key(&self) -> ServerResult<String> {
@@ -382,7 +383,7 @@ impl ServerOp<TableReadLocks> for CompactionOp {
     if assessment.do_compaction {
       // important that segment meta is not locked during compaction
       // otherwise writes would be blocked
-      self.compact(server, &table_meta.schema, &assessment, deletion_meta_guard).await?;
+      self.compact(server, &table_meta.schema(), &assessment, deletion_meta_guard).await?;
 
       let mut segment_guard = segment_lock.write().await;
       let maybe_segment_meta = &mut *segment_guard;

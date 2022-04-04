@@ -51,7 +51,8 @@ pub struct CreateTableOp {
 }
 
 #[async_trait]
-impl ServerOp<TableWriteLocks> for CreateTableOp {
+impl ServerOp for CreateTableOp {
+  type Locks = TableWriteLocks;
   type Response = CreateTableResponse;
 
   fn get_key(&self) -> ServerResult<String> {
@@ -66,13 +67,12 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
     let req = &self.req;
     let table_name = &req.table_name;
     let dir = &server.opts.dir;
-    let schema_mode = self.req.mode.enum_value()
-      .map_err(|mode| ServerError::invalid(format!("unknown schema mode {}", mode)))?;
+    let schema_mode: SchemaMode = self.req.mode();
 
-    let schema = match &req.schema.0 {
+    let schema = match &req.schema {
       Some(s) => Ok(s),
       None => Err(ServerError::invalid("missing table schema")),
-    }?.as_ref();
+    }?;
 
     common::validate_entity_name_for_write("table name", &req.table_name)?;
     if schema.partitioning.len() > MAX_PARTITIONING_DEPTH {
@@ -109,25 +109,26 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
 
     match maybe_table {
       Some(table_meta) => {
+        let meta_schema = table_meta.schema();
         result.already_exists = true;
-        if !partitioning_matches(schema, &table_meta.schema) {
+        if !partitioning_matches(schema, &meta_schema) {
           return Err(ServerError::invalid("existing schema has different partitioning"))
         }
 
         match schema_mode {
-          SchemaMode::FAIL_IF_EXISTS => Err(ServerError::invalid("table already exists")),
-          SchemaMode::OK_IF_EXACT => {
-            if is_subset(&table_meta.schema, schema) && is_subset(schema, &table_meta.schema) {
+          SchemaMode::FailIfExists => Err(ServerError::invalid("table already exists")),
+          SchemaMode::OkIfExact => {
+            if is_subset(&meta_schema, schema) && is_subset(schema, &meta_schema) {
               Ok(result)
             } else {
               Err(ServerError::invalid("existing schema columns are not identical"))
             }
           },
-          SchemaMode::ADD_NEW_COLUMNS => {
-            if is_subset(&table_meta.schema, schema) {
+          SchemaMode::AddNewColumns => {
+            if is_subset(&meta_schema, schema) {
               let mut new_columns = HashMap::new();
               for (col_name, col_meta) in &schema.columns {
-                if !table_meta.schema.columns.contains_key(col_name) {
+                if !meta_schema.columns.contains_key(col_name) {
                   new_columns.insert(col_name.clone(), col_meta.clone());
                   result.columns_added.push(col_name.to_string());
                 }
@@ -158,7 +159,7 @@ impl ServerOp<TableWriteLocks> for CreateTableOp {
         let table_data_dir = dirs::table_data_dir(dir, table_name);
         common::create_if_new(table_data_dir).await?;
 
-        let table_meta = TableMetadata::new(schema.clone());
+        let table_meta = TableMetadata::new(&schema.clone());
         *maybe_table = Some(table_meta.clone());
         table_meta.overwrite(dir, table_name).await?;
         Ok(result)

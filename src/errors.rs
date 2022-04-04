@@ -1,10 +1,11 @@
 use std::fmt;
 use std::fmt::{Display, Formatter, Debug};
 use std::io;
+use chrono::format::ParseError;
 
 use warp::http::StatusCode;
-use pancake_db_core::errors::CoreErrorKind;
-use protobuf::ProtobufError;
+use pancake_db_core::errors::{CoreError, CoreErrorKind};
+use tonic::{Code, Status};
 
 #[derive(Clone, Debug)]
 pub struct ServerError {
@@ -146,19 +147,13 @@ impl ServerUpcastableError for io::Error {
   }
 }
 
-impl ServerUpcastableError for protobuf::json::ParseError {
-  fn kind(&self) -> ServerErrorKind {
-    ServerErrorKind::Internal
-  }
-}
-
 impl ServerUpcastableError for serde_json::Error {
   fn kind(&self) -> ServerErrorKind {
     ServerErrorKind::Internal
   }
 }
 
-impl ServerUpcastableError for pancake_db_core::errors::CoreError {
+impl ServerUpcastableError for CoreError {
   fn kind(&self) -> ServerErrorKind {
     match self.kind {
       CoreErrorKind::Corrupt => ServerErrorKind::Corrupt,
@@ -168,15 +163,15 @@ impl ServerUpcastableError for pancake_db_core::errors::CoreError {
   }
 }
 
-impl ServerUpcastableError for ProtobufError {
+impl ServerUpcastableError for std::num::ParseIntError {
   fn kind(&self) -> ServerErrorKind {
     ServerErrorKind::Internal
   }
 }
 
-impl ServerUpcastableError for std::num::ParseIntError {
+impl ServerUpcastableError for ParseError {
   fn kind(&self) -> ServerErrorKind {
-    ServerErrorKind::Internal
+    ServerErrorKind::Invalid
   }
 }
 
@@ -197,5 +192,18 @@ impl<T> Contextable for ServerResult<T> {
       },
     }
     self
+  }
+}
+
+impl From<ServerError> for Status {
+  fn from(err: ServerError) -> Self {
+    let code = match err.kind {
+      ServerErrorKind::Invalid => Code::InvalidArgument,
+      ServerErrorKind::DoesNotExist => Code::NotFound,
+      ServerErrorKind::TooManyRequests => Code::Unavailable,
+      ServerErrorKind::Corrupt => Code::Internal,
+      ServerErrorKind::Internal => Code::Internal,
+    };
+    Status::new(code, err.message)
   }
 }

@@ -1,13 +1,13 @@
 use async_trait::async_trait;
+use tokio::sync::OwnedRwLockWriteGuard;
 
 use crate::errors::{ServerError, ServerResult};
 use crate::locks::traits::ServerOpLocks;
+use crate::metadata::segment::SegmentMetadata;
+use crate::metadata::table::TableMetadata;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::metadata::segment::SegmentMetadata;
 use crate::types::SegmentKey;
-use tokio::sync::OwnedRwLockWriteGuard;
-use crate::metadata::table::TableMetadata;
 
 pub struct SegmentWriteLocks {
   pub table_meta: TableMetadata,
@@ -25,7 +25,7 @@ pub struct SegmentReadLocks {
 impl ServerOpLocks for SegmentWriteLocks {
   type Key = SegmentKey;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
@@ -39,13 +39,14 @@ impl ServerOpLocks for SegmentWriteLocks {
     }
 
     let table_meta = maybe_table.unwrap();
-    key.partition.check_against_schema(&table_meta.schema)?;
+    let schema = table_meta.schema();
+    key.partition.check_against_schema(&schema)?;
 
     let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
     let mut segment_guard = segment_meta_lock.write_owned().await;
     let maybe_segment_meta = &mut *segment_guard;
     if maybe_segment_meta.is_none() {
-      *maybe_segment_meta = Some(SegmentMetadata::new_from_schema(&table_meta.schema));
+      *maybe_segment_meta = Some(SegmentMetadata::new_from_schema(&schema));
     }
 
     let locks = SegmentWriteLocks {
@@ -62,7 +63,7 @@ impl ServerOpLocks for SegmentWriteLocks {
 impl ServerOpLocks for SegmentReadLocks {
   type Key = SegmentKey;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> {
@@ -76,7 +77,7 @@ impl ServerOpLocks for SegmentReadLocks {
     }
 
     let table_meta = maybe_table.unwrap();
-    key.partition.check_against_schema(&table_meta.schema)?;
+    key.partition.check_against_schema(&table_meta.schema())?;
 
     let segment_meta_lock = server.segment_metadata_cache.get_lock(&key).await?;
     let segment_guard = segment_meta_lock.read().await;

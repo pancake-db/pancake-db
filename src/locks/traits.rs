@@ -9,7 +9,7 @@ use crate::server::Server;
 pub trait ServerOpLocks: Send {
   type Key;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op,
   ) -> ServerResult<Op::Response> where Self: Sized;

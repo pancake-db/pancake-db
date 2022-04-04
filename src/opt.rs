@@ -17,7 +17,10 @@ pub struct Opt {
   pub dir: PathBuf,
 
   #[structopt(long, default_value = "3841")]
-  pub port: u16,
+  pub http_port: u16,
+
+  #[structopt(long, default_value = "3842")]
+  pub grpc_port: u16,
 
   #[structopt(long, default_value = "INFO")]
   pub log_level: LevelFilter,

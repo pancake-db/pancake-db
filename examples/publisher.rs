@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::time::SystemTime;
 
 use pancake_db_client::Client;
 use pancake_db_client::errors::ClientResult;
@@ -10,8 +11,7 @@ use pancake_db_idl::dml::{PartitionFieldValue, Row, WriteToPartitionRequest};
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta, Schema};
-use protobuf::{MessageField, ProtobufEnumOrUnknown};
-use protobuf::well_known_types::Timestamp;
+use prost_types::Timestamp;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use structopt::StructOpt;
@@ -33,7 +33,7 @@ struct Opt {
 }
 
 fn generate_row(rng: &mut ThreadRng, words: &[String], timestamp: Timestamp) -> Row {
-  let mut row = Row::new();
+  let mut row = Row::default();
   fn maybe_insert(rng: &mut ThreadRng, row: &mut Row, name: &str, value: field_value::Value) {
     if rng.gen_bool(0.5) {
       row.fields.insert(name.to_string(), FieldValue {
@@ -43,105 +43,105 @@ fn generate_row(rng: &mut ThreadRng, words: &[String], timestamp: Timestamp) -> 
     }
   }
   let b = rng.gen_bool(0.001);
-  maybe_insert(rng, &mut row, "bool_col", field_value::Value::bool_val(b));
+  maybe_insert(rng, &mut row, "bool_col", field_value::Value::BoolVal(b));
   let byte = rng.gen::<u8>();
   let mut bytes = Vec::new();
   for _ in 0..rng.gen_range(0..20) {
     bytes.push(byte);
   }
-  maybe_insert(rng, &mut row, "bytes_col", field_value::Value::bytes_val(bytes));
+  maybe_insert(rng, &mut row, "bytes_col", field_value::Value::BytesVal(bytes));
   let i = rng.gen_range(0..101);
-  maybe_insert(rng, &mut row, "int_col", field_value::Value::int64_val(i));
+  maybe_insert(rng, &mut row, "int_col", field_value::Value::Int64Val(i));
   let f = rng.gen_range(1.0..2.0);
-  maybe_insert(rng, &mut row, "float_col", field_value::Value::float64_val(f));
-  let mut list = RepeatedFieldValue::new();
+  maybe_insert(rng, &mut row, "float_col", field_value::Value::Float64Val(f));
+  let mut list = RepeatedFieldValue::default();
   for _ in 0..rng.gen_range(0..3) {
     let word_idx = rng.gen_range(0..words.len());
     list.vals.push(FieldValue {
-      value: Some(field_value::Value::string_val(words[word_idx].to_string())),
+      value: Some(field_value::Value::StringVal(words[word_idx].to_string())),
       ..Default::default()
     })
   }
-  maybe_insert(rng, &mut row, "list_col", field_value::Value::list_val(list));
-  maybe_insert(rng, &mut row, "timestamp_col", field_value::Value::timestamp_val(timestamp));
+  maybe_insert(rng, &mut row, "list_col", field_value::Value::ListVal(list));
+  maybe_insert(rng, &mut row, "timestamp_col", field_value::Value::TimestampVal(timestamp));
   row
 }
 
 fn make_performance_row(duration: Duration, concurrency: usize, errors: usize) -> Row {
-  let mut row = Row::new();
+  let mut row = Row::default();
   row.fields.insert("response_time".to_string(), FieldValue {
-    value: Some(field_value::Value::float32_val(duration.as_secs_f32())),
+    value: Some(field_value::Value::Float32Val(duration.as_secs_f32())),
     ..Default::default()
   });
   row.fields.insert("write_start_at".to_string(), FieldValue {
-    value: Some(field_value::Value::timestamp_val(Timestamp::now())),
+    value: Some(field_value::Value::TimestampVal(Timestamp::from(SystemTime::now()))),
     ..Default::default()
   });
   row.fields.insert("concurrency".to_string(), FieldValue {
-    value: Some(field_value::Value::int64_val(concurrency as i64)),
+    value: Some(field_value::Value::Int64Val(concurrency as i64)),
     ..Default::default()
   });
   row.fields.insert("errors".to_string(), FieldValue {
-    value: Some(field_value::Value::int64_val(errors as i64)),
+    value: Some(field_value::Value::Int64Val(errors as i64)),
     ..Default::default()
   });
   row
 }
 
 fn make_schema() -> Schema {
-  let mut schema = Schema::new();
+  let mut schema = Schema::default();
   schema.partitioning.insert("time_bucket".to_string(), PartitionMeta {
-    dtype: ProtobufEnumOrUnknown::new(PartitionDataType::TIMESTAMP_MINUTE),
+    dtype: PartitionDataType::TimestampMinute as i32,
     ..Default::default()
   });
   schema.columns.insert("bool_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::BOOL),
+    dtype: DataType::Bool as i32,
     ..Default::default()
   });
   schema.columns.insert("bytes_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::BYTES),
+    dtype: DataType::Bytes as i32,
     ..Default::default()
   });
   schema.columns.insert("float_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::FLOAT64),
+    dtype: DataType::Float64 as i32,
     ..Default::default()
   });
   schema.columns.insert("int_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+    dtype: DataType::Int64 as i32,
     ..Default::default()
   });
   schema.columns.insert("list_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::STRING),
+    dtype: DataType::String as i32,
     nested_list_depth: 1,
     ..Default::default()
   });
   schema.columns.insert("timestamp_col".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::TIMESTAMP_MICROS),
+    dtype: DataType::TimestampMicros as i32,
     ..Default::default()
   });
   schema
 }
 
 fn make_performance_schema() -> Schema {
-  let mut schema = Schema::new();
+  let mut schema = Schema::default();
   schema.partitioning.insert("action".to_string(), PartitionMeta {
-    dtype: ProtobufEnumOrUnknown::new(PartitionDataType::STRING),
+    dtype: PartitionDataType::String as i32,
     ..Default::default()
   });
   schema.columns.insert("response_time".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::FLOAT32),
+    dtype: DataType::Float32 as i32,
     ..Default::default()
   });
   schema.columns.insert("concurrency".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+    dtype: DataType::Int64 as i32,
     ..Default::default()
   });
   schema.columns.insert("errors".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+    dtype: DataType::Int64 as i32,
     ..Default::default()
   });
   schema.columns.insert("write_start_at".to_string(), ColumnMeta {
-    dtype: ProtobufEnumOrUnknown::new(DataType::TIMESTAMP_MICROS),
+    dtype: DataType::TimestampMicros as i32,
     ..Default::default()
   });
   schema
@@ -156,10 +156,20 @@ fn truncate_to_time_bucket(t: Timestamp) -> Timestamp {
   }
 }
 
+async fn write_to_partition(client: &Client, req: WriteToPartitionRequest) -> ClientResult<()> {
+  let mut client = client.clone();
+  client.write_to_partition(req).await?;
+  Ok(())
+}
+
 #[tokio::main]
 async fn main() -> ClientResult<()> {
   let opt: Opt = Opt::from_args();
-  let client = Client::from_ip_port(opt.host, opt.port);
+  let mut client = Client::connect(format!(
+    "http://{}:{}",
+    opt.host,
+    opt.port,
+  )).await?;
   let mut rng = rand::thread_rng();
 
   let delay_seconds = (opt.max_concurrency as f32 + 1.0) /
@@ -168,24 +178,24 @@ async fn main() -> ClientResult<()> {
 
   let mut performance_partition = HashMap::new();
   performance_partition.insert("action".to_string(), PartitionFieldValue {
-    value: Some(partition_field_value::Value::string_val("write".to_string())),
+    value: Some(partition_field_value::Value::StringVal("write".to_string())),
     ..Default::default()
   });
 
   let create_req = CreateTableRequest {
     table_name: TABLE_NAME.to_string(),
-    schema: MessageField::some(make_schema()),
-    mode: ProtobufEnumOrUnknown::new(SchemaMode::ADD_NEW_COLUMNS),
+    schema: Some(make_schema()),
+    mode: SchemaMode::AddNewColumns as i32,
     ..Default::default()
   };
-  client.api_create_table(&create_req).await?;
+  client.create_table(create_req).await?;
   let performance_create_req = CreateTableRequest {
     table_name: PERFORMANCE_TABLE_NAME.to_string(),
-    schema: MessageField::some(make_performance_schema()),
-    mode: ProtobufEnumOrUnknown::new(SchemaMode::ADD_NEW_COLUMNS),
+    schema: Some(make_performance_schema()),
+    mode: SchemaMode::AddNewColumns as i32,
     ..Default::default()
   };
-  client.api_create_table(&performance_create_req).await?;
+  client.create_table(performance_create_req).await?;
   let words: Vec<_> = String::from_utf8(std::fs::read("/usr/share/dict/words").unwrap()).unwrap()
     .split("\n")
     .map(|s| s.to_string())
@@ -208,10 +218,10 @@ async fn main() -> ClientResult<()> {
     }
     tokio::time::sleep_until(sleep_until).await;
     write_start_at = Instant::now();
-    let timestamp = Timestamp::now();
+    let timestamp = Timestamp::from(SystemTime::now());
     let mut partition = HashMap::new();
     partition.insert("time_bucket".to_string(), PartitionFieldValue {
-      value: Some(partition_field_value::Value::timestamp_val(truncate_to_time_bucket(timestamp.clone()))),
+      value: Some(partition_field_value::Value::TimestampVal(truncate_to_time_bucket(timestamp.clone()))),
       ..Default::default()
     });
     for _ in 0..concurrency {
@@ -226,7 +236,7 @@ async fn main() -> ClientResult<()> {
     }
     let mut write_futures = Vec::new();
     for i in 0..concurrency {
-      write_futures.push(client.api_write_to_partition(&write_reqs[i]));
+      write_futures.push(write_to_partition(&client, write_reqs[i].clone()));
     }
     let write_results = futures::future::join_all(write_futures).await;
     let errors = write_results.iter()
@@ -245,7 +255,7 @@ async fn main() -> ClientResult<()> {
       rows: vec![performance_row],
       ..Default::default()
     };
-    match client.api_write_to_partition(&performance_write_req).await {
+    match client.write_to_partition(performance_write_req).await {
       Ok(_) => (),
       Err(e) => {
         println!("error while reporting performance: {}", e);

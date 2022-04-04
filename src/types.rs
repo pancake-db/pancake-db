@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use pancake_db_idl::dml::partition_field_value::Value;
 use pancake_db_idl::dml::PartitionFieldValue;
 use pancake_db_idl::schema::Schema;
-use protobuf::well_known_types::Timestamp;
+use prost_types::Timestamp;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -98,13 +98,13 @@ impl NormalizedPartitionField {
 
   pub fn try_from_raw(name: &str, raw_field: &PartitionFieldValue) -> ServerResult<NormalizedPartitionField> {
     let value_result: ServerResult<NormalizedPartitionValue> = match raw_field.value.as_ref() {
-      Some(Value::string_val(x)) => {
+      Some(Value::StringVal(x)) => {
         common::validate_partition_string(x)?;
         Ok(NormalizedPartitionValue::String(x.clone()))
       },
-      Some(Value::int64_val(x)) => Ok(NormalizedPartitionValue::Int64(*x)),
-      Some(Value::bool_val(x)) => Ok(NormalizedPartitionValue::Bool(*x)),
-      Some(Value::timestamp_val(x)) => {
+      Some(Value::Int64Val(x)) => Ok(NormalizedPartitionValue::Int64(*x)),
+      Some(Value::BoolVal(x)) => Ok(NormalizedPartitionValue::Bool(*x)),
+      Some(Value::TimestampVal(x)) => {
         let minute = PartitionMinute::try_from(x)?;
         Ok(NormalizedPartitionValue::Minute(minute))
       },
@@ -156,7 +156,7 @@ impl NormalizedPartition {
       }
       let field = *maybe_field.unwrap();
       if !common::partition_dtype_matches_field(
-        &partition_meta.dtype.unwrap(),
+        &common::unwrap_partition_dtype(partition_meta.dtype)?,
         field
       ) {
         return Err(ServerError::invalid("partition field dtype does not match schema"));

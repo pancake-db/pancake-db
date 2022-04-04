@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
-use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use async_trait::async_trait;
 use pancake_db_core::encoding;
 use pancake_db_idl::dml::{FieldValue, ReadSegmentColumnRequest, ReadSegmentColumnResponse};
+use pancake_db_idl::dtype::DataType;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -22,21 +21,8 @@ enum FileType {
   Compact,
 }
 
-impl Display for FileType {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    write!(
-      f,
-      "{}",
-      match self {
-        FileType::Flush => "F",
-        FileType::Compact => "C",
-      }
-    )
-  }
-}
-
 #[derive(Clone, Debug)]
-struct SegmentColumnContinuation {
+pub struct SegmentColumnContinuation {
   version: u64,
   file_type: FileType,
   offset: u64,
@@ -52,59 +38,20 @@ impl SegmentColumnContinuation {
   }
 }
 
-impl Display for SegmentColumnContinuation {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    write!(
-      f,
-      "{}/{}/{}",
-      self.version,
-      self.file_type,
-      self.offset,
-    )
-  }
-}
-
-impl TryFrom<String> for SegmentColumnContinuation {
-  type Error = ServerError;
-
-  fn try_from(s: String) -> ServerResult<Self> {
-    let parts = s
-      .split('/')
-      .collect::<Vec<&str>>();
-
-    if parts.len() != 3 {
-      return Err(ServerError::invalid("invalid continuation token"));
-    }
-
-    let version = parts[0].parse::<u64>()
-      .map_err(|_| ServerError::invalid("invalid continuation token version"))?;
-
-    let file_type = if parts[1] == "F" {
-      FileType::Flush
-    } else if parts[1] == "C" {
-      FileType::Compact
-    } else {
-      return Err(ServerError::invalid("invalid continuation token file type"));
-    };
-
-    let offset = parts[2].parse::<u64>()
-      .map_err(|_| ServerError::invalid("invalid continuation token offset"))?;
-
-    Ok(SegmentColumnContinuation {
-      version,
-      file_type,
-      offset,
-    })
-  }
+pub struct ContinuedReadSegmentColumnResponse {
+  pub resp: ReadSegmentColumnResponse,
+  pub continuation: Option<SegmentColumnContinuation>,
 }
 
 pub struct ReadSegmentColumnOp {
   pub req: ReadSegmentColumnRequest,
+  pub continuation: Option<SegmentColumnContinuation>,
 }
 
 #[async_trait]
-impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
-  type Response = ReadSegmentColumnResponse;
+impl ServerOp for ReadSegmentColumnOp {
+  type Locks = SegmentReadLocks;
+  type Response = ContinuedReadSegmentColumnResponse;
 
   fn get_key(&self) -> ServerResult<SegmentKey> {
     let partition = NormalizedPartition::from_raw_fields(&self.req.partition)?;
@@ -115,12 +62,12 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     })
   }
 
-  async fn execute_with_locks(&self, server: &Server, locks: SegmentReadLocks) -> ServerResult<ReadSegmentColumnResponse> {
+  async fn execute_with_locks(&self, server: &Server, locks: SegmentReadLocks) -> ServerResult<Self::Response> {
     let req = &self.req;
     common::validate_entity_name_for_read("table name", &req.table_name)?;
     common::validate_segment_id(&req.segment_id)?;
     common::validate_entity_name_for_read("column name", &req.column_name)?;
-    if self.req.correlation_id.is_empty() && self.req.continuation_token.is_empty() {
+    if self.req.correlation_id.is_empty() && self.continuation.is_none() {
       return Err(ServerError::invalid("must provide either a correlation id or a continuation token"))
     }
 
@@ -131,7 +78,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     } = locks;
     let col_name = req.column_name.clone();
 
-    let augmented_columns = common::augmented_columns(&table_meta.schema);
+    let augmented_columns = common::augmented_columns(&table_meta.schema());
     let maybe_col_meta = augmented_columns
       .get(&col_name);
     if maybe_col_meta.is_none() {
@@ -140,7 +87,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     let col_meta = maybe_col_meta.unwrap();
 
     let is_explicit_column = segment_meta.explicit_columns.contains(&col_name);
-    let continuation = if req.continuation_token.is_empty() {
+    let continuation = if self.continuation.is_none() {
       let version = server.correlation_metadata_cache.get_correlated_read_version(
         &req.correlation_id,
         &segment_key,
@@ -156,7 +103,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
         SegmentColumnContinuation::new(FileType::Flush, version)
       }
     } else {
-      SegmentColumnContinuation::try_from(req.continuation_token.clone())?
+      self.continuation.clone().unwrap()
     };
 
     let compaction_key = segment_key.compaction_key(continuation.version);
@@ -178,12 +125,13 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
     } else {
       segment_meta.all_time_n - segment_meta.staged_n as u32
     };
-    let mut response = ReadSegmentColumnResponse {
+    let mut resp = ReadSegmentColumnResponse {
       row_count,
       deletion_count,
       implicit_nulls_count,
       ..Default::default()
     };
+    let mut new_continuation = None;
     match continuation.file_type {
       FileType::Compact => {
         let compressed_filename = dirs::compact_col_file(
@@ -202,7 +150,7 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           opts.read_page_byte_size,
         ).await?;
 
-        let next_token = if compressed_data.len() < opts.read_page_byte_size {
+        if compressed_data.len() < opts.read_page_byte_size {
           let has_flushed_data_future = common::file_exists(dirs::flush_col_file(
             dir,
             &compaction_key,
@@ -214,25 +162,22 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           ));
           let (has_flushed_data, has_staged_data) = tokio::join!(has_flushed_data_future, has_staged_data_future);
           if has_flushed_data? || has_staged_data? {
-            SegmentColumnContinuation {
+            new_continuation = Some(SegmentColumnContinuation {
               version: continuation.version,
               file_type: FileType::Flush,
               offset: 0,
-            }.to_string()
-          } else {
-            "".to_string()
+            });
           }
         } else {
-          SegmentColumnContinuation {
+          new_continuation = Some(SegmentColumnContinuation {
             version: continuation.version,
             file_type: FileType::Compact,
             offset: continuation.offset + compressed_data.len() as u64,
-          }.to_string()
+          });
         };
 
-        response.codec = codec;
-        response.data = compressed_data;
-        response.continuation_token = next_token;
+        resp.codec = codec;
+        resp.data = compressed_data;
       },
       FileType::Flush => {
         let uncompressed_filename = dirs::flush_col_file(
@@ -240,21 +185,14 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
           &compaction_key,
           &col_name,
         );
-        response.data = common::read_with_offset(
+        resp.data = common::read_with_offset(
           uncompressed_filename,
           continuation.offset,
           opts.read_page_byte_size,
         ).await?;
 
-        response.continuation_token = SegmentColumnContinuation {
-          version: continuation.version,
-          file_type: FileType::Flush,
-          offset: continuation.offset + response.data.len() as u64
-        }.to_string();
-        if response.data.len() < opts.read_page_byte_size {
+        if resp.data.len() < opts.read_page_byte_size {
           // we have reached the end of flushed data
-          response.continuation_token = "".to_string();
-
           // encode staged data on the fly and append it
           let staged_rows_path = dirs::staged_rows_path(dir, &segment_key);
           let staged_bytes = fs::read(&staged_rows_path).await?;
@@ -263,14 +201,24 @@ impl ServerOp<SegmentReadLocks> for ReadSegmentColumnOp {
             .map(|row| row.fields.get(&col_name).cloned().unwrap_or_default())
             .collect::<Vec<FieldValue>>();
           let encoder = encoding::new_encoder(
-            col_meta.dtype.enum_value_or_default(),
+            DataType::from_i32(col_meta.dtype).ok_or(ServerError::internal("unknown dtype"))?,
             col_meta.nested_list_depth as u8
           );
           let staged_bytes = encoder.encode(&staged_values)?;
-          response.data.extend(staged_bytes);
+          resp.data.extend(staged_bytes);
+        } else {
+          new_continuation = Some(SegmentColumnContinuation {
+            version: continuation.version,
+            file_type: FileType::Flush,
+            offset: continuation.offset + resp.data.len() as u64
+          });
         }
       }
     }
-    Ok(response)
+
+    Ok(ContinuedReadSegmentColumnResponse {
+      resp,
+      continuation: new_continuation,
+    })
   }
 }

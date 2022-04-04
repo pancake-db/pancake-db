@@ -1,28 +1,23 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
 use std::convert::TryInto;
-use std::io::{ErrorKind, SeekFrom};
+use std::io::{Cursor, ErrorKind, SeekFrom};
 use std::path::Path;
 use std::str::FromStr;
+use prost::Message;
 
-use hyper::body::Bytes;
-use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFieldComparison, PartitionFieldValue, PartitionFilter, Row};
+use pancake_db_idl::dml::{FieldValue, partition_filter, PartitionFieldComparison, PartitionFieldValue, PartitionFilter, RepeatedFieldValue, Row};
 use pancake_db_idl::dml::field_value::Value;
 use pancake_db_idl::dml::partition_field_comparison::Operator;
 use pancake_db_idl::dml::partition_field_value::Value as PartitionValue;
 use pancake_db_idl::dtype::DataType;
 use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::{ColumnMeta, Schema};
-use protobuf::{Message, ProtobufEnumOrUnknown};
-use protobuf::well_known_types::Timestamp;
-use serde::Serialize;
+use prost_types::Timestamp;
 use tokio::fs;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
-use warp::http::Response;
-use warp::Reply;
 
 use crate::constants::*;
 use crate::errors::{ServerError, ServerResult};
@@ -207,45 +202,51 @@ pub async fn read_or_empty(path: impl AsRef<Path>) -> ServerResult<Vec<u8>> {
 }
 
 pub fn field_matches_meta(fv: &FieldValue, dtype: DataType, nested_list_depth: u32) -> bool {
-  let checker = match dtype {
-    DataType::STRING => |v: &FieldValue| v.has_string_val(),
-    DataType::INT64 =>  |v: &FieldValue| v.has_int64_val(),
-    DataType::BOOL => |v: &FieldValue| v.has_bool_val(),
-    DataType::BYTES =>  |v: &FieldValue| v.has_bytes_val(),
-    DataType::FLOAT32 => |v: &FieldValue| v.has_float32_val(),
-    DataType::FLOAT64 => |v: &FieldValue| v.has_float64_val(),
-    DataType::TIMESTAMP_MICROS => |v: &FieldValue| v.has_timestamp_val(),
+  if fv.value.is_none() {
+    return true;
+  }
+  let checker = |sub_v: &Value| match (dtype, sub_v) {
+    (DataType::String, Value::StringVal(_)) => true,
+    (DataType::Int64, Value::Int64Val(_)) => true,
+    (DataType::Bool, Value::BoolVal(_)) => true,
+    (DataType::Bytes, Value::BytesVal(_)) => true,
+    (DataType::Float32, Value::Float32Val(_)) => true,
+    (DataType::Float64, Value::Float64Val(_)) => true,
+    (DataType::TimestampMicros, Value::TimestampVal(_)) => true,
+    _ => false,
   };
   traverse_check_field(fv, &checker, nested_list_depth)
 }
 
 fn traverse_check_field(
-  value: &FieldValue,
-  f: &dyn Fn(&FieldValue) -> bool,
+  fv: &FieldValue,
+  f: &dyn Fn(&Value) -> bool,
   expected_remaining_depth: u32,
 ) -> bool {
-  if value.has_list_val() {
-    if expected_remaining_depth == 0 {
-      return false;
-    }
-    for v in &value.get_list_val().vals {
-      if !traverse_check_field(v, f, expected_remaining_depth - 1) {
+  match &fv.value {
+    None => false,
+    Some(Value::ListVal(RepeatedFieldValue { vals })) => {
+      if expected_remaining_depth == 0 {
         return false;
       }
-    }
-    true
-  } else {
-    f(value) && expected_remaining_depth == 0
+      for v in vals {
+        if !traverse_check_field(v, f, expected_remaining_depth - 1) {
+          return false;
+        }
+      }
+      true
+    },
+    Some(sub_v) => f(sub_v) && expected_remaining_depth == 0,
   }
 }
 
 pub fn partition_dtype_matches_field(dtype: &PartitionDataType, field: &NormalizedPartitionField) -> bool {
   let value = field.value.clone();
   match dtype {
-    PartitionDataType::STRING => matches!(value, NormalizedPartitionValue::String(_)),
-    PartitionDataType::INT64 => matches!(value, NormalizedPartitionValue::Int64(_)),
-    PartitionDataType::BOOL => matches!(value, NormalizedPartitionValue::Bool(_)),
-    PartitionDataType::TIMESTAMP_MINUTE => matches!(value, NormalizedPartitionValue::Minute(_)),
+    PartitionDataType::String => matches!(value, NormalizedPartitionValue::String(_)),
+    PartitionDataType::Int64 => matches!(value, NormalizedPartitionValue::Int64(_)),
+    PartitionDataType::Bool => matches!(value, NormalizedPartitionValue::Bool(_)),
+    PartitionDataType::TimestampMinute => matches!(value, NormalizedPartitionValue::Minute(_)),
   }
 }
 
@@ -254,30 +255,30 @@ pub fn partition_field_value_from_string(
   dtype: PartitionDataType
 ) -> ServerResult<PartitionFieldValue> {
   let value = match dtype {
-    PartitionDataType::INT64 => {
+    PartitionDataType::Int64 => {
       let parsed: Result<i64, _> = value_str.parse();
       match parsed {
-        Ok(x) => Some(PartitionValue::int64_val(x)),
+        Ok(x) => Some(PartitionValue::Int64Val(x)),
         Err(_) => None
       }
     },
-    PartitionDataType::STRING => Some(PartitionValue::string_val(value_str.to_string())),
-    PartitionDataType::BOOL => {
+    PartitionDataType::String => Some(PartitionValue::StringVal(value_str.to_string())),
+    PartitionDataType::Bool => {
       if value_str == "true" {
-        Some(PartitionValue::bool_val(true))
+        Some(PartitionValue::BoolVal(true))
       } else if value_str == "false" {
-        Some(PartitionValue::bool_val(false))
+        Some(PartitionValue::BoolVal(false))
       } else {
         None
       }
     },
-    PartitionDataType::TIMESTAMP_MINUTE => {
-      // TODO
+    PartitionDataType::TimestampMinute => {
+      // TODO use formatted UTC times
       match value_str.parse::<i64>() {
         Ok(x) => {
-          let mut t = Timestamp::new();
+          let mut t: Timestamp = Timestamp::default();
           t.seconds = x * 60;
-          Some(PartitionValue::timestamp_val(t))
+          Some(PartitionValue::TimestampVal(t))
         },
         Err(_) => None,
       }
@@ -294,10 +295,10 @@ pub fn partition_field_value_from_string(
 
 fn cmp_partition_field_values(v0: &PartitionValue, v1: &PartitionValue) -> ServerResult<Ordering> {
   match (v0, v1) {
-    (PartitionValue::bool_val(x0), PartitionValue::bool_val(x1)) => Ok(x0.cmp(x1)),
-    (PartitionValue::string_val(x0), PartitionValue::string_val(x1)) => Ok(x0.cmp(x1)),
-    (PartitionValue::int64_val(x0), PartitionValue::int64_val(x1)) => Ok(x0.cmp(x1)),
-    (PartitionValue::timestamp_val(x0), PartitionValue::timestamp_val(x1)) =>
+    (PartitionValue::BoolVal(x0), PartitionValue::BoolVal(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::StringVal(x0), PartitionValue::StringVal(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::Int64Val(x0), PartitionValue::Int64Val(x1)) => Ok(x0.cmp(x1)),
+    (PartitionValue::TimestampVal(x0), PartitionValue::TimestampVal(x1)) =>
       Ok((x0.seconds, x0.nanos).cmp(&(x1.seconds, x1.nanos))),
     _ => Err(ServerError::invalid(format!(
       "partition filter value {:?} does not match data type of actual value {:?}",
@@ -325,12 +326,15 @@ fn field_satisfies_comparison_filter(name: &str, field: &PartitionFieldValue, co
     field.value.as_ref().unwrap(),
     &flat_comparison_value.unwrap(),
   )?;
-  Ok(match comparison.operator.enum_value_or_default() {
-    Operator::EQ_TO => matches!(ordering, Ordering::Equal),
-    Operator::LESS_OR_EQ_TO => !matches!(ordering, Ordering::Greater),
-    Operator::LESS => matches!(ordering, Ordering::Less),
-    Operator::GREATER_OR_EQ_TO => !matches!(ordering, Ordering::Less),
-    Operator::GREATER => matches!(ordering, Ordering::Greater),
+  let operator = Operator::from_i32(comparison.operator).ok_or(ServerError::invalid(
+    "uknown comparison operator"
+  ))?;
+  Ok(match operator {
+    Operator::EqTo => matches!(ordering, Ordering::Equal),
+    Operator::LessOrEqTo => !matches!(ordering, Ordering::Greater),
+    Operator::Less => matches!(ordering, Ordering::Less),
+    Operator::GreaterOrEqTo => !matches!(ordering, Ordering::Less),
+    Operator::Greater => matches!(ordering, Ordering::Greater),
   })
 }
 
@@ -338,7 +342,7 @@ pub fn satisfies_filters(partition: &HashMap<String, PartitionFieldValue>, filte
   for (name, pfv) in partition {
     for filter in filters {
       let satisfies = match &filter.value {
-        Some(partition_filter::Value::comparison(comparison)) => field_satisfies_comparison_filter(
+        Some(partition_filter::Value::Comparison(comparison)) => field_satisfies_comparison_filter(
           name,
           pfv,
           comparison,
@@ -353,78 +357,30 @@ pub fn satisfies_filters(partition: &HashMap<String, PartitionFieldValue>, filte
   Ok(true)
 }
 
-#[derive(Serialize)]
-struct ErrorResponse {
-  pub message: String,
+pub fn unwrap_dtype(dtype: i32) -> ServerResult<DataType> {
+  DataType::from_i32(dtype).ok_or_else(|| ServerError::internal(format!(
+    "unknown data type code {}",
+    dtype
+  )))
 }
 
-pub fn parse_pb<T: protobuf::Message>(body: Bytes) -> ServerResult<T> {
-  let body_string = String::from_utf8(body.to_vec()).map_err(|_|
-    ServerError::invalid("body bytes do not parse to string")
-  )?;
-  let req = protobuf::json::parse_from_str::<T>(&body_string).map_err(|_|
-    ServerError::invalid("body string does not parse to correct request format")
-  )?;
-  Ok(req)
-}
-
-pub fn pancake_result_into_warp<T: Message>(
-  server_res: ServerResult<T>,
-  route_name: &str,
-) -> Result<Box<dyn Reply>, Infallible> {
-  let options = protobuf::json::PrintOptions {
-    always_output_default_values: true,
-    ..Default::default()
-  };
-  let body_res = server_res.and_then(|pb|
-    protobuf::json::print_to_string_with_options(&pb, &options)
-      .map_err(|_| ServerError::internal("unable to write response as json"))
-  );
-  match body_res {
-    Ok(body) => {
-      log::info!(
-        "replying OK to {} request with {} bytes",
-        route_name,
-        body.len()
-      );
-      Ok(Box::new(Response::new(body)))
-    },
-    Err(e) => {
-      let reply = warp::reply::json(&ErrorResponse {
-        message: e.to_client_string(),
-      });
-      let status = e.kind.warp_status_code();
-      log::info!(
-        "replying ERR to {} request with status {}: {}",
-        route_name,
-        status,
-        e,
-      );
-      Ok(Box::new(warp::reply::with_status(
-        reply,
-        status,
-      )))
-    }
-  }
-}
-
-pub fn unwrap_dtype(dtype: ProtobufEnumOrUnknown<DataType>) -> ServerResult<DataType> {
-  dtype.enum_value()
-    .map_err(|enum_code|
-      ServerError::internal(format!("unknown data type code {}", enum_code))
-    )
+pub fn unwrap_partition_dtype(dtype: i32) -> ServerResult<PartitionDataType> {
+  PartitionDataType::from_i32(dtype).ok_or_else(|| ServerError::internal(format!(
+    "unknown partition data type code {}",
+    dtype
+  )))
 }
 
 pub fn byte_size_of_field(value: &FieldValue) -> usize {
   value.value.as_ref().map(|v| match v {
-    Value::int64_val(_) => 8,
-    Value::string_val(x) => LIST_LENGTH_BYTES + x.len(),
-    Value::bool_val(_) => 1,
-    Value::bytes_val(x) => LIST_LENGTH_BYTES + x.len(),
-    Value::float32_val(_) => 4,
-    Value::float64_val(_) => 8,
-    Value::timestamp_val(_) => 12,
-    Value::list_val(x) => {
+    Value::Int64Val(_) => 8,
+    Value::StringVal(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::BoolVal(_) => 1,
+    Value::BytesVal(x) => LIST_LENGTH_BYTES + x.len(),
+    Value::Float32Val(_) => 4,
+    Value::Float64Val(_) => 8,
+    Value::TimestampVal(_) => 12,
+    Value::ListVal(x) => {
       let mut res = LIST_LENGTH_BYTES;
       for v in &x.vals {
         res += byte_size_of_field(v);
@@ -508,7 +464,7 @@ pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
       let mut err_msgs = Vec::new();
       match schema.columns.get(col_name) {
         Some(col) => {
-          if !field_matches_meta(fv, col.dtype.unwrap(), col.nested_list_depth) {
+          if !field_matches_meta(fv, unwrap_dtype(col.dtype)?, col.nested_list_depth) {
             err_msgs.push(format!(
               "invalid field value for column {} with dtype {:?} and depth {}: {:?}",
               col_name,
@@ -542,9 +498,13 @@ pub fn validate_rows(schema: &Schema, rows: &[Row]) -> ServerResult<()> {
 pub fn rows_to_staged_bytes(rows: &[Row]) -> ServerResult<Vec<u8>> {
   let mut res = Vec::new();
   for row in rows {
-    let nondescript_bytes = row.write_to_bytes()?;
-    res.extend((nondescript_bytes.len() as u32).to_be_bytes());
-    res.extend(nondescript_bytes);
+    let mut buf = Vec::new();
+    row.encode(&mut buf).map_err(|e|
+      ServerError::internal(e.to_string())
+        .with_context("while serializing staged rows")
+    )?;
+    res.extend((buf.len() as u32).to_be_bytes());
+    res.extend(buf);
   }
   Ok(res)
 }
@@ -563,8 +523,9 @@ pub fn staged_bytes_to_rows(bytes: &[u8]) -> ServerResult<Vec<Row>> {
     if bytes.len() < i + len {
       return Err(ServerError::internal("corrupt staged bytes; cannot read proto bytes"));
     }
-    let row = Row::parse_from_bytes(&bytes[i..i+len])
-      .map_err(|e| ServerError::from(e).with_context("while parsing staged row bytes"))?;
+    let mut cursor = Cursor::new(&bytes[i..i + len]);
+    let row = Row::decode(&mut cursor)
+      .map_err(|e| ServerError::internal(e.to_string()).with_context("while parsing staged row bytes"))?;
     res.push(row);
     i += len;
   }
@@ -645,16 +606,24 @@ pub fn augmented_columns(schema: &Schema) -> HashMap<String, ColumnMeta> {
   res.insert(
     ROW_ID_COLUMN_NAME.to_string(),
     ColumnMeta {
-      dtype: ProtobufEnumOrUnknown::new(DataType::INT64),
+      dtype: DataType::Int64 as i32,
       ..Default::default()
     }
   );
   res.insert(
     WRITTEN_AT_COLUMN_NAME.to_string(),
     ColumnMeta {
-      dtype: ProtobufEnumOrUnknown::new(DataType::TIMESTAMP_MICROS),
+      dtype: DataType::TimestampMicros as i32,
       ..Default::default()
     }
   );
   res
 }
+
+pub fn grpc_result<T>(pancake_result: ServerResult<T>) -> Result<tonic::Response<T>, tonic::Status> {
+  match pancake_result {
+    Ok(resp) => Ok(tonic::Response::new(resp)),
+    Err(err) => Err(err.into()),
+  }
+}
+

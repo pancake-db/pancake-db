@@ -3,6 +3,7 @@ use tokio::sync::OwnedRwLockWriteGuard;
 use crate::Contextable;
 
 use crate::errors::ServerResult;
+use crate::locks::table::GlobalTableReadLocks;
 use crate::locks::traits::ServerOpLocks;
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
@@ -28,24 +29,29 @@ pub struct PartitionWriteLocks {
 impl ServerOpLocks for PartitionWriteLocks {
   type Key = PartitionKey;
 
-  async fn execute<Op: ServerOp<Self>>(
+  async fn execute<Op: ServerOp<Locks=Self>>(
     server: &Server,
     op: &Op
   ) -> ServerResult<Op::Response> {
+    let key = op.get_key()?;
+    let table_locks = GlobalTableReadLocks::obtain(server, &key.table_name).await?;
+
+    let locks = Self::from_table_read(table_locks, &key, server).await?;
+
+    op.execute_with_locks(server, locks).await
+  }
+}
+
+impl PartitionWriteLocks {
+  pub async fn from_table_read(
+    table_read_locks: GlobalTableReadLocks,
+    key: &PartitionKey,
+    server: &Server,
+  ) -> ServerResult<Self> {
+    let GlobalTableReadLocks { global_meta, table_meta } = table_read_locks;
     let dir = &server.opts.dir;
 
-    // global lock
-    let global_guard = server.global_metadata_lock.read().await;
-    let global_meta = global_guard.clone();
-
-    // table lock
-    let key: PartitionKey = op.get_key()?;
-    let table_name = &key.table_name;
-    let table_lock = server.table_metadata_cache.get_lock(table_name).await?;
-    let table_guard = table_lock.read().await;
-    let table_meta = common::unwrap_metadata(table_name, &*table_guard)?;
-
-    key.partition.check_against_schema(&table_meta.schema)?;
+    key.partition.check_against_schema(&table_meta.schema())?;
 
     // partition lock
     // Ideally we'd check the read lock, return it if Some, and otherwise acquire drop that read
@@ -94,19 +100,17 @@ impl ServerOpLocks for PartitionWriteLocks {
           "while creating new segment dirs for {}",
           segment_key,
         ))?;
-      let segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema);
+      let segment_meta = SegmentMetadata::new_from_schema(&table_meta.schema());
       *maybe_segment_meta = Some(segment_meta);
     }
 
-    let locks = PartitionWriteLocks {
+    Ok(PartitionWriteLocks {
       global_meta,
       table_meta,
       definitely_partition_guard: partition_guard,
       definitely_segment_guard: segment_guard,
       shard_id,
       segment_key,
-    };
-
-    op.execute_with_locks(server, locks).await
+    })
   }
 }

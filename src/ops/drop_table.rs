@@ -17,7 +17,8 @@ pub struct DropTableOp {
 }
 
 #[async_trait]
-impl ServerOp<TableWriteLocks> for DropTableOp {
+impl ServerOp for DropTableOp {
+  type Locks = TableWriteLocks;
   type Response = DropTableResponse;
 
   fn get_key(&self) -> ServerResult<String> {

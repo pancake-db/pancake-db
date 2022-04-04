@@ -11,3 +11,8 @@ pub mod compact;
 pub mod list_tables;
 pub mod delete_from_segment;
 pub mod read_segment_deletions;
+
+pub mod create_table_rest;
+pub mod drop_table_rest;
+pub mod list_tables_rest;
+pub mod write_to_partition_rest;
