@@ -20,8 +20,8 @@ chrono = {version = "0.4", features = ["serde"]}
 futures = "0.3.12"
 hyper = "0.14.9"
 log = "0.4.14"
-pancake-db-core = {path = "../pancake-core/core"}
-pancake-db-idl = {path = "../pancake-idl/rust", features = ["service"]}
+pancake-db-core = "0.2.0"
+pancake-db-idl = {version = "0.2.0", features = ["service"]}
 prost = "0.9.0"
 prost-types = "0.9.0"
 rand = "0.8.4"

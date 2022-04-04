@@ -1220,6 +1220,8 @@ dependencies = [
 [[package]]
 name = "pancake-db-core"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8308c9f13369d6c4b61daac550fda3cfb65763297b63ce51642495ee17f71520"
 dependencies = [
  "pancake-db-idl",
  "prost-types",
@@ -1230,6 +1232,8 @@ dependencies = [
 [[package]]
 name = "pancake-db-idl"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dd0994a57507883765be3c6af757314088dd2da16098c75f9098d5ad670ee57"
 dependencies = [
  "prost",
  "prost-types",
