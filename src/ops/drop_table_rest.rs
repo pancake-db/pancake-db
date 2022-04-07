@@ -25,7 +25,7 @@ impl ServerOp for DropTableRestOp {
       table_name: self.req.table_name.to_string()
     };
     DropTableOp { req: pb_req }.execute_with_locks(server, locks).await?;
-    Ok(EmptySerde)
+    Ok(EmptySerde {})
   }
 }
 

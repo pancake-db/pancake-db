@@ -12,7 +12,7 @@ To start a simple 1-node deployment, you can run
 ```bash
 git clone https://github.com/pancake-db/pancake-db && cd pancake-db
 docker build . -t pancake-db:latest # will take several minutes
-docker run --rm -p 3841:3841 -v $DATA_DIRECTORY:/pancake_db_data pancake-db:latest
+docker run --rm -p 3841:3841 -p 3842:3842 -v $DATA_DIRECTORY:/pancake_db_data pancake-db:latest
 ```
 
 Now you can write data either via HTTP or one of the client libraries. E.g.
@@ -22,20 +22,20 @@ curl -XPOST -H ContentType:application/json localhost:3841/rest/create_table -d 
   "tableName": "my_purchase_table",
   "schema": {
     "partitioning": {
-      "day": {"dtype": "TIMESTAMP_MINUTE"}
+      "day": {"dtype": "timestampMinute"}
     },
     "columns": {
-      "user_id": {"dtype": "STRING"},
-      "cents_amount": {"dtype": "INT64"}
+      "user_id": {"dtype": "string"},
+      "cents_amount": {"dtype": "int64"}
     }
   }
 }'
 
 # write a row
-curl -XPOST -H ContentType:application/json localhost:3841/rest/write_to_partition_simple -d '{
+curl -XPOST -H ContentType:application/json localhost:3841/rest/write_to_partition -d '{
   "tableName": "my_purchase_table",
   "partition": {
-    "day": {"timestamp": "2022-01-01T00:00:00Z"}
+    "day": "2022-01-01T00:00:00Z"
   },
   "rows": [{
     "user_id": "abc",
@@ -49,7 +49,7 @@ For instance,
 ```
 spark-shell --jars $MY_SPARK_PROJECT_UBERJAR
 
-scala> val t = spark.read.format("pancake").option("host", "localhost").option("port", 3841).option("table_name", "my_purchase_table").load()
+scala> val t = spark.read.format("pancake").option("host", "localhost").option("port", 3842).option("table_name", "my_purchase_table").load()
 
 scala> t.show()
 +-------+------------+-------------------+                                      
@@ -72,6 +72,8 @@ scala> spark.sql("select count(*) from t").show()
 ## Documentation
 
 See [the website's page](https://pancakedb.com/documentation/).
+
+See [the IDL repo](http://github.com/pancake-db/pancake-idl/) for an explanation of the API.
 
 ## Contributing
 

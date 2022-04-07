@@ -1210,6 +1210,8 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 [[package]]
 name = "pancake-db-client"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7908a24be4f860f4840c339dbc376ce1e29fcd7ba40d69c54cc790e8a2d13b37"
 dependencies = [
  "pancake-db-idl",
  "prost-types",

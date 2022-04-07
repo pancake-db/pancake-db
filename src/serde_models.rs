@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 
 use pancake_db_idl::ddl::create_table_request::SchemaMode;
 use pancake_db_idl::dtype::DataType;
@@ -7,6 +7,7 @@ use pancake_db_idl::partition_dtype::PartitionDataType;
 use pancake_db_idl::schema::{ColumnMeta, PartitionMeta, Schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
 use crate::errors::ServerError;
 use crate::ServerResult;
 
@@ -54,7 +55,7 @@ macro_rules! impl_serde_enum {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EmptySerde;
+pub struct EmptySerde {}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,10 +84,17 @@ impl_serde_enum!(
   {FailIfExists, OkIfExact, AddNewColumns}
 );
 
+impl Default for SchemaModeSerde {
+  fn default() -> Self {
+    Self::FailIfExists
+  }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetaSerde {
   pub dtype: DataTypeSerde,
+  #[serde(default)]
   pub nested_list_depth: u32,
 }
 
@@ -148,6 +156,7 @@ impl From<&SchemaSerde> for Schema {
 pub struct CreateTableRequestSerde {
   pub table_name: String,
   pub schema: SchemaSerde,
+  #[serde(default)]
   pub mode: SchemaModeSerde,
 }
 

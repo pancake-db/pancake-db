@@ -15,18 +15,29 @@ use crate::ops::traits::RestRoute;
 use crate::ops::write_to_partition_rest::WriteToPartitionRestOp;
 
 pub fn warp_filter() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-  warp::path("api")
+  warp::path("rest")
     .and(
-      warp_sub_filter::<CreateTableRestOp>()
-        .or(warp_sub_filter::<DropTableRestOp>())
-        .or(warp_sub_filter::<ListTablesRestOp>())
-        .or(warp_sub_filter::<WriteToPartitionRestOp>())
+      warp_post_filter::<CreateTableRestOp>()
+        .or(warp_post_filter::<DropTableRestOp>())
+        .or(warp_get_filter::<ListTablesRestOp>())
+        .or(warp_post_filter::<WriteToPartitionRestOp>())
     )
 }
 
-pub fn warp_sub_filter<Route>() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone
+// it's too hard to DRY when using warp filters
+pub fn warp_get_filter<Route>() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone
   where Route: RestRoute, Route::Response: Serialize {
   warp::get()
+    .and(warp::path(Route::ROUTE_NAME))
+    .and(warp::filters::ext::get::<Server>())
+    .and(warp::filters::body::bytes())
+    .and_then(warp_execute::<Route>)
+}
+
+// it's too hard to DRY when using warp filters
+pub fn warp_post_filter<Route>() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone
+  where Route: RestRoute, Route::Response: Serialize {
+  warp::post()
     .and(warp::path(Route::ROUTE_NAME))
     .and(warp::filters::ext::get::<Server>())
     .and(warp::filters::body::bytes())

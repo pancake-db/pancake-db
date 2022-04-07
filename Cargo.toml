@@ -40,7 +40,7 @@ warp = "0.3.1"
 aws = ["aws-sdk-s3"]
 
 [dev-dependencies]
-pancake-db-client = {path = "../pancake-core/client"}
+pancake-db-client = "0.2.0"
 
 [[example]]
 name = "publisher"
