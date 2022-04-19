@@ -11,7 +11,6 @@ use crate::locks::partition::PartitionWriteLocks;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadata;
 use crate::ops::traits::ServerOp;
-use crate::Opt;
 use crate::server::Server;
 use crate::types::{NormalizedPartition, PartitionKey, SegmentKey};
 use crate::utils::{common, navigation};
@@ -79,9 +78,7 @@ impl ServerOp for WriteToPartitionOp {
       &staged_bytes,
     ).await?;
 
-    Self::increment_segment_size(&full_rows, segment_meta, &server.opts, &segment_key).await?;
-
-    server.add_flush_candidate(segment_key).await;
+    Self::increment_segment_size(&full_rows, segment_meta, server, &segment_key).await?;
 
     Ok(WriteToPartitionResponse {..Default::default()})
   }
@@ -115,9 +112,10 @@ impl WriteToPartitionOp {
   async fn increment_segment_size(
     full_rows: &[Row],
     segment_meta: &mut SegmentMetadata,
-    opts: &Opt,
+    server: &Server,
     segment_key: &SegmentKey
   ) -> ServerResult<()> {
+    let opts = &server.opts;
     let n_rows = full_rows.len();
     if n_rows > 0 {
       let uncompressed_size = full_rows.iter()
@@ -132,7 +130,8 @@ impl WriteToPartitionOp {
         segment_meta.all_time_uncompressed_size >= opts.target_uncompressed_bytes_per_segment {
         segment_meta.is_cold = true;
       }
-      segment_meta.overwrite(&opts.dir, segment_key).await
+      segment_meta.overwrite(&opts.dir, segment_key).await;
+      server.add_flush_candidate(segment_key.clone())
     } else {
       Ok(())
     }
@@ -161,6 +160,6 @@ impl WriteToPartitionOp {
         segment_key,
       )
     }
-    Self::increment_segment_size(&staged_rows, segment_meta, &server.opts, segment_key).await
+    Self::increment_segment_size(&staged_rows, segment_meta, server, segment_key).await
   }
 }

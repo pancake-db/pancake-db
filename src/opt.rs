@@ -33,7 +33,7 @@ pub struct Opt {
   #[structopt(long, default_value = "5000000")]
   pub target_rows_per_segment: u32,
 
-  #[structopt(long, default_value = "260000000")] // just under 256MB
+  #[structopt(long, default_value = "130000000")] // just under 128MB
   pub target_uncompressed_bytes_per_segment: u64,
 
   // the fewest number of rows in a segment before compaction
@@ -62,7 +62,7 @@ pub struct Opt {
   #[structopt(long, default_value = "1800")]
   pub compact_as_constant_seconds: i64,
 
-  #[structopt(long, default_value = "4194304")]
+  #[structopt(long, default_value = "2097152")]
   pub read_page_byte_size: usize,
 }
 
