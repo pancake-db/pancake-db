@@ -12,7 +12,8 @@ To start a simple 1-node deployment, you can run
 ```bash
 git clone https://github.com/pancake-db/pancake-db && cd pancake-db
 docker build . -t pancake-db:latest # will take several minutes
-docker run --rm -p 3841:3841 -p 3842:3842 -v $DATA_DIRECTORY:/pancake_db_data pancake-db:latest
+mkdir pancake_db_data
+docker run --rm -p 3841:3841 -p 3842:3842 -v pancake_db_data:/pancake_db_data pancake-db:latest
 ```
 
 Now you can write data either via HTTP or one of the client libraries. E.g.

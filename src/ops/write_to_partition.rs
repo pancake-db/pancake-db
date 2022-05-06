@@ -130,11 +130,10 @@ impl WriteToPartitionOp {
         segment_meta.all_time_uncompressed_size >= opts.target_uncompressed_bytes_per_segment {
         segment_meta.is_cold = true;
       }
-      segment_meta.overwrite(&opts.dir, segment_key).await;
-      server.add_flush_candidate(segment_key.clone())
-    } else {
-      Ok(())
+      segment_meta.overwrite(&opts.dir, segment_key).await?;
+      server.add_flush_candidate(segment_key.clone()).await;
     }
+    Ok(())
   }
 
   pub async fn recover(
