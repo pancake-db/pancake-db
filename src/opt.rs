@@ -108,4 +108,19 @@ impl Opt {
       panic!("suspiciously short length for dir; please choose a more specific path")
     }
   }
+
+  pub fn from_waterfall() -> Self {
+    let maybe_config_path = std::env::var("PANCAKE_CONFIG");
+    let conf_arg_strs = match maybe_config_path {
+      Ok(config_path) => {
+        log::info!("loading some args from {}", config_path);
+        vec![""]
+      },
+      Err(_) => vec![]
+    };
+    let cmd_arg_strs: Vec<_> = std::env::args().map(|a| a.as_str()).collect();
+    let arg_strs = conf_arg_strs.iter().chain(cmd_arg_strs);
+
+    Self::from_iter(arg_strs)
+  }
 }
