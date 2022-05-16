@@ -108,4 +108,45 @@ impl Opt {
       panic!("suspiciously short length for dir; please choose a more specific path")
     }
   }
+
+  pub fn from_waterfall() -> Self {
+    let maybe_config_path = std::env::var("PANCAKE_CONFIG");
+    let conf_arg_strs = match maybe_config_path {
+      Ok(config_path) => {
+        log::info!("loading some args from {}", config_path);
+        let toml_bytes = std::fs::read(config_path)
+          .expect("could not read config file");
+        let toml_str = String::from_utf8(toml_bytes)
+          .expect("non-utf8 config file");
+        let config = toml_str.parse::<toml::Value>()
+          .expect("config file contains invalid TOML");
+        match config {
+          toml::Value::Table(table) => {
+            table.iter()
+              .map(|(key, val)| {
+                let val_str = match val {
+                  toml::Value::String(s) => s.to_string(),
+                  toml::Value::Boolean(b) => b.to_string(),
+                  toml::Value::Integer(i) => i.to_string(),
+                  toml::Value::Float(f) => f.to_string(),
+                  _ => panic!("no nested TOML config values allowed")
+                };
+                format!(
+                  "--{}={}",
+                  key,
+                  val_str,
+                )
+              })
+              .collect::<Vec<_>>()
+          },
+          _ => panic!("config file TOML must be a table")
+        }
+      },
+      Err(_) => vec![]
+    };
+    let cmd_arg_strs: Vec<_> = std::env::args().collect();
+    let arg_strs = cmd_arg_strs.iter().chain(&conf_arg_strs).collect::<Vec<_>>();
+
+    Self::from_iter(arg_strs)
+  }
 }
