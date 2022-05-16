@@ -5,7 +5,6 @@ use std::net::{SocketAddr, TcpListener};
 
 use hyper::Server as HyperServer;
 use pancake_db_idl::service::pancake_db_server::PancakeDbServer;
-use structopt::StructOpt;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
@@ -31,7 +30,7 @@ static LOGGER: Logger = Logger;
 
 #[tokio::main]
 async fn main() -> ServerResult<()> {
-  let opts: Opt = Opt::from_args();
+  let opts: Opt = Opt::from_waterfall();
   opts.validate();
   log::set_max_level(opts.log_level);
   log::set_logger(&LOGGER)
