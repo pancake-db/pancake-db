@@ -144,6 +144,6 @@ pub fn stream_segment_ids_for_partition(
 
 pub async fn create_segment_dirs(segment_dir: &Path) -> ServerResult<()> {
   common::create_if_new(segment_dir).await?;
-  common::create_if_new(segment_dir.join("v0")).await?;
+  common::create_if_new(segment_dir.join("v_0")).await?;
   Ok(())
 }

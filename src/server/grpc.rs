@@ -21,31 +21,31 @@ use crate::utils::read_segment_column_stream::ReadSegmentColumnStream;
 #[async_trait::async_trait]
 impl PancakeDb for Server {
   async fn alter_table(&self, request: Request<AlterTableRequest>) -> Result<Response<AlterTableResponse>, Status> {
-    grpc_result(AlterTableOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(AlterTableOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn create_table(&self, request: Request<CreateTableRequest>) -> Result<Response<CreateTableResponse>, Status> {
-    grpc_result(CreateTableOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(CreateTableOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn drop_table(&self, request: Request<DropTableRequest>) -> Result<Response<DropTableResponse>, Status> {
-    grpc_result(DropTableOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(DropTableOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn get_schema(&self, request: Request<GetSchemaRequest>) -> Result<Response<GetSchemaResponse>, Status> {
-    grpc_result(GetSchemaOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(GetSchemaOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn list_tables(&self, request: Request<ListTablesRequest>) -> Result<Response<ListTablesResponse>, Status> {
-    grpc_result(ListTablesOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(ListTablesOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn delete_from_segment(&self, request: Request<DeleteFromSegmentRequest>) -> Result<Response<DeleteFromSegmentResponse>, Status> {
-    grpc_result(DeleteFromSegmentOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(DeleteFromSegmentOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn list_segments(&self, request: Request<ListSegmentsRequest>) -> Result<Response<ListSegmentsResponse>, Status> {
-    grpc_result(ListSegmentsOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(ListSegmentsOp { req: request.into_inner() }.execute(self).await)
   }
 
   type ReadSegmentColumnStream = ReadSegmentColumnStream;
@@ -55,10 +55,10 @@ impl PancakeDb for Server {
   }
 
   async fn read_segment_deletions(&self, request: Request<ReadSegmentDeletionsRequest>) -> Result<Response<ReadSegmentDeletionsResponse>, Status> {
-    grpc_result(ReadSegmentDeletionsOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(ReadSegmentDeletionsOp { req: request.into_inner() }.execute(self).await)
   }
 
   async fn write_to_partition(&self, request: Request<WriteToPartitionRequest>) -> Result<Response<WriteToPartitionResponse>, Status> {
-    grpc_result(WriteToPartitionOp { req: request.into_inner() }.execute(&self).await)
+    grpc_result(WriteToPartitionOp { req: request.into_inner() }.execute(self).await)
   }
 }

@@ -18,6 +18,26 @@ impl MetadataKey for SegmentKey {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub enum VersionCoords {
+  Local {
+    path: PathBuf,
+  },
+  S3 {
+    endpoint: Option<String>,
+    bucket: String,
+    key: String,
+  }
+}
+
+// for initialization, it's ok if we use trivial version coords
+// the user only needs them when they're on S3
+impl Default for VersionCoords {
+  fn default() -> Self {
+    VersionCoords::Local { path: PathBuf::default() }
+  }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SegmentMetadata {
   pub all_time_n: u32, // only increases, includes deleted
   pub all_time_deleted_n: u32, // only increases
@@ -31,6 +51,7 @@ pub struct SegmentMetadata {
   pub explicit_columns: HashSet<String>,
   pub deletion_id: u64,
   pub is_cold: bool, // future writes will not go to cold segments
+  pub read_coords: VersionCoords,
 }
 
 impl_metadata_serde_json!(SegmentMetadata);
@@ -59,6 +80,7 @@ impl SegmentMetadata {
       explicit_columns,
       deletion_id: 0,
       is_cold: false,
+      read_coords: VersionCoords::default(),
     }
   }
 

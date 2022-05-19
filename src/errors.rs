@@ -1,11 +1,12 @@
 use std::fmt;
-use std::fmt::{Display, Formatter, Debug};
+use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use chrono::format::ParseError;
 
-use warp::http::StatusCode;
+use chrono::format::ParseError;
+use http::uri::InvalidUri;
 use pancake_db_core::errors::{CoreError, CoreErrorKind};
 use tonic::{Code, Status};
+use warp::http::StatusCode;
 
 #[derive(Clone, Debug)]
 pub struct ServerError {
@@ -170,6 +171,12 @@ impl ServerUpcastableError for std::num::ParseIntError {
 }
 
 impl ServerUpcastableError for ParseError {
+  fn kind(&self) -> ServerErrorKind {
+    ServerErrorKind::Invalid
+  }
+}
+
+impl ServerUpcastableError for InvalidUri {
   fn kind(&self) -> ServerErrorKind {
     ServerErrorKind::Invalid
   }

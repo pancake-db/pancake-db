@@ -23,8 +23,12 @@ pub fn flush_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str
   version_dir(dir, compaction_key).join(format!("f_{}", col_name))
 }
 
+pub fn compact_col_filename(col_name: &str) -> PathBuf {
+  PathBuf::from(format!("c_{}", col_name))
+}
+
 pub fn compact_col_file(dir: &Path, compaction_key: &CompactionKey, col_name: &str) -> PathBuf {
-  version_dir(dir, compaction_key).join(format!("c_{}", col_name))
+  version_dir(dir, compaction_key).join(compact_col_filename(col_name))
 }
 
 pub fn partition_dir(dir: &Path, table_partition: &PartitionKey) -> PathBuf {
@@ -47,7 +51,7 @@ pub fn segment_dir(dir: &Path, segment_key: &SegmentKey) -> PathBuf {
 
 pub fn relative_version_dir(compaction_key: &CompactionKey) -> PathBuf {
   relative_segment_dir(&compaction_key.segment_key())
-    .join(format!("v{}", compaction_key.version))
+    .join(format!("v_{}", compaction_key.version))
 }
 
 pub fn version_dir(dir: &Path, compaction_key: &CompactionKey) -> PathBuf {

@@ -17,14 +17,14 @@ use rand::rngs::ThreadRng;
 use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
-const TABLE_NAME: &str = "publisher_test";
+const TABLE_NAME: &str = "publisher";
 const PERFORMANCE_TABLE_NAME: &str = "publisher_performance";
 
 #[derive(Clone, Debug, StructOpt)]
 struct Opt {
   #[structopt(long, default_value="127.0.0.1")]
   host: IpAddr,
-  #[structopt(long, default_value="3841")]
+  #[structopt(long, default_value="3842")]
   port: u16,
   #[structopt(long, default_value="5")]
   max_concurrency: usize,

@@ -28,12 +28,10 @@ impl ServerOp for ListTablesOp {
     for info in server.internal_list_tables().await? {
       tables.push(TableInfo {
         table_name: info.name,
-        ..Default::default()
       })
     }
     Ok(ListTablesResponse {
       tables,
-      ..Default::default()
     })
   }
 }

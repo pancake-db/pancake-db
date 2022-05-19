@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use aws_sdk_s3::Client;
 
 use futures::{Future, pin_mut};
 use futures::StreamExt;
@@ -26,6 +27,7 @@ mod read;
 mod recovery;
 mod misc;
 mod grpc;
+mod s3;
 
 const FLUSH_SECONDS: u64 = 10;
 
@@ -84,6 +86,7 @@ pub struct Server {
   pub opts: Opt,
   background: Background,
   activity: Activity,
+  s3_client: Arc<RwLock<Option<Client>>>,
   pub global_metadata_lock: Arc<RwLock<GlobalMetadata>>,
   pub table_metadata_cache: TableMetadataCache,
   pub partition_metadata_cache: PartitionMetadataCache,
@@ -198,6 +201,7 @@ impl Server {
       compaction_cache,
       background: Background::default(),
       activity: Activity::default(),
+      s3_client: Arc::new(RwLock::new(None)),
     }
   }
 

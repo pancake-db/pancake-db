@@ -61,7 +61,7 @@ impl ServerOp for DropTableOp {
     // flag in the metadata, crash, and leave all the data on disk, unable to resume
     Self::remove_data(dir, table_name).await?;
 
-    Ok(DropTableResponse {..Default::default()})
+    Ok(DropTableResponse {})
   }
 }
 

@@ -18,7 +18,7 @@ use crate::metadata::deletion::DeletionMetadata;
 use crate::metadata::PersistentMetadata;
 use crate::metadata::segment::SegmentMetadata;
 use crate::types::{CompactionKey, SegmentKey};
-use crate::utils::common;
+use crate::utils::{common, object_storage};
 use crate::utils::dirs;
 
 struct CompactionAssessment {
@@ -51,7 +51,7 @@ impl CompactionOp {
       let parts: Vec<&str> = fname
         .to_str()
         .unwrap()
-        .split('v')
+        .split('_')
         .collect::<Vec<&str>>();
 
       if parts.len() != 2 {
@@ -186,9 +186,16 @@ impl CompactionOp {
     ).await?;
     let bytes = compressor.compress(&values, col_meta.nested_list_depth as u8)?;
     let compaction_key = self.key.compaction_key(assessment.new_version);
-    common::append_to_file(
-      &dirs::compact_col_file(&server.opts.dir, &compaction_key, col_name),
-      bytes.as_slice(),
+    let version_coords = object_storage::version_coords(
+      &server.opts,
+      &compaction_key,
+      assessment.warrants_object_storage,
+    );
+    object_storage::write_col(
+      server,
+      &bytes,
+      &version_coords,
+      col_name,
     ).await?;
     Ok(())
   }
@@ -351,10 +358,12 @@ impl ServerOp for CompactionOp {
     } = locks;
     let opts = &server.opts;
 
-    let deletion_lock = server.deletion_metadata_cache.get_lock(&self.key)
-      .await?;
-    let segment_lock = server.segment_metadata_cache.get_lock(&self.key)
-      .await?;
+    let deletion_lock = server.deletion_metadata_cache.get_lock(
+      &self.key
+    ).await?;
+    let segment_lock = server.segment_metadata_cache.get_lock(
+      &self.key
+    ).await?;
 
     // we'll manually drop the deletion lock when we don't need it
     let deletion_meta_guard = deletion_lock.write_owned().await;
@@ -394,6 +403,11 @@ impl ServerOp for CompactionOp {
       segment_meta.read_version = assessment.new_version;
       segment_meta.write_versions = vec![assessment.new_version];
       segment_meta.read_version_since = Utc::now();
+      segment_meta.read_coords = object_storage::version_coords(
+        opts,
+        &self.key.compaction_key(assessment.new_version),
+        assessment.warrants_object_storage,
+      );
       segment_meta.overwrite(&opts.dir, &self.key).await?;
     }
 

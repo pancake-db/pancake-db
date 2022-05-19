@@ -73,8 +73,6 @@ impl ServerOp for AlterTableOp {
     new_table_meta.overwrite(dir, table_name).await?;
     *maybe_table_guard = Some(new_table_meta);
 
-    Ok(AlterTableResponse {
-      ..Default::default()
-    })
+    Ok(AlterTableResponse {})
   }
 }

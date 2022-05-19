@@ -57,15 +57,15 @@ impl PartitionWriteLocks {
     // Ideally we'd check the read lock, return it if Some, and otherwise acquire drop that read
     // lock, acquire a write lock, overwrite, drop the write lock, and acquire a read lock again.
     // But for now just get a write lock for simplicity at the cost of some contention.
-    let partition_lock = server.partition_metadata_cache.get_lock(&key)
+    let partition_lock = server.partition_metadata_cache.get_lock(key)
       .await?;
     let mut partition_guard = partition_lock.write_owned().await;
     let partition_meta = match &mut *partition_guard {
       Some(meta) => meta,
       None => {
         let partition_meta = PartitionMetadata::new(global_meta.n_shards_log);
-        common::create_if_new(&dirs::partition_dir(dir, &key)).await?;
-        partition_meta.overwrite(dir, &key).await?;
+        common::create_if_new(&dirs::partition_dir(dir, key)).await?;
+        partition_meta.overwrite(dir, key).await?;
         *partition_guard = Some(partition_meta.clone());
         partition_guard.as_mut().unwrap()
       },
@@ -74,7 +74,7 @@ impl PartitionWriteLocks {
     let shard_id = ShardId::randomly_select(
       global_meta.n_shards_log,
       1, // TODO use table_meta
-      &key,
+      key,
       partition_meta.sharding_denominator_log,
     );
     let maybe_active_segment_id = partition_meta.get_active_segment_id(&shard_id);
@@ -85,7 +85,7 @@ impl PartitionWriteLocks {
       None => {
         let segment_id = shard_id.generate_segment_id();
         partition_meta.active_segment_ids.push(segment_id);
-        partition_meta.overwrite(dir, &key).await?;
+        partition_meta.overwrite(dir, key).await?;
         segment_id
       }
     };

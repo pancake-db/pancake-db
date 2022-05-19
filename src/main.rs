@@ -32,8 +32,8 @@ static LOGGER: Logger = Logger;
 async fn main() -> ServerResult<()> {
   let opts: Opt = Opt::from_waterfall();
   opts.validate();
-  log::set_max_level(opts.log_level);
   log::set_logger(&LOGGER)
+    .map(|_| log::set_max_level(opts.log_level))
     .expect("unable to initialize logging");
 
   let server = Server::new(opts.clone());

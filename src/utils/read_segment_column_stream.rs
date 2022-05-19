@@ -26,8 +26,8 @@ pub fn create_stream(req: ReadSegmentColumnRequest, server: Server) -> ReadSegme
       Ok(ok_resp) => Ok(ok_resp.resp.clone()),
       Err(e) => Err(e.clone().into()),
     };
-    if resp.is_ok() {
-      let maybe_continuation = resp.unwrap().continuation;
+    if let Ok(resp) = resp {
+      let maybe_continuation = resp.continuation;
       match maybe_continuation {
         Some(continuation) => {
           state.continuation = Some(continuation);

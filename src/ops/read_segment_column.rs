@@ -201,7 +201,8 @@ impl ServerOp for ReadSegmentColumnOp {
             .map(|row| row.fields.get(&col_name).cloned().unwrap_or_default())
             .collect::<Vec<FieldValue>>();
           let encoder = encoding::new_encoder(
-            DataType::from_i32(col_meta.dtype).ok_or(ServerError::internal("unknown dtype"))?,
+            DataType::from_i32(col_meta.dtype)
+              .ok_or_else(|| ServerError::internal("unknown dtype"))?,
             col_meta.nested_list_depth as u8
           );
           let staged_bytes = encoder.encode(&staged_values)?;

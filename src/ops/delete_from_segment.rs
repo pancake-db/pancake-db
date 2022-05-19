@@ -149,7 +149,6 @@ impl ServerOp for DeleteFromSegmentOp {
 
     Ok(DeleteFromSegmentResponse {
       n_deleted,
-      ..Default::default()
     })
   }
 }

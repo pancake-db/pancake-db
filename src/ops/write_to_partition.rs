@@ -80,7 +80,7 @@ impl ServerOp for WriteToPartitionOp {
 
     Self::increment_segment_size(&full_rows, segment_meta, server, &segment_key).await?;
 
-    Ok(WriteToPartitionResponse {..Default::default()})
+    Ok(WriteToPartitionResponse {})
   }
 }
 
@@ -98,7 +98,6 @@ impl WriteToPartitionOp {
       let mut full = row.clone();
       let row_id_fv = FieldValue {
         value: Some(Value::Int64Val(row_id as i64)),
-        ..Default::default()
       };
       full.fields.insert(ROW_ID_COLUMN_NAME.to_string(), row_id_fv);
       full.fields.insert(WRITTEN_AT_COLUMN_NAME.to_string(), written_at.clone());

@@ -205,16 +205,15 @@ pub fn field_matches_meta(fv: &FieldValue, dtype: DataType, nested_list_depth: u
   if fv.value.is_none() {
     return true;
   }
-  let checker = |sub_v: &Value| match (dtype, sub_v) {
-    (DataType::String, Value::StringVal(_)) => true,
-    (DataType::Int64, Value::Int64Val(_)) => true,
-    (DataType::Bool, Value::BoolVal(_)) => true,
-    (DataType::Bytes, Value::BytesVal(_)) => true,
-    (DataType::Float32, Value::Float32Val(_)) => true,
-    (DataType::Float64, Value::Float64Val(_)) => true,
-    (DataType::TimestampMicros, Value::TimestampVal(_)) => true,
-    _ => false,
-  };
+  let checker = |sub_v: &Value| matches!((dtype, sub_v),
+    (DataType::String, Value::StringVal(_)) |
+    (DataType::Int64, Value::Int64Val(_)) |
+    (DataType::Bool, Value::BoolVal(_)) |
+    (DataType::Bytes, Value::BytesVal(_)) |
+    (DataType::Float32, Value::Float32Val(_)) |
+    (DataType::Float64, Value::Float64Val(_)) |
+    (DataType::TimestampMicros, Value::TimestampVal(_))
+  );
   traverse_check_field(fv, &checker, nested_list_depth)
 }
 
@@ -276,8 +275,10 @@ pub fn partition_field_value_from_string(
       // TODO use formatted UTC times
       match value_str.parse::<i64>() {
         Ok(x) => {
-          let mut t: Timestamp = Timestamp::default();
-          t.seconds = x * 60;
+          let t = Timestamp {
+            seconds: x * 60,
+            nanos: 0,
+          };
           Some(PartitionValue::TimestampVal(t))
         },
         Err(_) => None,
@@ -289,7 +290,6 @@ pub fn partition_field_value_from_string(
   }
   Ok(PartitionFieldValue {
     value,
-    ..Default::default()
   })
 }
 
@@ -326,9 +326,10 @@ fn field_satisfies_comparison_filter(name: &str, field: &PartitionFieldValue, co
     field.value.as_ref().unwrap(),
     &flat_comparison_value.unwrap(),
   )?;
-  let operator = Operator::from_i32(comparison.operator).ok_or(ServerError::invalid(
-    "uknown comparison operator"
-  ))?;
+  let operator = Operator::from_i32(comparison.operator)
+    .ok_or_else(|| ServerError::invalid(
+      "uknown comparison operator"
+    ))?;
   Ok(match operator {
     Operator::EqTo => matches!(ordering, Ordering::Equal),
     Operator::LessOrEqTo => !matches!(ordering, Ordering::Greater),

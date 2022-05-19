@@ -24,7 +24,6 @@ impl ServerOp for GetSchemaOp {
     let TableReadLocks { table_meta } = locks;
     Ok(GetSchemaResponse {
       schema: Some(table_meta.schema()),
-      ..Default::default()
     })
   }
 }

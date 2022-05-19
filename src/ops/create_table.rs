@@ -138,7 +138,6 @@ impl ServerOp for CreateTableOp {
                   req: AlterTableRequest {
                     table_name: req.table_name.to_string(),
                     new_columns,
-                    ..Default::default()
                   }
                 };
                 alter_table_op.execute_with_locks(server, locks).await?;

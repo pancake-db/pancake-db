@@ -22,6 +22,7 @@ pub struct Compaction {
   // the compacted data)
   pub all_time_omitted_n: u32,
   pub col_codecs: HashMap<String, String>,
+
 }
 
 impl_metadata_serde_json!(Compaction);

@@ -67,30 +67,38 @@ pub struct Opt {
 }
 
 #[derive(Clone, Copy, Debug, StructOpt)]
-pub enum CloudProvider {
-  None,
-  Aws,
+pub enum ObjectStore {
+  Local,
+  S3,
 }
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct CloudOpt {
-  #[structopt(long, default_value = "NONE")]
-  pub cloud_provider: CloudProvider,
+  #[structopt(long)]
+  pub object_store: ObjectStore,
 
   #[structopt(long)]
-  pub aws_s3_bucket: Option<String>,
+  pub s3_bucket: Option<String>,
+  #[structopt(long)]
+  pub s3_access_key: Option<String>,
+  #[structopt(long)]
+  pub s3_secret_key: Option<String>,
+  #[structopt(long)]
+  pub s3_endpoint: Option<String>,
+  #[structopt(long)]
+  pub s3_region: Option<String>,
 }
 
-impl FromStr for CloudProvider {
+impl FromStr for ObjectStore {
   type Err = ServerError;
 
   fn from_str(s: &str) -> ServerResult<Self> {
-    match s.to_lowercase().as_str() {
-      "none" => Ok(CloudProvider::None),
-      "aws" => Ok(CloudProvider::Aws),
-      invalid => Err(ServerError::invalid(format!(
-        "invalid cloud provider {}",
-        invalid,
+    match s.to_lowercase().replace(r"[\-_]", "").as_str() {
+      "local" => Ok(ObjectStore::Local),
+      "s3" => Ok(ObjectStore::S3),
+      _ => Err(ServerError::invalid(format!(
+        "unsupported cloud provider {}",
+        s,
       ))),
     }
   }
@@ -106,6 +114,22 @@ impl Opt {
       .expect("dir was not a valid string");
     if dir_str.len() < MIN_DIR_LEN {
       panic!("suspiciously short length for dir; please choose a more specific path")
+    }
+
+    let cloud_opts = &self.cloud_opts;
+    match cloud_opts.object_store {
+      ObjectStore::Local => (),
+      ObjectStore::S3 => {
+        if cloud_opts.s3_bucket.is_none() {
+          panic!("must specify --s3-bucket when using S3");
+        }
+        if cloud_opts.s3_access_key.is_none() {
+          panic!("must specify --s3-access-key when using S3");
+        }
+        if cloud_opts.s3_secret_key.is_none() {
+          panic!("must specify --s3-secret-key when using S3");
+        }
+      }
     }
   }
 

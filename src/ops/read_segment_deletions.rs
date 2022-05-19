@@ -60,7 +60,6 @@ impl ServerOp for ReadSegmentDeletionsOp {
 
     let response = ReadSegmentDeletionsResponse {
       data,
-      ..Default::default()
     };
 
     Ok(response)

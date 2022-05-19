@@ -67,7 +67,7 @@ impl WriteToPartitionRestOp {
     for (partition_name, partition_field) in &self.req.partition {
       let dtype = match partitioning.get(partition_name) {
         Some(meta) => PartitionDataType::from_i32(meta.dtype)
-          .ok_or(ServerError::internal("unknown dtype")),
+          .ok_or_else(|| ServerError::internal("unknown dtype")),
         None => Err(ServerError::invalid(format!(
           "partition column {} does not exist",
           partition_name,
@@ -85,13 +85,13 @@ impl WriteToPartitionRestOp {
       let mut pb_row: Row = Row::default();
       for (col_name, value) in row {
         let col_meta = col_metas.get(col_name)
-          .ok_or(ServerError::invalid(format!(
+          .ok_or_else(|| ServerError::invalid(format!(
             "column {} does not exist",
             col_name,
           )))?;
 
         let dtype = DataType::from_i32(col_meta.dtype)
-          .ok_or(ServerError::internal("unknown dtype"))?;
+          .ok_or_else(|| ServerError::internal("unknown dtype"))?;
 
         let field_val = parse_field_value(value, dtype)?;
         pb_row.fields.insert(col_name.to_string(), field_val);

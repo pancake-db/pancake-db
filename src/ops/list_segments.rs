@@ -1,15 +1,16 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use futures::{pin_mut, StreamExt};
-use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, Segment};
+use pancake_db_idl::dml::{ListSegmentsRequest, ListSegmentsResponse, PartitionFieldValue, S3Coordinates, Segment};
+use pancake_db_idl::dml::segment_metadata::ObjectStoreCoordinates;
 use pancake_db_idl::dml::SegmentMetadata as PbSegmentMetadata;
 
 use crate::errors::ServerResult;
 use crate::locks::table::GlobalTableReadLocks;
+use crate::metadata::segment::{SegmentMetadata, VersionCoords};
 use crate::ops::traits::ServerOp;
 use crate::server::Server;
-use crate::metadata::segment::SegmentMetadata;
 use crate::types::{NormalizedPartition, PartitionKey};
 use crate::utils::{common, navigation, sharding};
 
@@ -21,9 +22,22 @@ impl ListSegmentsOp {
   fn pb_segment_meta_from_option(maybe_segment_meta: Option<SegmentMetadata>) -> Option<PbSegmentMetadata> {
     maybe_segment_meta.map(|meta| {
       let row_count = (meta.all_time_n - meta.all_time_deleted_n) as u32;
+      let object_store_coordinates = match &meta.read_coords {
+        VersionCoords::Local { path: _ } => None,
+        VersionCoords::S3 { endpoint, bucket, key } => {
+          let coords = S3Coordinates {
+            endpoint: endpoint.clone().unwrap_or_default(),
+            bucket: bucket.to_string(),
+            key: key.to_string(),
+          };
+          Some(ObjectStoreCoordinates::S3Coordinates(coords))
+        }
+      };
       PbSegmentMetadata {
         row_count,
-        ..Default::default()
+        read_version: meta.read_version,
+        deletion_version: meta.deletion_id,
+        object_store_coordinates,
       }
     })
   }
@@ -72,7 +86,6 @@ impl ListSegmentsOp {
           partition: partition.clone(),
           segment_id: segment_id.to_string(),
           metadata,
-          ..Default::default()
         });
       }
     }
@@ -124,7 +137,6 @@ impl ServerOp for ListSegmentsOp {
 
     Ok(ListSegmentsResponse {
       segments,
-      ..Default::default()
     })
   }
 }

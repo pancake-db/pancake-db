@@ -34,7 +34,7 @@ impl ServerOp for CreateTableRestOp {
     ).await?;
     Ok(CreateTableResponseSerde {
       already_exists: pb_resp.already_exists,
-      columns_added: pb_resp.columns_added.clone(),
+      columns_added: pb_resp.columns_added,
     })
   }
 }
